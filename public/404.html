@@ -3,10 +3,12 @@
   <head>
     <meta charset="utf-8">
     <title>Redirecting...</title>
-    <script>
-      // Redirect to main page
-      sessionStorage.redirect = location.href;
-      location.replace('/event-website/'); // Замените на имя вашего репозитория
+    <script type="module">
+      // Redirect to index.html for SPA routing
+      const path = window.location.pathname;
+      if (path !== '/' && !path.includes('.')) {
+        window.location.replace('/event-website/');
+      }
     </script>
   </head>
   <body>

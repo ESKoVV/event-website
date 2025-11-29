@@ -104,14 +104,12 @@ export default {
     const selectedEvent = ref(null)
     const showModal = ref(false)
 
-    // Сортируем мероприятия по дате создания (created_at) - новые сверху
     const sortedEvents = computed(() => {
       return [...events.value].sort((a, b) => {
         return new Date(b.created_at) - new Date(a.created_at)
       })
     })
 
-    // Фильтрация мероприятий по поиску
     const filteredEvents = computed(() => {
       let result = sortedEvents.value
       
@@ -221,7 +219,6 @@ body {
   min-height: 100vh;
 }
 
-/* Header Container */
 .header {
   background: #FFFFFF;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -335,7 +332,6 @@ body {
   color: #14181B;
 }
 
-/* Tags Filter Container */
 .tags-container {
   background: #EFEFEF;
   padding: 20px 0;
@@ -372,12 +368,10 @@ body {
   color: #FFFFFF;
 }
 
-/* Main Content */
 .main-content {
   padding: 20px;
 }
 
-/* Grid Layout for Square Cards */
 .events-grid {
   max-width: 1200px;
   margin: 0 auto;
@@ -397,7 +391,6 @@ body {
   grid-column: 1 / -1;
 }
 
-/* Responsive */
 @media (max-width: 768px) {
   .header-container {
     padding: 12px 16px;

@@ -81,7 +81,6 @@ export default {
   transition: transform 0.3s ease, box-shadow 0.3s ease;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   
-  /* Квадратный размер */
   width: 100%;
   aspect-ratio: 1 / 1;
   min-height: 300px;
@@ -186,7 +185,6 @@ export default {
   color: #8A75E3;
 }
 
-/* Responsive adjustments */
 @media (max-width: 768px) {
   .event-card {
     border-radius: 16px;
