@@ -1,26 +1,34 @@
 <template>
-  <div 
-    class="event-card" 
-    :class="{ 'no-image': !event.image_path }"
+  <div
+    class="event-card"
+    :class="{ 'no-image': !event.image_url }"
     @click="$emit('select-event', event)"
     :style="cardStyle"
   >
     <div class="event-overlay"></div>
-    
+
     <div class="event-info">
-      <h3 class="event-name">{{ event.name }}</h3>
-      
+      <div class="badges" v-if="hasBadges">
+        <span v-if="event.is_online" class="badge">🟢 Онлайн</span>
+        <span v-if="event.is_free" class="badge">🆓 Бесплатно</span>
+        <span v-for="(c, idx) in event.category_names" :key="idx" class="badge">
+          {{ c }}
+        </span>
+      </div>
+
+      <h3 class="event-name">{{ event.title }}</h3>
+
       <div class="event-details">
         <div class="detail-item">
           <span class="detail-label">📅</span>
           <span class="detail-value">{{ formattedDateTime }}</span>
         </div>
-        
+
         <div class="detail-item">
           <span class="detail-label">📍</span>
-          <span class="detail-value">{{ event.adress }}</span>
+          <span class="detail-value">{{ safeAddress }}</span>
         </div>
-        
+
         <div class="detail-item">
           <span class="detail-label">💰</span>
           <span class="detail-value price">{{ formattedPrice }}</span>
@@ -34,14 +42,11 @@
 export default {
   name: 'EventCard',
   props: {
-    event: {
-      type: Object,
-      required: true
-    }
+    event: { type: Object, required: true }
   },
   computed: {
     formattedDateTime() {
-      if (!this.event.date_time_event) return ''
+      if (!this.event?.date_time_event) return ''
       const date = new Date(this.event.date_time_event)
       return date.toLocaleString('ru-RU', {
         day: 'numeric',
@@ -52,18 +57,26 @@ export default {
       })
     },
     formattedPrice() {
-      if (this.event.price === 0 || this.event.price === null) {
-        return 'Бесплатно'
-      }
+      // приоритет: is_free из БД/нормализации
+      if (this.event?.is_free) return 'Бесплатно'
+      if (this.event?.price === 0 || this.event?.price === null) return 'Бесплатно'
       return `${this.event.price} ₽`
     },
+    safeAddress() {
+      return this.event?.address || this.event?.adress || ''
+    },
     cardStyle() {
-      if (this.event.image_path) {
-        return {
-          backgroundImage: `url(${this.event.image_path})`
-        }
+      if (this.event?.image_url) {
+        return { backgroundImage: `url(${this.event.image_url})` }
       }
       return {}
+    },
+    hasBadges() {
+      return Boolean(
+        this.event?.is_online ||
+          this.event?.is_free ||
+          (Array.isArray(this.event?.category_names) && this.event.category_names.length > 0)
+      )
     }
   }
 }
@@ -80,11 +93,11 @@ export default {
   cursor: pointer;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  
+
   width: 100%;
   aspect-ratio: 1 / 1;
   min-height: 300px;
-  
+
   display: flex;
   align-items: flex-end;
   overflow: hidden;
@@ -105,11 +118,11 @@ export default {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 70%;
+  height: 75%;
   background: linear-gradient(
     to top,
-    rgba(0, 0, 0, 0.8) 0%,
-    rgba(0, 0, 0, 0.6) 50%,
+    rgba(0, 0, 0, 0.85) 0%,
+    rgba(0, 0, 0, 0.55) 55%,
     rgba(0, 0, 0, 0) 100%
   );
   z-index: 1;
@@ -134,6 +147,31 @@ export default {
 
 .event-card.no-image .event-info {
   color: #14181B;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  backdrop-filter: blur(6px);
+}
+
+.event-card.no-image .badge {
+  background: rgba(20, 24, 27, 0.06);
+  border: 1px solid rgba(20, 24, 27, 0.12);
+  color: #14181B;
+  backdrop-filter: none;
 }
 
 .event-name {
@@ -177,11 +215,7 @@ export default {
 }
 
 .detail-value.price {
-  font-weight: 600;
-  color: #8A75E3;
-}
-
-.event-card.no-image .detail-value.price {
+  font-weight: 700;
   color: #8A75E3;
 }
 
@@ -190,16 +224,16 @@ export default {
     border-radius: 16px;
     min-height: 250px;
   }
-  
+
   .event-info {
     padding: 20px;
   }
-  
+
   .event-name {
     font-size: 18px;
     margin-bottom: 12px;
   }
-  
+
   .detail-value {
     font-size: 13px;
   }
@@ -209,18 +243,14 @@ export default {
   .event-card {
     min-height: 200px;
   }
-  
+
   .event-info {
     padding: 16px;
   }
-  
+
   .event-name {
     font-size: 16px;
     margin-bottom: 10px;
-  }
-  
-  .detail-value {
-    font-size: 12px;
   }
 }
 </style>

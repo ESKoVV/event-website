@@ -11,43 +11,44 @@
               <span></span>
             </div>
           </button>
-          
+
           <div class="search-container">
             <div class="search-icon">🔍</div>
-            <input 
+            <input
               v-model="searchTerm"
-              type="text" 
-              placeholder="Поиск" 
+              type="text"
+              placeholder="Поиск"
               class="search-input"
               @input="handleSearch"
             />
           </div>
         </div>
-        
+
         <button class="profile-button">
           <div class="profile-icon">👤</div>
         </button>
       </div>
     </header>
 
-    <!-- Tags Filter -->
+    <!-- Categories Filter -->
     <div class="tags-container">
       <div class="tags-content">
-        <button 
-          class="tag-button" 
-          :class="{ active: selectedTag === 'all' }"
-          @click="selectTag('all')"
+        <button
+          class="tag-button"
+          :class="{ active: selectedCategory === 'all' }"
+          @click="selectCategory('all')"
         >
           Все
         </button>
-        <button 
-          v-for="tag in tags" 
-          :key="tag.id"
-          class="tag-button" 
-          :class="{ active: selectedTag === tag.id }"
-          @click="selectTag(tag.id)"
+
+        <button
+          v-for="cat in categories"
+          :key="cat.id"
+          class="tag-button"
+          :class="{ active: selectedCategory === cat.id }"
+          @click="selectCategory(cat.id)"
         >
-          {{ tag.name }}
+          {{ cat.name }}
         </button>
       </div>
     </div>
@@ -55,17 +56,17 @@
     <!-- Events List -->
     <main class="main-content">
       <div class="events-grid">
-        <EventCard 
-          v-for="event in filteredEvents" 
+        <EventCard
+          v-for="event in filteredEvents"
           :key="event.id"
           :event="event"
           @select-event="selectEvent"
         />
-        
+
         <div v-if="loading" class="loading">
           Загрузка мероприятий...
         </div>
-        
+
         <div v-if="!loading && filteredEvents.length === 0" class="no-events">
           Мероприятия не найдены
         </div>
@@ -73,7 +74,7 @@
     </main>
 
     <!-- Event Modal -->
-    <EventModal 
+    <EventModal
       :event="selectedEvent"
       :is-visible="showModal"
       @close="closeModal"
@@ -89,86 +90,149 @@ import { useSupabase } from './composables/useSupabase'
 
 export default {
   name: 'App',
-  components: {
-    EventCard,
-    EventModal
-  },
+  components: { EventCard, EventModal },
   setup() {
-    const { getEvents, searchEvents, getTags, getEventsByTag } = useSupabase()
-    
+    const { getEvents, getCategories, getEventPhotos } = useSupabase()
+
     const events = ref([])
-    const tags = ref([])
+    const categories = ref([])
+    const categoryMap = ref(new Map())
+
     const loading = ref(true)
     const searchTerm = ref('')
-    const selectedTag = ref('all')
+    const selectedCategory = ref('all')
+
     const selectedEvent = ref(null)
     const showModal = ref(false)
 
-    const sortedEvents = computed(() => {
-      return [...events.value].sort((a, b) => {
-        return new Date(b.created_at) - new Date(a.created_at)
+    const parseSelectCategory = (value) => {
+      // поддержка вариантов:
+      // - null
+      // - число / строка (одна категория)
+      // - массив (Postgres array)
+      // - JSON-строка "[1,2]"
+      if (value == null) return []
+
+      if (Array.isArray(value)) {
+        return value
+          .map((v) => (typeof v === 'string' ? v.trim() : v))
+          .filter((v) => v !== '' && v != null)
+      }
+
+      if (typeof value === 'string') {
+        const s = value.trim()
+        if (!s) return []
+        if (s.startsWith('[') && s.endsWith(']')) {
+          try {
+            const parsed = JSON.parse(s)
+            return Array.isArray(parsed) ? parsed : [parsed]
+          } catch {
+            // если JSON сломан — считаем как одиночное значение
+            return [s]
+          }
+        }
+        return [s]
+      }
+
+      return [value]
+    }
+
+    const buildCategoryMap = (cats) => {
+      const m = new Map()
+      for (const c of cats || []) m.set(String(c.id), c.name)
+      categoryMap.value = m
+    }
+
+    const mergePhotosIntoEvents = (rawEvents, photos) => {
+      const byEventId = new Map()
+      for (const p of photos || []) {
+        const key = String(p.event_id)
+        if (!byEventId.has(key)) byEventId.set(key, [])
+        byEventId.get(key).push(p)
+      }
+
+      return (rawEvents || []).map((e) => {
+        const idKey = String(e.id)
+        const evPhotos = byEventId.get(idKey) || []
+        const cover = evPhotos[0]?.photo_url || null
+
+        const categoryIds = parseSelectCategory(e.selectCategory).map((x) => String(x))
+        const categoryNames = categoryIds.map((cid) => categoryMap.value.get(cid)).filter(Boolean)
+
+        const priceNum = e.price == null ? null : Number(e.price)
+        const computedFree = priceNum === 0
+
+        return {
+          ...e,
+          // нормализуем, чтобы компоненты не ломались
+          title: e.title ?? e.name ?? '',
+          address: e.address ?? e.adress ?? '',
+          image_url: cover, // главное: фото из event_photos
+          category_ids: categoryIds,
+          category_names: categoryNames,
+          is_online: Boolean(e.is_online),
+          is_free: typeof e.is_free === 'boolean' ? e.is_free : computedFree
+        }
       })
+    }
+
+    const sortedEvents = computed(() => {
+      return [...events.value].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     })
 
     const filteredEvents = computed(() => {
       let result = sortedEvents.value
-      
-      if (searchTerm.value.trim() !== '') {
-        result = result.filter(event => 
-          event.name.toLowerCase().includes(searchTerm.value.toLowerCase())
-        )
+
+      const term = searchTerm.value.trim().toLowerCase()
+      if (term) {
+        result = result.filter((event) => (event.title || '').toLowerCase().includes(term))
       }
-      
+
+      if (selectedCategory.value !== 'all') {
+        const wanted = String(selectedCategory.value)
+        result = result.filter((event) => (event.category_ids || []).includes(wanted))
+      }
+
       return result
     })
+
+    const loadCategories = async () => {
+      const { data, error } = await getCategories()
+      if (error) throw error
+      categories.value = data || []
+      buildCategoryMap(categories.value)
+    }
 
     const loadEvents = async () => {
       loading.value = true
       try {
-        const { data, error } = await getEvents()
-        if (error) throw error
-        events.value = data || []
-      } catch (error) {
-        console.error('Error loading events:', error)
+        // 1) грузим события
+        const { data: ev, error: evErr } = await getEvents()
+        if (evErr) throw evErr
+
+        const ids = (ev || []).map((x) => x.id)
+
+        // 2) грузим фото отдельно (работает даже без relation)
+        const { data: ph, error: phErr } = await getEventPhotos(ids)
+        if (phErr) throw phErr
+
+        // 3) склеиваем
+        events.value = mergePhotosIntoEvents(ev || [], ph || [])
+      } catch (e) {
+        console.error('Error loading events:', e)
         events.value = []
       } finally {
         loading.value = false
       }
     }
 
-    const loadTags = async () => {
-      try {
-        const { data, error } = await getTags()
-        if (error) throw error
-        tags.value = data || []
-      } catch (error) {
-        console.error('Error loading tags:', error)
-        tags.value = []
-      }
-    }
-
-    const selectTag = async (tagId) => {
-      selectedTag.value = tagId
-      loading.value = true
-      
-      try {
-        if (tagId === 'all') {
-          await loadEvents()
-        } else {
-          const { data, error } = await getEventsByTag(tagId)
-          if (error) throw error
-          events.value = data || []
-        }
-      } catch (error) {
-        console.error('Error loading events by tag:', error)
-        events.value = []
-      } finally {
-        loading.value = false
-      }
+    const selectCategory = (categoryId) => {
+      selectedCategory.value = categoryId
+      // фильтрация локальная — без повторных запросов
     }
 
     const handleSearch = () => {
-      // Поиск работает локально через computed свойство
+      // поиск локальный через computed
     }
 
     const selectEvent = (event) => {
@@ -182,19 +246,27 @@ export default {
     }
 
     onMounted(async () => {
-      await Promise.all([loadEvents(), loadTags()])
+      loading.value = true
+      try {
+        await loadCategories()
+        await loadEvents()
+      } catch (e) {
+        console.error('Init error:', e)
+      } finally {
+        loading.value = false
+      }
     })
 
     return {
       filteredEvents,
-      tags,
+      categories,
       loading,
       searchTerm,
-      selectedTag,
+      selectedCategory,
       selectedEvent,
       showModal,
       handleSearch,
-      selectTag,
+      selectCategory,
       selectEvent,
       closeModal
     }
@@ -260,54 +332,40 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  width: 18px;
 }
 
 .menu-icon span {
+  width: 18px;
   height: 2px;
   background: #14181B;
   border-radius: 1px;
-}
-
-.menu-icon span:nth-child(1) {
-  width: 18px;
-}
-
-.menu-icon span:nth-child(2) {
-  width: 14px;
-}
-
-.menu-icon span:nth-child(3) {
-  width: 10px;
 }
 
 .search-container {
   position: relative;
   display: flex;
   align-items: center;
-  border: 2px solid #D0AE7A;
-  border-radius: 25px;
-  padding: 8px 16px;
-  background: #FFFFFF;
-  min-width: 250px;
 }
 
 .search-icon {
-  margin-right: 8px;
-  color: #14181B;
+  position: absolute;
+  left: 12px;
+  font-size: 14px;
+  opacity: 0.6;
 }
 
 .search-input {
-  border: none;
+  width: 300px;
+  padding: 10px 12px 10px 36px;
+  border: 2px solid #EFEFEF;
+  border-radius: 20px;
   outline: none;
-  background: transparent;
-  color: #14181B;
   font-size: 14px;
-  width: 100%;
+  transition: border-color 0.2s ease;
 }
 
-.search-input::placeholder {
-  color: #666;
+.search-input:focus {
+  border-color: #8A75E3;
 }
 
 .profile-button {
@@ -316,10 +374,10 @@ body {
   border-radius: 50%;
   background: #FFFFFF;
   border: none;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   transition: background-color 0.2s ease;
 }
 
@@ -329,100 +387,67 @@ body {
 
 .profile-icon {
   font-size: 18px;
-  color: #14181B;
 }
 
 .tags-container {
-  background: #EFEFEF;
-  padding: 20px 0;
+  background: #FFFFFF;
+  border-bottom: 1px solid #EFEFEF;
 }
 
 .tags-content {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 12px 20px;
   display: flex;
-  gap: 12px;
+  gap: 8px;
   overflow-x: auto;
 }
 
 .tag-button {
-  background: #FFFFFF;
-  border: none;
+  padding: 8px 16px;
+  border: 2px solid #EFEFEF;
   border-radius: 20px;
-  padding: 10px 20px;
-  color: #14181B;
+  background: #FFFFFF;
   cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
   transition: all 0.2s ease;
-  font-size: 14px;
-  font-weight: 500;
 }
 
 .tag-button:hover {
-  background: #F5F5F5;
+  border-color: #8A75E3;
 }
 
 .tag-button.active {
   background: #8A75E3;
+  border-color: #8A75E3;
   color: #FFFFFF;
 }
 
 .main-content {
-  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 20px;
 }
 
 .events-grid {
-  max-width: 1200px;
-  margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 24px;
-  padding: 0 20px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
 }
 
-.loading, .no-events {
-  text-align: center;
-  padding: 60px 40px;
-  color: #666;
-  background: #FFFFFF;
-  border-radius: 16px;
-  font-size: 18px;
+.loading,
+.no-events {
   grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px 0;
+  color: #666;
 }
 
 @media (max-width: 768px) {
-  .header-container {
-    padding: 12px 16px;
-  }
-  
-  .search-container {
-    min-width: 200px;
-  }
-  
-  .tags-content {
-    padding: 0 16px;
-  }
-  
-  .tags-container {
-    padding: 16px 0;
-  }
-  
-  .main-content {
-    padding: 16px;
-  }
-  
-  .events-grid {
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 16px;
-    padding: 0;
-  }
-}
-
-@media (max-width: 480px) {
-  .events-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
+  .search-input {
+    width: 220px;
   }
 }
 </style>

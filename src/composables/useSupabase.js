@@ -9,40 +9,82 @@ export const useSupabase = () => {
   const getEvents = async () => {
     const { data, error } = await supabase
       .from('events')
-      .select('*')
+      .select(
+        `
+        id,
+        title,
+        description,
+        date_time_event,
+        address,
+        organizer,
+        price,
+        is_online,
+        is_free,
+        user_id,
+        selectCategory,
+        created_at
+      `
+      )
       .order('created_at', { ascending: false })
+
     return { data, error }
   }
 
   const searchEvents = async (searchTerm) => {
+    const term = (searchTerm || '').trim()
+    if (!term) return getEvents()
+
     const { data, error } = await supabase
       .from('events')
-      .select('*')
-      .ilike('name', `%${searchTerm}%`)
+      .select(
+        `
+        id,
+        title,
+        description,
+        date_time_event,
+        address,
+        organizer,
+        price,
+        is_online,
+        is_free,
+        user_id,
+        selectCategory,
+        created_at
+      `
+      )
+      .ilike('title', `%${term}%`)
       .order('created_at', { ascending: false })
+
     return { data, error }
   }
 
-  const getTags = async () => {
+  const getCategories = async () => {
+    // предполагаем, что в таблице category есть минимум: id, name
     const { data, error } = await supabase
-      .from('tags')
-      .select('*')
+      .from('category')
+      .select('id, name')
+      .order('name', { ascending: true })
+
     return { data, error }
   }
 
-  const getEventsByTag = async (tagId) => {
+  const getEventPhotos = async (eventIds) => {
+    const ids = Array.isArray(eventIds) ? eventIds.filter(Boolean) : []
+    if (ids.length === 0) return { data: [], error: null }
+
     const { data, error } = await supabase
-      .from('events')
-      .select('*')
-      .eq('tag_id', tagId)
-      .order('created_at', { ascending: false })
+      .from('event_photos')
+      .select('id, event_id, photo_url')
+      .in('event_id', ids)
+      .order('id', { ascending: true })
+
     return { data, error }
   }
 
   return {
     getEvents,
     searchEvents,
-    getTags,
-    getEventsByTag
+    getCategories,
+    getEventPhotos
   }
 }

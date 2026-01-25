@@ -2,38 +2,46 @@
   <div v-if="isVisible" class="modal-overlay" @click="close">
     <div class="modal-content" @click.stop>
       <button class="close-button" @click="close">×</button>
-      
-      <div class="event-image" v-if="event.image_path">
-        <img :src="event.image_path" :alt="event.name" />
+
+      <div class="event-image" v-if="event?.image_url">
+        <img :src="event.image_url" :alt="event?.title || 'event'" />
       </div>
-      
-      <h2 class="event-title">{{ event.name }}</h2>
-      
+
+      <div class="top-badges" v-if="hasBadges">
+        <span v-if="event.is_online" class="badge">🟢 Онлайн</span>
+        <span v-if="event.is_free" class="badge">🆓 Бесплатно</span>
+        <span v-for="(c, idx) in event.category_names" :key="idx" class="badge">
+          {{ c }}
+        </span>
+      </div>
+
+      <h2 class="event-title">{{ event?.title }}</h2>
+
       <div class="event-details">
         <div class="detail-item">
           <span class="detail-label">Дата и время:</span>
           <span class="detail-value">{{ formattedDateTime }}</span>
         </div>
-        
+
         <div class="detail-item">
           <span class="detail-label">Адрес:</span>
-          <span class="detail-value">{{ event.adress }}</span>
+          <span class="detail-value">{{ safeAddress }}</span>
         </div>
-        
+
         <div class="detail-item">
           <span class="detail-label">Организатор:</span>
-          <span class="detail-value">{{ event.organizer }}</span>
+          <span class="detail-value">{{ event?.organizer }}</span>
         </div>
-        
+
         <div class="detail-item">
           <span class="detail-label">Цена:</span>
           <span class="detail-value price">{{ formattedPrice }}</span>
         </div>
       </div>
-      
+
       <div class="event-description">
         <h3>Описание</h3>
-        <p>{{ event.description }}</p>
+        <p>{{ event?.description }}</p>
       </div>
     </div>
   </div>
@@ -43,19 +51,13 @@
 export default {
   name: 'EventModal',
   props: {
-    event: {
-      type: Object,
-      default: null
-    },
-    isVisible: {
-      type: Boolean,
-      default: false
-    }
+    event: { type: Object, default: null },
+    isVisible: { type: Boolean, default: false }
   },
   computed: {
     formattedDateTime() {
-      if (!this.event.date_time_event) return '' // ИСПРАВЛЕНО
-      const date = new Date(this.event.date_time_event) // ИСПРАВЛЕНО
+      if (!this.event?.date_time_event) return ''
+      const date = new Date(this.event.date_time_event)
       return date.toLocaleString('ru-RU', {
         day: 'numeric',
         month: 'long',
@@ -65,10 +67,19 @@ export default {
       })
     },
     formattedPrice() {
-      if (this.event.price === 0 || this.event.price === null) {
-        return 'Бесплатно'
-      }
+      if (this.event?.is_free) return 'Бесплатно'
+      if (this.event?.price === 0 || this.event?.price === null) return 'Бесплатно'
       return `${this.event.price} ₽`
+    },
+    safeAddress() {
+      return this.event?.address || this.event?.adress || ''
+    },
+    hasBadges() {
+      return Boolean(
+        this.event?.is_online ||
+          this.event?.is_free ||
+          (Array.isArray(this.event?.category_names) && this.event.category_names.length > 0)
+      )
     }
   },
   methods: {
@@ -80,7 +91,6 @@ export default {
 </script>
 
 <style scoped>
-/* Стили остаются без изменений */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -99,7 +109,7 @@ export default {
   background: #FFFFFF;
   border-radius: 16px;
   padding: 30px;
-  max-width: 600px;
+  max-width: 650px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
@@ -129,10 +139,10 @@ export default {
 
 .event-image {
   width: 100%;
-  height: 200px;
-  border-radius: 8px;
+  height: 220px;
+  border-radius: 10px;
   overflow: hidden;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 
 .event-image img {
@@ -141,11 +151,28 @@ export default {
   object-fit: cover;
 }
 
+.top-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(138, 117, 227, 0.12);
+  border: 1px solid rgba(138, 117, 227, 0.22);
+  color: #14181B;
+}
+
 .event-title {
   color: #14181B;
-  margin: 0 0 20px 0;
+  margin: 0 0 18px 0;
   font-size: 24px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .event-details {
@@ -158,21 +185,24 @@ export default {
   align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid #EFEFEF;
+  gap: 16px;
 }
 
 .detail-label {
-  font-weight: 500;
+  font-weight: 600;
   color: #666;
+  flex: 0 0 auto;
 }
 
 .detail-value {
   color: #14181B;
-  font-weight: 500;
+  font-weight: 600;
+  text-align: right;
 }
 
 .detail-value.price {
   color: #8A75E3;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .event-description h3 {
@@ -185,5 +215,6 @@ export default {
   color: #14181B;
   line-height: 1.6;
   margin: 0;
+  white-space: pre-wrap;
 }
 </style>
