@@ -1,54 +1,147 @@
 <template>
-  <div
-    class="event-card"
-    :class="{ 'no-image': !event.image_url }"
-    @click="$emit('select-event', event)"
-    :style="cardStyle"
-  >
-    <div class="event-overlay"></div>
+  <div class="card">
+    <!-- LEFT: PHOTO -->
+    <button ref="photoBtn" class="photo" @click="handleOpenPhoto" aria-label="Открыть фото">
+      <div
+        v-if="!inView || !imageUrl || !imgLoaded"
+        class="photo-skeleton"
+        :class="{ shimmer: photosLoading }"
+      ></div>
 
-    <div class="event-info">
-      <div class="badges" v-if="hasBadges">
-        <span v-if="event.is_online" class="badge">🟢 Онлайн</span>
-        <span v-if="event.is_free" class="badge">🆓 Бесплатно</span>
-        <span v-for="(c, idx) in event.category_names" :key="idx" class="badge">
-          {{ c }}
-        </span>
+      <img
+        v-if="inView && imageUrl"
+        :src="imageUrl"
+        alt="event photo"
+        loading="lazy"
+        decoding="async"
+        :class="{ loaded: imgLoaded }"
+        @load="onImgLoad"
+        @error="onImgError"
+      />
+    </button>
+
+    <!-- RIGHT: INFO -->
+    <div class="info">
+      <div class="top-row">
+        <div class="title">{{ event.title }}</div>
+
+        <div class="badges">
+          <span v-if="event.is_online" class="badge">🟢 Онлайн</span>
+          <span v-if="event.is_free" class="badge">🆓 Бесплатно</span>
+
+          <!-- ✅ категории только по ИМЕНАМ -->
+          <span v-for="c in categoryNames" :key="c" class="badge">
+            {{ c }}
+          </span>
+        </div>
       </div>
 
-      <h3 class="event-name">{{ event.title }}</h3>
+      <!-- Описание: с абзаца -->
+      <p v-if="event.description" class="desc">
+        {{ event.description }}
+      </p>
 
-      <div class="event-details">
-        <div class="detail-item">
-          <span class="detail-label">📅</span>
-          <span class="detail-value">{{ formattedDateTime }}</span>
+      <div class="meta">
+        <div class="meta-item">
+          <span class="k">📅</span>
+          <span class="v">{{ formattedDateTime }}</span>
         </div>
 
-        <div class="detail-item">
-          <span class="detail-label">📍</span>
-          <span class="detail-value">{{ safeAddress }}</span>
+        <div class="meta-item">
+          <span class="k">📍</span>
+          <span class="v">{{ event.address || '—' }}</span>
         </div>
 
-        <div class="detail-item">
-          <span class="detail-label">💰</span>
-          <span class="detail-value price">{{ formattedPrice }}</span>
+        <div class="meta-item">
+          <span class="k">👤</span>
+          <span class="v">{{ event.organizer || '—' }}</span>
         </div>
+
+        <div class="meta-item">
+          <span class="k">💰</span>
+          <span class="v price">{{ formattedPrice }}</span>
+        </div>
+      </div>
+
+      <div v-if="morePhotos.length" class="thumbs">
+        <button
+          v-for="p in morePhotos"
+          :key="p.id"
+          class="thumb"
+          @click="emitOpenPhoto(p.photo_url)"
+          aria-label="Открыть фото"
+        >
+          <img :src="p.photo_url" alt="thumb" loading="lazy" decoding="async" />
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script>
+// тот же “нормализатор”: селектКатегори -> имена
+const normalizeCategoryNames = (raw, categoryMap) => {
+  const map = categoryMap || {}
+
+  const toName = (v) => {
+    if (v === null || v === undefined) return ''
+    const s = String(v).trim()
+    if (!s) return ''
+    if (map[s]) return String(map[s]).trim()
+    const n = Number(s)
+    if (!Number.isNaN(n) && map[String(n)]) return String(map[String(n)]).trim()
+    return s
+  }
+
+  if (!raw) return []
+
+  if (Array.isArray(raw)) {
+    return Array.from(new Set(raw.map(toName).filter(Boolean)))
+  }
+
+  if (typeof raw === 'string') {
+    const s = raw.trim()
+    if (!s) return []
+    const parts = s
+      .split(/[,;|]+/g)
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .map(toName)
+      .filter(Boolean)
+    return Array.from(new Set(parts))
+  }
+
+  const one = toName(raw)
+  return one ? [one] : []
+}
+
 export default {
   name: 'EventCard',
+  emits: ['open-photo'],
   props: {
-    event: { type: Object, required: true }
+    event: { type: Object, required: true },
+    photos: { type: Array, default: () => [] },
+    photosLoading: { type: Boolean, default: false },
+    // если вдруг selectCategory когда-нибудь станет id — мапа спасёт
+    categoryMap: { type: Object, default: () => ({}) }
   },
   computed: {
+    imageUrl() {
+      const first = Array.isArray(this.photos) ? this.photos[0] : null
+      return (first?.photo_url || '').trim()
+    },
+    morePhotos() {
+      if (!Array.isArray(this.photos)) return []
+      return this.photos.slice(1, 6).filter((p) => p?.photo_url)
+    },
+    categoryNames() {
+      return normalizeCategoryNames(this.event?.selectCategory, this.categoryMap)
+    },
     formattedDateTime() {
-      if (!this.event?.date_time_event) return ''
-      const date = new Date(this.event.date_time_event)
-      return date.toLocaleString('ru-RU', {
+      if (!this.event?.date_time_event) return '—'
+      const d = new Date(this.event.date_time_event)
+      if (Number.isNaN(d.getTime())) return String(this.event.date_time_event)
+      return d.toLocaleString('ru-RU', {
         day: 'numeric',
         month: 'long',
         year: 'numeric',
@@ -57,200 +150,270 @@ export default {
       })
     },
     formattedPrice() {
-      // приоритет: is_free из БД/нормализации
       if (this.event?.is_free) return 'Бесплатно'
       if (this.event?.price === 0 || this.event?.price === null) return 'Бесплатно'
       return `${this.event.price} ₽`
+    }
+  },
+  data() {
+    return {
+      inView: false,
+      imgLoaded: false,
+      io: null
+    }
+  },
+  watch: {
+    imageUrl() {
+      this.imgLoaded = false
+    }
+  },
+  mounted() {
+    const el = this.$refs.photoBtn
+    if (!el || typeof window === 'undefined') {
+      this.inView = true
+      return
+    }
+
+    if (!('IntersectionObserver' in window)) {
+      this.inView = true
+      return
+    }
+
+    this.io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        if (entry?.isIntersecting) {
+          this.inView = true
+          if (this.io) {
+            this.io.disconnect()
+            this.io = null
+          }
+        }
+      },
+      { root: null, rootMargin: '250px 0px', threshold: 0.01 }
+    )
+
+    this.io.observe(el)
+  },
+  beforeUnmount() {
+    if (this.io) {
+      this.io.disconnect()
+      this.io = null
+    }
+  },
+  methods: {
+    onImgLoad() {
+      this.imgLoaded = true
     },
-    safeAddress() {
-      return this.event?.address || this.event?.adress || ''
+    onImgError() {
+      this.imgLoaded = true
     },
-    cardStyle() {
-      if (this.event?.image_url) {
-        return { backgroundImage: `url(${this.event.image_url})` }
-      }
-      return {}
+    emitOpenPhoto(url) {
+      if (!url) return
+      this.$emit('open-photo', url)
     },
-    hasBadges() {
-      return Boolean(
-        this.event?.is_online ||
-          this.event?.is_free ||
-          (Array.isArray(this.event?.category_names) && this.event.category_names.length > 0)
-      )
+    handleOpenPhoto() {
+      if (!this.imageUrl) return
+      this.emitOpenPhoto(this.imageUrl)
     }
   }
 }
 </script>
 
 <style scoped>
-.event-card {
-  position: relative;
-  background: #FFFFFF;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  border-radius: 20px;
-  cursor: pointer;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+.card,
+.info,
+.title,
+.desc,
+.meta,
+.meta-item,
+.v {
+  min-width: 0;
+}
 
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  min-height: 300px;
-
-  display: flex;
-  align-items: flex-end;
+.card {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid #efefef;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
   overflow: hidden;
 }
 
-.event-card.no-image {
-  background: #FFFFFF;
-  border: 2px solid #EFEFEF;
-}
-
-.event-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-}
-
-.event-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 75%;
-  background: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.85) 0%,
-    rgba(0, 0, 0, 0.55) 55%,
-    rgba(0, 0, 0, 0) 100%
-  );
-  z-index: 1;
-}
-
-.event-card.no-image .event-overlay {
-  background: linear-gradient(
-    to top,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(255, 255, 255, 0.8) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
-}
-
-.event-info {
+.photo {
+  width: 220px;
+  height: 160px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: none;
+  padding: 0;
+  background: #f5f5f5;
+  cursor: pointer;
   position: relative;
-  z-index: 2;
-  padding: 24px;
-  width: 100%;
-  color: #FFFFFF;
 }
 
-.event-card.no-image .event-info {
-  color: #14181B;
+.photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0;
+  transform: scale(1.01);
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+
+.photo img.loaded {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.photo-skeleton {
+  width: 100%;
+  height: 100%;
+  background: #f0f0f0;
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+  animation: shimmer 1.2s infinite;
+}
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.top-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 900;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.2;
 }
 
 .badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .badge {
   font-size: 12px;
-  font-weight: 600;
-  padding: 5px 10px;
+  font-weight: 700;
+  padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  color: #fff;
-  backdrop-filter: blur(6px);
+  background: rgba(138, 117, 227, 0.12);
+  border: 1px solid rgba(138, 117, 227, 0.22);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
 }
 
-.event-card.no-image .badge {
-  background: rgba(20, 24, 27, 0.06);
-  border: 1px solid rgba(20, 24, 27, 0.12);
-  color: #14181B;
-  backdrop-filter: none;
-}
-
-.event-name {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 0 0 16px 0;
-  line-height: 1.3;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-.event-card.no-image .event-name {
-  text-shadow: none;
-}
-
-.event-details {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.detail-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.detail-label {
+.desc {
+  margin: 0;
   font-size: 14px;
-  min-width: 20px;
+  opacity: 0.85;
+  line-height: 1.35;
+  text-indent: 1.2em;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-.detail-value {
+.meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+  overflow: hidden;
+}
+
+.meta-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
   font-size: 14px;
-  font-weight: 500;
-  line-height: 1.3;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
 }
 
-.event-card.no-image .detail-value {
-  text-shadow: none;
+.k {
+  width: 18px;
+  opacity: 0.9;
+  flex: 0 0 18px;
 }
 
-.detail-value.price {
-  font-weight: 700;
-  color: #8A75E3;
+.v {
+  opacity: 0.9;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-@media (max-width: 768px) {
-  .event-card {
-    border-radius: 16px;
-    min-height: 250px;
-  }
-
-  .event-info {
-    padding: 20px;
-  }
-
-  .event-name {
-    font-size: 18px;
-    margin-bottom: 12px;
-  }
-
-  .detail-value {
-    font-size: 13px;
-  }
+.price {
+  font-weight: 900;
 }
 
-@media (max-width: 480px) {
-  .event-card {
-    min-height: 200px;
-  }
+.thumbs {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
 
-  .event-info {
-    padding: 16px;
-  }
+.thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #efefef;
+  background: #fff;
+  padding: 0;
+  cursor: pointer;
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 
-  .event-name {
-    font-size: 16px;
-    margin-bottom: 10px;
+@media (max-width: 760px) {
+  .card {
+    grid-template-columns: 1fr;
+  }
+  .photo {
+    width: 100%;
+    height: 200px;
+  }
+  .meta {
+    grid-template-columns: 1fr;
   }
 }
 </style>
