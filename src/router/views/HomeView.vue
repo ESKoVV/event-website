@@ -1,28 +1,22 @@
 <template>
   <div class="page">
     <div class="container">
-      <!-- CATEGORIES -->
-      <div class="tags-shell">
-        <div class="tags-title">Категории</div>
-
-        <div class="tags-content">
-          <!-- ALL -->
-          <button class="tag-btn" :class="{ active: isAllActive }" @click="selectAll">
-            Все
-          </button>
-
-          <!-- CATEGORY BUTTONS -->
-          <button
-            v-for="cat in categories"
-            :key="cat.id"
-            class="tag-btn"
-            :class="{ active: selectedCategoryNames.includes(cat.name) }"
-            @click="toggleCategory(cat.name)"
-          >
-            {{ cat.name }}
-          </button>
-        </div>
-      </div>
+      <!-- Filters moved to a separate component -->
+      <FiltersPanel
+        :categories="categories"
+        :is-all-categories-active="isAllCategoriesActive"
+        v-model:selectedCategoryNames="selectedCategoryNames"
+        v-model:priceMode="priceMode"
+        v-model:customPriceMin="customPriceMin"
+        v-model:customPriceMax="customPriceMax"
+        v-model:dateMode="dateMode"
+        v-model:dateOn="dateOn"
+        v-model:dateFrom="dateFrom"
+        v-model:dateTo="dateTo"
+        v-model:datePivot="datePivot"
+        v-model:onlineOnly="onlineOnly"
+        @reset="resetAllFilters"
+      />
 
       <!-- STATES -->
       <div v-if="!initialLoaded" class="state">
@@ -69,6 +63,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import EventCard from '../../components/EventCard.vue'
 import EventPhotoModal from '../../components/EventPhotoModal.vue'
+import FiltersPanel from '../../components/FiltersPanel.vue'
 import { useSupabase } from '../../composables/useSupabase'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -89,9 +84,9 @@ const withRetry = async (fn, tries = 3) => {
 /**
  * Нормализуем event.selectCategory -> МАССИВ НАЗВАНИЙ
  * Поддержка:
- * - text[] (как у тебя сейчас) => ["Спорт","Хобби"]
+ * - text[] => ["Спорт","Хобби"]
  * - "Спорт,Хобби" / "Спорт;Хобби"
- * - id / [id,id]  (если когда-то поменяешь) -> подставим name по categoryMap
+ * - id / [id,id] -> подставим name по categoryMap
  */
 const normalizeCategoryNames = (raw, categoryMap) => {
   const map = categoryMap || {}
@@ -100,18 +95,14 @@ const normalizeCategoryNames = (raw, categoryMap) => {
     if (v === null || v === undefined) return ''
     const s = String(v).trim()
     if (!s) return ''
-    // если это id и есть в мапе -> вернем имя
     if (map[s]) return String(map[s]).trim()
-    // если это число строкой "10"
     const n = Number(s)
     if (!Number.isNaN(n) && map[String(n)]) return String(map[String(n)]).trim()
-    // иначе считаем, что это уже имя
     return s
   }
 
   if (!raw) return []
 
-  // Supabase text[] обычно приходит как массив
   if (Array.isArray(raw)) {
     return Array.from(new Set(raw.map(toName).filter(Boolean)))
   }
@@ -128,14 +119,36 @@ const normalizeCategoryNames = (raw, categoryMap) => {
     return Array.from(new Set(parts))
   }
 
-  // number / object -> строка
   const one = toName(raw)
   return one ? [one] : []
 }
 
+const toNumberOrNull = (v) => {
+  if (v === null || v === undefined) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
+const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+
+const parseEventDate = (value) => {
+  if (!value) return null
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return d
+}
+
+const parseDateInput = (yyyy_mm_dd) => {
+  if (!yyyy_mm_dd) return null
+  const [y, m, day] = yyyy_mm_dd.split('-').map((x) => Number(x))
+  if (!y || !m || !day) return null
+  return new Date(y, m - 1, day)
+}
+
 export default {
   name: 'HomeView',
-  components: { EventCard, EventPhotoModal },
+  components: { EventCard, EventPhotoModal, FiltersPanel },
   props: {
     globalSearchTerm: { type: String, default: '' }
   },
@@ -156,9 +169,24 @@ export default {
     const categories = ref([])
     const categoryMap = ref({}) // id -> name
 
-    // ✅ выбираем ТОЛЬКО НАЗВАНИЯ категорий (как на кнопках)
+    // Categories (names)
     const selectedCategoryNames = ref([])
-    const isAllActive = computed(() => selectedCategoryNames.value.length === 0)
+    const isAllCategoriesActive = computed(() => selectedCategoryNames.value.length === 0)
+
+    // Online checkbox
+    const onlineOnly = ref(false)
+
+    // Price
+    const priceMode = ref('all')
+    const customPriceMin = ref('')
+    const customPriceMax = ref('')
+
+    // Date
+    const dateMode = ref('all')
+    const dateOn = ref('')
+    const dateFrom = ref('')
+    const dateTo = ref('')
+    const datePivot = ref('')
 
     const photosLoading = ref(false)
     const stopPhotosLoading = ref(false)
@@ -170,29 +198,119 @@ export default {
       photoModalUrl.value = url
     }
 
-    const selectAll = () => {
+    const resetAllFilters = () => {
       selectedCategoryNames.value = []
+      onlineOnly.value = false
+
+      priceMode.value = 'all'
+      customPriceMin.value = ''
+      customPriceMax.value = ''
+
+      dateMode.value = 'all'
+      dateOn.value = ''
+      dateFrom.value = ''
+      dateTo.value = ''
+      datePivot.value = ''
     }
 
-    const toggleCategory = (name) => {
-      const n = String(name || '').trim()
-      if (!n) return
-
-      const idx = selectedCategoryNames.value.indexOf(n)
-      if (idx >= 0) selectedCategoryNames.value.splice(idx, 1)
-      else selectedCategoryNames.value.push(n)
-    }
-
+    // ---------- filtering ----------
     const matchesSelectedCategories = (event) => {
-      // "Все"
       if (selectedCategoryNames.value.length === 0) return true
 
       const eventCats = normalizeCategoryNames(event?.selectCategory, categoryMap.value)
       if (!eventCats.length) return false
 
       const selectedSet = new Set(selectedCategoryNames.value)
-      // OR логика: если хоть одна выбранная встречается в мероприятии
       return eventCats.some((c) => selectedSet.has(c))
+    }
+
+    const matchesOnline = (event) => {
+      if (!onlineOnly.value) return true
+      return event?.is_online === true
+    }
+
+    const getEventPrice = (event) => {
+      if (event?.is_free === true) return 0
+      const p = toNumberOrNull(event?.price)
+      if (p === null) return null
+      return p
+    }
+
+    const matchesPrice = (event) => {
+      const mode = priceMode.value
+      if (mode === 'all') return true
+
+      const price = getEventPrice(event)
+
+      if (mode === 'free') return price === 0
+      if (price === null) return false
+
+      if (mode === '100_1000') return price >= 100 && price <= 1000
+      if (mode === '1000_3000') return price >= 1000 && price <= 3000
+      if (mode === '3000_10000') return price >= 3000 && price <= 10000
+      if (mode === 'gt_10000') return price > 10000
+
+      if (mode === 'custom') {
+        const min = customPriceMin.value === '' ? null : toNumberOrNull(customPriceMin.value)
+        const max = customPriceMax.value === '' ? null : toNumberOrNull(customPriceMax.value)
+
+        const okMin = min === null ? true : price >= min
+        const okMax = max === null ? true : price <= max
+        return okMin && okMax
+      }
+
+      return true
+    }
+
+    const matchesDate = (event) => {
+      const mode = dateMode.value
+      if (mode === 'all') return true
+
+      const d = parseEventDate(event?.date_time_event)
+      if (!d) return false
+
+      if (mode === 'today') {
+        const now = new Date()
+        return d >= startOfDay(now) && d <= endOfDay(now)
+      }
+
+      if (mode === 'next7') {
+        const now = new Date()
+        const from = startOfDay(now)
+        const to = endOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7))
+        return d >= from && d <= to
+      }
+
+      if (mode === 'on') {
+        const on = parseDateInput(dateOn.value)
+        if (!on) return true
+        return d >= startOfDay(on) && d <= endOfDay(on)
+      }
+
+      if (mode === 'range') {
+        const fromD = parseDateInput(dateFrom.value)
+        const toD = parseDateInput(dateTo.value)
+        if (!fromD && !toD) return true
+        const from = fromD ? startOfDay(fromD) : null
+        const to = toD ? endOfDay(toD) : null
+        const okFrom = from ? d >= from : true
+        const okTo = to ? d <= to : true
+        return okFrom && okTo
+      }
+
+      if (mode === 'after') {
+        const pivot = parseDateInput(datePivot.value)
+        if (!pivot) return true
+        return d >= startOfDay(pivot)
+      }
+
+      if (mode === 'before') {
+        const pivot = parseDateInput(datePivot.value)
+        if (!pivot) return true
+        return d <= endOfDay(pivot)
+      }
+
+      return true
     }
 
     const matchesSearch = (event) => {
@@ -207,9 +325,17 @@ export default {
     }
 
     const filteredEvents = computed(() => {
-      return visibleEvents.value.filter((e) => matchesSelectedCategories(e) && matchesSearch(e))
+      return visibleEvents.value.filter(
+        (e) =>
+          matchesSelectedCategories(e) &&
+          matchesOnline(e) &&
+          matchesPrice(e) &&
+          matchesDate(e) &&
+          matchesSearch(e)
+      )
     })
 
+    // ---------- progressive loading ----------
     const stopProgressive = () => {
       progressiveLoading.value = false
       if (progressiveTimer) {
@@ -226,7 +352,6 @@ export default {
       if (!list.length) return
 
       progressiveLoading.value = true
-
       visibleEvents.value.push(list[0])
 
       let i = 1
@@ -240,6 +365,7 @@ export default {
       }, 140)
     }
 
+    // ---------- data loading ----------
     const loadCategories = async () => {
       try {
         const { data, error: err } = await withRetry(() => getCategories())
@@ -272,6 +398,7 @@ export default {
 
         startProgressive(allEvents.value)
 
+        // photos in background
         photos.value = {}
         stopPhotosLoading.value = false
 
@@ -331,18 +458,31 @@ export default {
     return {
       initialLoaded,
       error,
+
       photos,
       categories,
       categoryMap,
 
       selectedCategoryNames,
-      isAllActive,
-      selectAll,
-      toggleCategory,
+      isAllCategoriesActive,
+
+      onlineOnly,
+
+      priceMode,
+      customPriceMin,
+      customPriceMax,
+
+      dateMode,
+      dateOn,
+      dateFrom,
+      dateTo,
+      datePivot,
 
       filteredEvents,
       photosLoading,
       progressiveLoading,
+
+      resetAllFilters,
       reload,
 
       photoModalUrl,
@@ -361,45 +501,6 @@ export default {
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 20px;
-}
-
-/* TAGS */
-.tags-shell {
-  background: #fff;
-  border: 1px solid #efefef;
-  border-radius: 18px;
-  padding: 14px 14px 10px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-  margin-bottom: 14px;
-}
-
-.tags-title {
-  font-weight: 800;
-  font-size: 13px;
-  opacity: 0.7;
-  margin-bottom: 10px;
-}
-
-.tags-content {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.tag-btn {
-  border: 1px solid #efefef;
-  background: #fafafa;
-  border-radius: 999px;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.tag-btn.active {
-  background: #8a75e3;
-  border-color: #8a75e3;
-  color: #fff;
 }
 
 /* STATES */
