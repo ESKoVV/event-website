@@ -24,7 +24,7 @@ const compact = (obj) => {
 
 export const useSupabase = () => {
   // ---------------------------
-  // EVENTS
+  // EVENTS (user site: only published)
   // ---------------------------
   const getEvents = async () => {
     const { data, error } = await supabase
@@ -42,9 +42,11 @@ export const useSupabase = () => {
         is_free,
         user_id,
         selectCategory,
+        is_published,
         created_at
       `
       )
+      .eq('is_published', true)
       .order('created_at', { ascending: false })
 
     return { data, error }
@@ -69,9 +71,11 @@ export const useSupabase = () => {
         is_free,
         user_id,
         selectCategory,
+        is_published,
         created_at
       `
       )
+      .eq('is_published', true)
       .ilike('title', `%${term}%`)
       .order('created_at', { ascending: false })
 
@@ -93,6 +97,47 @@ export const useSupabase = () => {
       .order('id', { ascending: true })
 
     return { data: data ?? [], error }
+  }
+
+  // ✅ Business: create draft event (not published)
+  const createBusinessEvent = async (payload) => {
+    const { user, error: userErr } = await getUser()
+    if (userErr) return { data: null, error: userErr }
+    if (!user) return { data: null, error: new Error('Нет авторизации') }
+
+    const price = Number(payload?.price ?? 0)
+    const is_free = payload?.is_free === true || (!Number.isNaN(price) && price <= 0)
+
+    const eventInsert = {
+      title: payload?.title ?? null,
+      description: payload?.description ?? null,
+      date_time_event: payload?.date_time_event ?? null,
+      address: payload?.address ?? null,
+      organizer: payload?.organizer ?? null,
+      price: Number.isFinite(price) ? price : 0,
+      is_online: !!payload?.is_online,
+      is_free,
+      user_id: user.id,
+      selectCategory: Array.isArray(payload?.selectCategory) ? payload.selectCategory : [],
+      is_published: false
+    }
+
+    const { data: eventRow, error: insErr } = await supabase.from('events').insert(eventInsert).select().single()
+    if (insErr) return { data: null, error: insErr }
+
+    const photoUrl = String(payload?.photo_url ?? '').trim()
+    if (photoUrl) {
+      const { error: phErr } = await supabase.from('event_photos').insert({
+        event_id: eventRow.id,
+        photo_url: photoUrl
+      })
+      if (phErr) {
+        // не фейлим создание события из-за фото — просто вернём ошибку отдельно
+        return { data: eventRow, error: phErr }
+      }
+    }
+
+    return { data: eventRow, error: null }
   }
 
   // ---------------------------
@@ -140,7 +185,6 @@ export const useSupabase = () => {
     const firstFromMeta = meta.given_name ?? meta.first_name
     const lastFromMeta = meta.family_name ?? meta.last_name
 
-    // ✅ не затираем имя/фамилию null-ами из Google
     const payload = compact({
       id: authUser.id,
       email: existing?.email ?? authUser.email ?? null,
@@ -148,12 +192,7 @@ export const useSupabase = () => {
       last_name: existing?.last_name ? undefined : lastFromMeta ?? undefined
     })
 
-    const { data, error } = await supabase
-      .from('users')
-      .upsert(payload, { onConflict: 'id' })
-      .select()
-      .single()
-
+    const { data, error } = await supabase.from('users').upsert(payload, { onConflict: 'id' }).select().single()
     return { data, error }
   }
 
@@ -171,26 +210,20 @@ export const useSupabase = () => {
     if (!user) return { data: null, error: new Error('No auth user') }
 
     const safePatch = { ...patch }
-    delete safePatch.It_business
+    delete safePatch.It_business // нельзя менять с фронта
 
     for (const k of Object.keys(safePatch)) {
       if (safePatch[k] === '') safePatch[k] = null
     }
     if (safePatch.image_path) safePatch.image_path = normalizeStoragePublicUrl(safePatch.image_path)
 
-    const { data, error } = await supabase
-      .from('users')
-      .update(safePatch)
-      .eq('id', user.id)
-      .select()
-      .single()
-
+    const { data, error } = await supabase.from('users').update(safePatch).eq('id', user.id).select().single()
     if (data?.image_path) data.image_path = normalizeStoragePublicUrl(data.image_path)
     return { data, error }
   }
 
   // ---------------------------
-  // AVATAR UPLOAD (Supabase Storage)
+  // AVATAR UPLOAD
   // ---------------------------
   const uploadAvatar = async (file) => {
     const { user } = await getUser()
@@ -227,12 +260,10 @@ export const useSupabase = () => {
   }
 
   // ---------------------------
-  // TELEGRAM
+  // TELEGRAM (не трогаем)
   // ---------------------------
   const linkTelegramViaEdgeFunction = async (telegramAuthData) => {
-    const { data, error } = await supabase.functions.invoke('telegram-verify', {
-      body: telegramAuthData
-    })
+    const { data, error } = await supabase.functions.invoke('telegram-verify', { body: telegramAuthData })
     return { data, error }
   }
 
@@ -240,12 +271,7 @@ export const useSupabase = () => {
     const { user } = await getUser()
     if (!user) return { data: null, error: null }
 
-    const { data, error } = await supabase
-      .from('user_telegram')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
+    const { data, error } = await supabase.from('user_telegram').select('*').eq('user_id', user.id).maybeSingle()
     return { data: data ?? null, error }
   }
 
@@ -255,6 +281,7 @@ export const useSupabase = () => {
     searchEvents,
     getCategories,
     getEventPhotos,
+    createBusinessEvent,
 
     // auth
     getSession,

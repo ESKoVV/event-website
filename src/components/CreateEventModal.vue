@@ -1,0 +1,364 @@
+<template>
+  <teleport to="body">
+    <div v-if="open" class="root" @keydown.esc="close" tabindex="-1">
+      <div class="overlay" @click="close"></div>
+
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Добавить мероприятие">
+        <div class="head">
+          <div class="title">Добавить мероприятие</div>
+          <button class="x" @click="close" aria-label="Закрыть">✕</button>
+        </div>
+
+        <div class="body">
+          <div class="hint">
+            Мероприятие уйдёт в предложку и будет видно всем только после того, как админ поставит <b>is_published=true</b>.
+          </div>
+
+          <div class="grid">
+            <div class="field">
+              <div class="label">Название *</div>
+              <input class="input" v-model="form.title" placeholder="Например: Вечер настолок" />
+            </div>
+
+            <div class="field">
+              <div class="label">Дата и время *</div>
+              <input class="input" type="datetime-local" v-model="form.date_time_event" />
+            </div>
+
+            <div class="field">
+              <div class="label">Адрес</div>
+              <input class="input" v-model="form.address" placeholder="Город, улица, дом / или ссылка для онлайн" />
+            </div>
+
+            <div class="field">
+              <div class="label">Организатор</div>
+              <input class="input" v-model="form.organizer" placeholder="Имя/проект" />
+            </div>
+
+            <div class="field">
+              <div class="label">Цена (₽)</div>
+              <input class="input" type="number" min="0" inputmode="numeric" v-model="form.price" placeholder="0" />
+              <div class="mini">
+                <span class="badge" v-if="isFree">🆓 Бесплатно</span>
+              </div>
+            </div>
+
+            <div class="field inline">
+              <label class="check">
+                <input type="checkbox" v-model="form.is_online" />
+                <span class="ui"></span>
+                <span class="text">Онлайн (is_online)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="label">Категории</div>
+            <div class="tags">
+              <button
+                v-for="c in categories"
+                :key="c.id"
+                class="tag"
+                :class="{ active: selectedCategories.includes(c.name) }"
+                @click="toggleCategory(c.name)"
+                type="button"
+              >
+                {{ c.name }}
+              </button>
+            </div>
+            <div class="mini">Можно выбрать несколько.</div>
+          </div>
+
+          <div class="field">
+            <div class="label">Описание *</div>
+            <textarea class="textarea" v-model="form.description" placeholder="Опиши, что будет происходить"></textarea>
+          </div>
+
+          <div class="field">
+            <div class="label">Ссылка на фото (необязательно)</div>
+            <input class="input" v-model="form.photo_url" placeholder="https://..." />
+            <div class="mini">Если укажешь — мы добавим в event_photos как первое фото.</div>
+          </div>
+
+          <div v-if="error" class="error">{{ error }}</div>
+        </div>
+
+        <div class="foot">
+          <button class="btn secondary" @click="close">Отмена</button>
+          <button class="btn primary" :disabled="saving" @click="submit">
+            {{ saving ? 'Отправляю…' : 'Отправить' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </teleport>
+</template>
+
+<script>
+const trimOrNull = (v) => {
+  const s = String(v ?? '').trim()
+  return s ? s : null
+}
+
+export default {
+  name: 'CreateEventModal',
+  emits: ['close', 'created'],
+  props: {
+    open: { type: Boolean, default: false },
+    categories: { type: Array, default: () => [] },
+    createBusinessEvent: { type: Function, required: true } // (payload) => Promise<{data,error}>
+  },
+  data() {
+    return {
+      saving: false,
+      error: '',
+      selectedCategories: [],
+      form: {
+        title: '',
+        description: '',
+        date_time_event: '',
+        address: '',
+        organizer: '',
+        price: '0',
+        is_online: false,
+        photo_url: ''
+      }
+    }
+  },
+  computed: {
+    isFree() {
+      const n = Number(this.form.price)
+      return Number.isFinite(n) && n <= 0
+    }
+  },
+  watch: {
+    open(v) {
+      if (v) this.error = ''
+    }
+  },
+  methods: {
+    close() {
+      if (this.saving) return
+      this.$emit('close')
+    },
+    toggleCategory(name) {
+      const n = String(name || '').trim()
+      if (!n) return
+      const idx = this.selectedCategories.indexOf(n)
+      if (idx >= 0) this.selectedCategories.splice(idx, 1)
+      else this.selectedCategories.push(n)
+    },
+    async submit() {
+      this.error = ''
+
+      const title = trimOrNull(this.form.title)
+      const description = trimOrNull(this.form.description)
+      const dt = trimOrNull(this.form.date_time_event)
+
+      if (!title) return (this.error = 'Укажи название.')
+      if (!dt) return (this.error = 'Укажи дату и время.')
+      if (!description) return (this.error = 'Укажи описание.')
+
+      const priceNum = Number(this.form.price)
+      const price = Number.isFinite(priceNum) ? priceNum : 0
+      const is_free = price <= 0
+
+      const payload = {
+        title,
+        description,
+        date_time_event: dt, // datetime-local отдаёт ISO-подобную строку
+        address: trimOrNull(this.form.address),
+        organizer: trimOrNull(this.form.organizer),
+        price,
+        is_online: !!this.form.is_online,
+        is_free,
+        selectCategory: [...this.selectedCategories], // храним имена категорий как и раньше
+        photo_url: trimOrNull(this.form.photo_url)
+      }
+
+      this.saving = true
+      try {
+        const { data, error } = await this.createBusinessEvent(payload)
+        if (error) {
+          this.error = String(error.message || error)
+          return
+        }
+        this.$emit('created', data)
+        this.$emit('close')
+        // reset
+        this.selectedCategories = []
+        this.form = {
+          title: '',
+          description: '',
+          date_time_event: '',
+          address: '',
+          organizer: '',
+          price: '0',
+          is_online: false,
+          photo_url: ''
+        }
+      } finally {
+        this.saving = false
+      }
+    }
+  }
+}
+</script>
+
+<style scoped>
+.root { position: fixed; inset: 0; z-index: 10000; }
+.overlay { position: absolute; inset: 0; background: rgba(0,0,0,.38); backdrop-filter: blur(2px); }
+
+.modal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(760px, 94vw);
+  max-height: 90vh;
+  transform: translate(-50%, -50%);
+  background: #fff;
+  border: 1px solid #efefef;
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.head {
+  padding: 14px 14px;
+  border-bottom: 1px solid #f2f2f2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.title { font-weight: 900; font-size: 16px; }
+.x {
+  margin-left: auto;
+  border: 1px solid #efefef;
+  background: #fafafa;
+  border-radius: 12px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.body {
+  padding: 14px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hint {
+  background: #fcfcff;
+  border: 1px solid rgba(138,117,227,.18);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-size: 13px;
+  opacity: .9;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .grid { grid-template-columns: 1fr; }
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field.inline { justify-content: flex-end; }
+
+.label { font-size: 12px; font-weight: 800; opacity: .7; }
+
+.input, .textarea {
+  border: 1px solid #efefef;
+  border-radius: 12px;
+  padding: 10px 10px;
+  font-size: 14px;
+  background: #fff;
+  outline: none;
+}
+.input:focus, .textarea:focus {
+  border-color: rgba(138,117,227,.55);
+  box-shadow: 0 0 0 3px rgba(138,117,227,.12);
+}
+.textarea { min-height: 120px; resize: vertical; }
+
+.mini { font-size: 12px; opacity: .7; }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(138,117,227,.12);
+  border: 1px solid rgba(138,117,227,.22);
+  width: fit-content;
+}
+
+/* tags */
+.tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag {
+  border: 1px solid #efefef;
+  background: #fff;
+  border-radius: 999px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tag.active {
+  background: #8a75e3;
+  border-color: #8a75e3;
+  color: #fff;
+}
+
+/* toggle */
+.check { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.check input { display: none; }
+.ui {
+  width: 44px; height: 26px; border-radius: 999px;
+  border: 1px solid #e9e9e9; background: #f3f3f3;
+  position: relative; transition: background 180ms ease, border-color 180ms ease;
+}
+.ui::after {
+  content: '';
+  width: 22px; height: 22px; border-radius: 999px;
+  background: #fff; position: absolute; top: 1px; left: 1px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.08);
+  transition: transform 180ms ease;
+}
+.check input:checked + .ui {
+  background: rgba(138,117,227,.85);
+  border-color: rgba(138,117,227,.55);
+}
+.check input:checked + .ui::after { transform: translateX(18px); }
+.text { font-weight: 800; font-size: 13px; }
+
+.error {
+  color: #d9534f;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.foot {
+  padding: 14px;
+  border-top: 1px solid #f2f2f2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn {
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-weight: 900;
+  cursor: pointer;
+  border: none;
+}
+.btn.secondary { background: #efefef; }
+.btn.primary { background: #8a75e3; color: #fff; }
+.btn:disabled { opacity: .6; cursor: not-allowed; }
+</style>

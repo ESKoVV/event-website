@@ -1,24 +1,23 @@
 <template>
-  <div class="filters-shell">
-    <div class="filters-head">
-      <div class="filters-title">Фильтры</div>
-
-      <button class="reset-btn" @click="$emit('reset')">Сбросить всё</button>
+  <div class="panel">
+    <div class="head">
+      <div class="title">Фильтры</div>
+      <button class="reset" @click="$emit('reset')">Сбросить</button>
     </div>
 
     <!-- Categories -->
-    <div class="filter-block">
-      <div class="filter-label">Категории</div>
+    <div class="block">
+      <div class="label">Категории</div>
 
-      <div class="tags-content">
-        <button class="tag-btn" :class="{ active: isAllCategoriesActive }" @click="selectAllCategories">
+      <div class="tags">
+        <button class="tag" :class="{ active: isAllCategoriesActive }" @click="selectAllCategories">
           Все
         </button>
 
         <button
           v-for="cat in categories"
           :key="cat.id"
-          class="tag-btn"
+          class="tag"
           :class="{ active: selectedCategoryNames.includes(cat.name) }"
           @click="toggleCategory(cat.name)"
         >
@@ -27,31 +26,29 @@
       </div>
     </div>
 
-    <!-- Online checkbox -->
-    <div class="filter-inline">
+    <!-- Online -->
+    <div class="block inline">
       <label class="check">
         <input type="checkbox" :checked="onlineOnly" @change="onToggleOnline" />
-        <span class="check-ui"></span>
-        <span class="check-text">Только онлайн</span>
+        <span class="ui"></span>
+        <span class="text">Только онлайн</span>
       </label>
-
-      <div class="mini-hint">Покажет только мероприятия, где <b>is_online = true</b>.</div>
+      <div class="hint">Показывает только мероприятия, где <b>is_online = true</b>.</div>
     </div>
 
-    <!-- Price + Date -->
-    <div class="filter-grid">
+    <div class="grid">
       <!-- PRICE -->
-      <div class="filter-card">
-        <div class="filter-card-title">Цена</div>
+      <div class="card">
+        <div class="cardTitle">Цена</div>
 
-        <div class="segmented">
-          <button class="seg-btn" :class="{ active: priceMode === 'all' }" @click="setPriceMode('all')">
+        <div class="seg">
+          <button class="segBtn" :class="{ active: priceMode === 'all' }" @click="setPriceMode('all')">
             Любая
           </button>
-          <button class="seg-btn" :class="{ active: priceMode === 'free' }" @click="setPriceMode('free')">
+          <button class="segBtn" :class="{ active: priceMode === 'free' }" @click="setPriceMode('free')">
             Бесплатно
           </button>
-          <button class="seg-btn" :class="{ active: priceMode === 'custom' }" @click="setPriceMode('custom')">
+          <button class="segBtn" :class="{ active: priceMode === 'custom' }" @click="setPriceMode('custom')">
             Свой диапазон
           </button>
         </div>
@@ -60,18 +57,10 @@
           <button class="chip" :class="{ active: priceMode === '100_1000' }" @click="setPriceMode('100_1000')">
             100–1000
           </button>
-          <button
-            class="chip"
-            :class="{ active: priceMode === '1000_3000' }"
-            @click="setPriceMode('1000_3000')"
-          >
+          <button class="chip" :class="{ active: priceMode === '1000_3000' }" @click="setPriceMode('1000_3000')">
             1000–3000
           </button>
-          <button
-            class="chip"
-            :class="{ active: priceMode === '3000_10000' }"
-            @click="setPriceMode('3000_10000')"
-          >
+          <button class="chip" :class="{ active: priceMode === '3000_10000' }" @click="setPriceMode('3000_10000')">
             3000–10000
           </button>
           <button class="chip" :class="{ active: priceMode === 'gt_10000' }" @click="setPriceMode('gt_10000')">
@@ -79,9 +68,9 @@
           </button>
         </div>
 
-        <div v-if="priceMode === 'custom'" class="range-row">
+        <div v-if="priceMode === 'custom'" class="row">
           <div class="field">
-            <div class="field-label">от</div>
+            <div class="fieldLabel">от</div>
             <input
               class="input"
               type="number"
@@ -92,8 +81,9 @@
               @input="$emit('update:customPriceMin', $event.target.value)"
             />
           </div>
+
           <div class="field">
-            <div class="field-label">до</div>
+            <div class="fieldLabel">до</div>
             <input
               class="input"
               type="number"
@@ -107,32 +97,32 @@
         </div>
 
         <div class="hint">
-          Считаем по <b>price</b>. Если <b>is_free=true</b> или price=0 — это “Бесплатно”.
+          Если <b>is_free=true</b> или <b>price=0</b> — это “Бесплатно”.
         </div>
       </div>
 
       <!-- DATE -->
-      <div class="filter-card">
-        <div class="filter-card-title">Дата</div>
+      <div class="card">
+        <div class="cardTitle">Дата</div>
 
-        <div class="segmented">
-          <button class="seg-btn" :class="{ active: dateMode === 'all' }" @click="setDateMode('all')">
+        <div class="seg">
+          <button class="segBtn" :class="{ active: dateMode === 'all' }" @click="setDateMode('all')">
             Всё время
           </button>
-          <button class="seg-btn" :class="{ active: dateMode === 'on' }" @click="setDateMode('on')">
+          <button class="segBtn" :class="{ active: dateMode === 'on' }" @click="setDateMode('on')">
             На дату
           </button>
-          <button class="seg-btn" :class="{ active: dateMode === 'range' }" @click="setDateMode('range')">
+          <button class="segBtn" :class="{ active: dateMode === 'range' }" @click="setDateMode('range')">
             Диапазон
           </button>
         </div>
 
         <div class="chips">
           <button class="chip" :class="{ active: dateMode === 'after' }" @click="setDateMode('after')">
-            После даты
+            После
           </button>
           <button class="chip" :class="{ active: dateMode === 'before' }" @click="setDateMode('before')">
-            До даты
+            До
           </button>
           <button class="chip" :class="{ active: dateMode === 'next7' }" @click="setDateMode('next7')">
             След. 7 дней
@@ -142,16 +132,16 @@
           </button>
         </div>
 
-        <div v-if="dateMode === 'on'" class="calendar-row">
+        <div v-if="dateMode === 'on'" class="row">
           <div class="field grow">
-            <div class="field-label">Выбери дату</div>
+            <div class="fieldLabel">Дата</div>
             <input class="input" type="date" :value="dateOn" @input="$emit('update:dateOn', $event.target.value)" />
           </div>
         </div>
 
-        <div v-else-if="dateMode === 'range'" class="calendar-row">
+        <div v-else-if="dateMode === 'range'" class="row">
           <div class="field grow">
-            <div class="field-label">с</div>
+            <div class="fieldLabel">с</div>
             <input
               class="input"
               type="date"
@@ -160,14 +150,14 @@
             />
           </div>
           <div class="field grow">
-            <div class="field-label">по</div>
+            <div class="fieldLabel">по</div>
             <input class="input" type="date" :value="dateTo" @input="$emit('update:dateTo', $event.target.value)" />
           </div>
         </div>
 
-        <div v-else-if="dateMode === 'after'" class="calendar-row">
+        <div v-else-if="dateMode === 'after'" class="row">
           <div class="field grow">
-            <div class="field-label">После</div>
+            <div class="fieldLabel">После</div>
             <input
               class="input"
               type="date"
@@ -177,9 +167,9 @@
           </div>
         </div>
 
-        <div v-else-if="dateMode === 'before'" class="calendar-row">
+        <div v-else-if="dateMode === 'before'" class="row">
           <div class="field grow">
-            <div class="field-label">До</div>
+            <div class="fieldLabel">До</div>
             <input
               class="input"
               type="date"
@@ -189,7 +179,9 @@
           </div>
         </div>
 
-        <div class="hint">Фильтрация по <b>date_time_event</b> (дата мероприятия).</div>
+        <div class="hint">
+          Фильтрация по <b>date_time_event</b>.
+        </div>
       </div>
     </div>
   </div>
@@ -201,6 +193,7 @@ export default {
   emits: [
     'reset',
     'update:selectedCategoryNames',
+    'update:onlineOnly',
     'update:priceMode',
     'update:customPriceMin',
     'update:customPriceMax',
@@ -208,14 +201,15 @@ export default {
     'update:dateOn',
     'update:dateFrom',
     'update:dateTo',
-    'update:datePivot',
-    'update:onlineOnly'
+    'update:datePivot'
   ],
   props: {
     categories: { type: Array, default: () => [] },
 
     selectedCategoryNames: { type: Array, default: () => [] },
     isAllCategoriesActive: { type: Boolean, default: true },
+
+    onlineOnly: { type: Boolean, default: false },
 
     priceMode: { type: String, default: 'all' },
     customPriceMin: { type: String, default: '' },
@@ -225,9 +219,7 @@ export default {
     dateOn: { type: String, default: '' },
     dateFrom: { type: String, default: '' },
     dateTo: { type: String, default: '' },
-    datePivot: { type: String, default: '' },
-
-    onlineOnly: { type: Boolean, default: false }
+    datePivot: { type: String, default: '' }
   },
   methods: {
     selectAllCategories() {
@@ -242,42 +234,38 @@ export default {
       else next.push(n)
       this.$emit('update:selectedCategoryNames', next)
     },
+    onToggleOnline(e) {
+      this.$emit('update:onlineOnly', !!e.target.checked)
+    },
     setPriceMode(mode) {
       this.$emit('update:priceMode', mode)
     },
     setDateMode(mode) {
       this.$emit('update:dateMode', mode)
-    },
-    onToggleOnline(e) {
-      this.$emit('update:onlineOnly', !!e.target.checked)
     }
   }
 }
 </script>
 
 <style scoped>
-.filters-shell {
-  background: #fff;
-  border: 1px solid #efefef;
-  border-radius: 20px;
-  padding: 14px;
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.04);
-  margin-bottom: 14px;
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.filters-head {
+.head {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 10px;
 }
 
-.filters-title {
+.title {
   font-weight: 900;
   font-size: 16px;
 }
 
-.reset-btn {
+.reset {
   margin-left: auto;
   border: 1px solid #efefef;
   background: #fafafa;
@@ -286,31 +274,36 @@ export default {
   cursor: pointer;
   font-size: 13px;
 }
-.reset-btn:hover {
+.reset:hover {
   background: #f3f3f3;
 }
 
-.filter-block {
+.block {
   border: 1px solid #f2f2f2;
   border-radius: 16px;
   padding: 12px;
   background: #fcfcfc;
 }
 
-.filter-label {
+.inline {
+  display: grid;
+  gap: 8px;
+}
+
+.label {
   font-weight: 800;
   font-size: 13px;
   opacity: 0.7;
   margin-bottom: 10px;
 }
 
-.tags-content {
+.tags {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-.tag-btn {
+.tag {
   border: 1px solid #efefef;
   background: #fafafa;
   border-radius: 999px;
@@ -320,25 +313,13 @@ export default {
   white-space: nowrap;
 }
 
-.tag-btn.active {
+.tag.active {
   background: #8a75e3;
   border-color: #8a75e3;
   color: #fff;
 }
 
-/* Online checkbox row */
-.filter-inline {
-  margin-top: 12px;
-  border: 1px solid #f2f2f2;
-  border-radius: 16px;
-  padding: 12px;
-  background: #fcfcfc;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
+/* Toggle */
 .check {
   display: inline-flex;
   align-items: center;
@@ -346,12 +327,10 @@ export default {
   cursor: pointer;
   user-select: none;
 }
-
 .check input {
   display: none;
 }
-
-.check-ui {
+.ui {
   width: 44px;
   height: 26px;
   border-radius: 999px;
@@ -360,8 +339,7 @@ export default {
   position: relative;
   transition: background 180ms ease, border-color 180ms ease;
 }
-
-.check-ui::after {
+.ui::after {
   content: '';
   width: 22px;
   height: 22px;
@@ -370,57 +348,47 @@ export default {
   position: absolute;
   top: 1px;
   left: 1px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
   transition: transform 180ms ease;
 }
-
-.check input:checked + .check-ui {
+.check input:checked + .ui {
   background: rgba(138, 117, 227, 0.85);
   border-color: rgba(138, 117, 227, 0.55);
 }
-
-.check input:checked + .check-ui::after {
+.check input:checked + .ui::after {
   transform: translateX(18px);
 }
-
-.check-text {
+.text {
   font-weight: 800;
   font-size: 13px;
 }
 
-.mini-hint {
-  font-size: 12px;
-  opacity: 0.7;
-}
-
-/* Grid for price/date */
-.filter-grid {
+.grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 12px;
-  margin-top: 12px;
 }
 
-.filter-card {
+.card {
   border: 1px solid #f2f2f2;
   border-radius: 16px;
   padding: 12px;
   background: #fcfcfc;
 }
 
-.filter-card-title {
+.cardTitle {
   font-weight: 900;
   margin-bottom: 10px;
 }
 
-.segmented {
+.seg {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
 
-.seg-btn {
+.segBtn {
   border: 1px solid #efefef;
   background: #fff;
   border-radius: 12px;
@@ -428,8 +396,7 @@ export default {
   cursor: pointer;
   font-size: 13px;
 }
-
-.seg-btn.active {
+.segBtn.active {
   background: rgba(138, 117, 227, 0.12);
   border-color: rgba(138, 117, 227, 0.4);
 }
@@ -449,15 +416,13 @@ export default {
   cursor: pointer;
   font-size: 13px;
 }
-
 .chip.active {
   background: #8a75e3;
   border-color: #8a75e3;
   color: #fff;
 }
 
-.range-row,
-.calendar-row {
+.row {
   display: flex;
   gap: 10px;
   align-items: flex-end;
@@ -469,13 +434,12 @@ export default {
   gap: 6px;
   min-width: 120px;
 }
-
 .field.grow {
   flex: 1;
   min-width: 160px;
 }
 
-.field-label {
+.fieldLabel {
   font-size: 12px;
   opacity: 0.7;
   font-weight: 700;
@@ -489,7 +453,6 @@ export default {
   background: #fff;
   outline: none;
 }
-
 .input:focus {
   border-color: rgba(138, 117, 227, 0.55);
   box-shadow: 0 0 0 3px rgba(138, 117, 227, 0.12);
@@ -500,11 +463,5 @@ export default {
   font-size: 12px;
   opacity: 0.7;
   line-height: 1.25;
-}
-
-@media (max-width: 880px) {
-  .filter-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

@@ -1,22 +1,24 @@
 <template>
   <div class="page">
     <div class="container">
-      <!-- Filters moved to a separate component -->
-      <FiltersPanel
-        :categories="categories"
-        :is-all-categories-active="isAllCategoriesActive"
-        v-model:selectedCategoryNames="selectedCategoryNames"
-        v-model:priceMode="priceMode"
-        v-model:customPriceMin="customPriceMin"
-        v-model:customPriceMax="customPriceMax"
-        v-model:dateMode="dateMode"
-        v-model:dateOn="dateOn"
-        v-model:dateFrom="dateFrom"
-        v-model:dateTo="dateTo"
-        v-model:datePivot="datePivot"
-        v-model:onlineOnly="onlineOnly"
-        @reset="resetAllFilters"
-      />
+      <!-- TOP BAR -->
+      <div class="topbar">
+        <div class="topbar-left">
+          <div class="page-title">Мероприятия</div>
+          <div class="page-sub">
+            <span v-if="initialLoaded">{{ filteredEvents.length }}</span>
+            <span v-else>…</span>
+          </div>
+        </div>
+
+        <button class="filter-btn" @click="openDrawer" aria-label="Открыть меню">
+          <!-- funnel icon -->
+          <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
+            <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
+          </svg>
+          <span class="filter-btn-text">Фильтры</span>
+        </button>
+      </div>
 
       <!-- STATES -->
       <div v-if="!initialLoaded" class="state">
@@ -30,16 +32,12 @@
         <button class="retry" @click="reload">Повторить</button>
       </div>
 
-      <div v-else-if="filteredEvents.length === 0" class="state">Мероприятия не найдены</div>
+      <div v-else-if="filteredEvents.length === 0" class="state">
+        Мероприятия не найдены
+      </div>
 
       <!-- EVENTS LIST -->
       <div v-else class="events-shell">
-        <div class="events-title">
-          Мероприятия
-          <span class="events-count">{{ filteredEvents.length }}</span>
-          <span v-if="progressiveLoading" class="events-progress">подгружаю…</span>
-        </div>
-
         <TransitionGroup name="list" tag="div" class="events-list">
           <EventCard
             v-for="event in filteredEvents"
@@ -54,16 +52,85 @@
       </div>
     </div>
 
+    <!-- DRAWER (Filters + Business) -->
+    <teleport to="body">
+      <div v-if="drawerOpen" class="drawer-root" @keydown.esc="closeDrawer" tabindex="-1">
+        <div class="overlay" @click="closeDrawer"></div>
+
+        <aside class="drawer" role="dialog" aria-modal="true" aria-label="Меню">
+          <div class="drawer-head">
+            <div class="drawer-title">Меню</div>
+            <button class="close-btn" @click="closeDrawer" aria-label="Закрыть">✕</button>
+          </div>
+
+          <div class="drawer-body">
+            <!-- Business block -->
+            <div class="biz-card">
+              <div class="biz-top">
+                <div class="biz-title">Business аккаунт</div>
+                <span v-if="isBusiness" class="biz-badge">Активен</span>
+                <span v-else class="biz-badge off">Не активен</span>
+              </div>
+
+              <div class="biz-text" v-if="isBusiness">
+                Ты можешь отправлять свои мероприятия в предложку. Они появятся после подтверждения админом.
+              </div>
+              <div class="biz-text" v-else>
+                Business даёт возможность предлагать мероприятия. Оплату подключим позже — пока статус меняется вручную.
+              </div>
+
+              <button v-if="isBusiness" class="biz-btn" @click="openCreateModal">
+                ➕ Добавить мероприятие
+              </button>
+            </div>
+
+            <!-- Filters panel (your existing component) -->
+            <FiltersPanel
+              :categories="categories"
+              :is-all-categories-active="isAllCategoriesActive"
+              v-model:selectedCategoryNames="selectedCategoryNames"
+              v-model:onlineOnly="onlineOnly"
+              v-model:priceMode="priceMode"
+              v-model:customPriceMin="customPriceMin"
+              v-model:customPriceMax="customPriceMax"
+              v-model:dateMode="dateMode"
+              v-model:dateOn="dateOn"
+              v-model:dateFrom="dateFrom"
+              v-model:dateTo="dateTo"
+              v-model:datePivot="datePivot"
+              @reset="resetAllFilters"
+            />
+
+            <div v-if="toast" class="toast">{{ toast }}</div>
+          </div>
+
+          <div class="drawer-foot">
+            <button class="apply-btn" @click="closeDrawer">Показать</button>
+          </div>
+        </aside>
+      </div>
+    </teleport>
+
+    <!-- Create event modal -->
+    <CreateEventModal
+      :open="createOpen"
+      :categories="categories"
+      :create-business-event="createBusinessEvent"
+      @close="createOpen = false"
+      @created="onCreatedDraft"
+    />
+
     <!-- PHOTO MODAL -->
     <EventPhotoModal v-if="photoModalUrl" :url="photoModalUrl" @close="photoModalUrl = ''" />
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import EventCard from '../../components/EventCard.vue'
 import EventPhotoModal from '../../components/EventPhotoModal.vue'
 import FiltersPanel from '../../components/FiltersPanel.vue'
+import CreateEventModal from '../../components/CreateEventModal.vue'
 import { useSupabase } from '../../composables/useSupabase'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -81,13 +148,6 @@ const withRetry = async (fn, tries = 3) => {
   throw lastErr
 }
 
-/**
- * Нормализуем event.selectCategory -> МАССИВ НАЗВАНИЙ
- * Поддержка:
- * - text[] => ["Спорт","Хобби"]
- * - "Спорт,Хобби" / "Спорт;Хобби"
- * - id / [id,id] -> подставим name по categoryMap
- */
 const normalizeCategoryNames = (raw, categoryMap) => {
   const map = categoryMap || {}
 
@@ -102,21 +162,21 @@ const normalizeCategoryNames = (raw, categoryMap) => {
   }
 
   if (!raw) return []
-
-  if (Array.isArray(raw)) {
-    return Array.from(new Set(raw.map(toName).filter(Boolean)))
-  }
+  if (Array.isArray(raw)) return Array.from(new Set(raw.map(toName).filter(Boolean)))
 
   if (typeof raw === 'string') {
     const s = raw.trim()
     if (!s) return []
-    const parts = s
-      .split(/[,;|]+/g)
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .map(toName)
-      .filter(Boolean)
-    return Array.from(new Set(parts))
+    return Array.from(
+      new Set(
+        s
+          .split(/[,;|]+/g)
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .map(toName)
+          .filter(Boolean)
+      )
+    )
   }
 
   const one = toName(raw)
@@ -148,54 +208,117 @@ const parseDateInput = (yyyy_mm_dd) => {
 
 export default {
   name: 'HomeView',
-  components: { EventCard, EventPhotoModal, FiltersPanel },
+  components: { EventCard, EventPhotoModal, FiltersPanel, CreateEventModal },
   props: {
     globalSearchTerm: { type: String, default: '' }
   },
   setup(props) {
-    const { getEvents, getCategories, getEventPhotos } = useSupabase()
+    const {
+      getEvents,
+      getCategories,
+      getEventPhotos,
+      getMyPublicUser,
+      createBusinessEvent
+    } = useSupabase()
 
     const initialLoaded = ref(false)
     const error = ref(null)
 
     const allEvents = ref([])
     const visibleEvents = ref([])
-
-    const progressiveLoading = ref(false)
-    let progressiveTimer = null
-
     const photos = ref({})
 
     const categories = ref([])
-    const categoryMap = ref({}) // id -> name
+    const categoryMap = ref({})
 
-    // Categories (names)
+    // profile
+    const myProfile = ref(null)
+    const isBusiness = computed(() => myProfile.value?.It_business === true)
+
+    // filters state
     const selectedCategoryNames = ref([])
-    const isAllCategoriesActive = computed(() => selectedCategoryNames.value.length === 0)
-
-    // Online checkbox
     const onlineOnly = ref(false)
 
-    // Price
     const priceMode = ref('all')
     const customPriceMin = ref('')
     const customPriceMax = ref('')
 
-    // Date
     const dateMode = ref('all')
     const dateOn = ref('')
     const dateFrom = ref('')
     const dateTo = ref('')
     const datePivot = ref('')
 
+    const isAllCategoriesActive = computed(() => selectedCategoryNames.value.length === 0)
+
     const photosLoading = ref(false)
     const stopPhotosLoading = ref(false)
 
-    const photoModalUrl = ref('')
+    // drawer + modal
+    const drawerOpen = ref(false)
+    const createOpen = ref(false)
 
+    const toast = ref('')
+    let toastTimer = null
+    const showToast = (msg) => {
+      toast.value = msg
+      if (toastTimer) clearTimeout(toastTimer)
+      toastTimer = setTimeout(() => (toast.value = ''), 3200)
+    }
+
+    // progressive
+    let progressiveTimer = null
+    const stopProgressive = () => {
+      if (progressiveTimer) {
+        clearInterval(progressiveTimer)
+        progressiveTimer = null
+      }
+    }
+
+    const startProgressive = (list) => {
+      stopProgressive()
+      visibleEvents.value = []
+      const src = Array.isArray(list) ? list : []
+      if (!src.length) return
+
+      visibleEvents.value.push(src[0])
+      let i = 1
+      progressiveTimer = setInterval(() => {
+        if (i >= src.length) {
+          stopProgressive()
+          return
+        }
+        visibleEvents.value.push(src[i])
+        i++
+      }, 140)
+    }
+
+    const photoModalUrl = ref('')
     const openPhoto = (url) => {
       if (!url) return
       photoModalUrl.value = url
+    }
+
+    const openDrawer = async () => {
+      drawerOpen.value = true
+      await nextTick()
+      document.documentElement.style.overflow = 'hidden'
+      document.body.style.overflow = 'hidden'
+    }
+
+    const closeDrawer = () => {
+      drawerOpen.value = false
+      document.documentElement.style.overflow = ''
+      document.body.style.overflow = ''
+    }
+
+    const openCreateModal = () => {
+      if (!isBusiness.value) return
+      createOpen.value = true
+    }
+
+    const onCreatedDraft = () => {
+      showToast('✅ Мероприятие отправлено. Оно появится после подтверждения админом.')
     }
 
     const resetAllFilters = () => {
@@ -213,15 +336,13 @@ export default {
       datePivot.value = ''
     }
 
-    // ---------- filtering ----------
-    const matchesSelectedCategories = (event) => {
+    // filtering
+    const matchesCategories = (event) => {
       if (selectedCategoryNames.value.length === 0) return true
-
       const eventCats = normalizeCategoryNames(event?.selectCategory, categoryMap.value)
       if (!eventCats.length) return false
-
-      const selectedSet = new Set(selectedCategoryNames.value)
-      return eventCats.some((c) => selectedSet.has(c))
+      const set = new Set(selectedCategoryNames.value)
+      return eventCats.some((c) => set.has(c))
     }
 
     const matchesOnline = (event) => {
@@ -241,7 +362,6 @@ export default {
       if (mode === 'all') return true
 
       const price = getEventPrice(event)
-
       if (mode === 'free') return price === 0
       if (price === null) return false
 
@@ -253,7 +373,6 @@ export default {
       if (mode === 'custom') {
         const min = customPriceMin.value === '' ? null : toNumberOrNull(customPriceMin.value)
         const max = customPriceMax.value === '' ? null : toNumberOrNull(customPriceMax.value)
-
         const okMin = min === null ? true : price >= min
         const okMax = max === null ? true : price <= max
         return okMin && okMax
@@ -316,71 +435,38 @@ export default {
     const matchesSearch = (event) => {
       const term = (props.globalSearchTerm || '').trim().toLowerCase()
       if (!term) return true
-
       const t = (event.title || '').toLowerCase()
-      const d = (event.description || '').toLowerCase()
+      const desc = (event.description || '').toLowerCase()
       const a = (event.address || '').toLowerCase()
       const o = (event.organizer || '').toLowerCase()
-      return t.includes(term) || d.includes(term) || a.includes(term) || o.includes(term)
+      return t.includes(term) || desc.includes(term) || a.includes(term) || o.includes(term)
     }
 
     const filteredEvents = computed(() => {
       return visibleEvents.value.filter(
-        (e) =>
-          matchesSelectedCategories(e) &&
-          matchesOnline(e) &&
-          matchesPrice(e) &&
-          matchesDate(e) &&
-          matchesSearch(e)
+        (e) => matchesCategories(e) && matchesOnline(e) && matchesPrice(e) && matchesDate(e) && matchesSearch(e)
       )
     })
 
-    // ---------- progressive loading ----------
-    const stopProgressive = () => {
-      progressiveLoading.value = false
-      if (progressiveTimer) {
-        clearInterval(progressiveTimer)
-        progressiveTimer = null
-      }
-    }
-
-    const startProgressive = (source) => {
-      stopProgressive()
-      visibleEvents.value = []
-
-      const list = Array.isArray(source) ? source : []
-      if (!list.length) return
-
-      progressiveLoading.value = true
-      visibleEvents.value.push(list[0])
-
-      let i = 1
-      progressiveTimer = setInterval(() => {
-        if (i >= list.length) {
-          stopProgressive()
-          return
-        }
-        visibleEvents.value.push(list[i])
-        i++
-      }, 140)
-    }
-
-    // ---------- data loading ----------
+    // loading
     const loadCategories = async () => {
       try {
         const { data, error: err } = await withRetry(() => getCategories())
         if (err) throw err
-
         categories.value = data ?? []
         categoryMap.value = (categories.value || []).reduce((acc, c) => {
           acc[String(c.id)] = c.name
           return acc
         }, {})
       } catch (e) {
-        console.warn('Categories load error:', e)
         categories.value = []
         categoryMap.value = {}
       }
+    }
+
+    const loadProfile = async () => {
+      const { data } = await getMyPublicUser()
+      myProfile.value = data
     }
 
     const loadEventsProgressive = async () => {
@@ -398,7 +484,7 @@ export default {
 
         startProgressive(allEvents.value)
 
-        // photos in background
+        // photos background
         photos.value = {}
         stopPhotosLoading.value = false
 
@@ -424,13 +510,12 @@ export default {
             }
             photos.value = next
           } catch (e) {
-            console.warn('Photos batch load error:', e)
+            // ignore
           }
 
           await sleep(120)
         }
       } catch (e) {
-        console.error('HomeView load error:', e)
         allEvents.value = []
         visibleEvents.value = []
         photos.value = {}
@@ -442,32 +527,38 @@ export default {
     }
 
     const reload = async () => {
+      await loadProfile()
       await loadEventsProgressive()
     }
 
     onMounted(async () => {
       await loadCategories()
+      await loadProfile()
       await loadEventsProgressive()
     })
 
     onBeforeUnmount(() => {
       stopProgressive()
       stopPhotosLoading.value = true
+      if (toastTimer) clearTimeout(toastTimer)
+      document.documentElement.style.overflow = ''
+      document.body.style.overflow = ''
     })
 
     return {
       initialLoaded,
       error,
 
-      photos,
       categories,
       categoryMap,
+
+      myProfile,
+      isBusiness,
 
       selectedCategoryNames,
       isAllCategoriesActive,
 
       onlineOnly,
-
       priceMode,
       customPriceMin,
       customPriceMax,
@@ -478,12 +569,25 @@ export default {
       dateTo,
       datePivot,
 
-      filteredEvents,
+      photos,
       photosLoading,
-      progressiveLoading,
+
+      filteredEvents,
+
+      drawerOpen,
+      openDrawer,
+      closeDrawer,
+
+      createOpen,
+      openCreateModal,
+
+      createBusinessEvent,
+      onCreatedDraft,
 
       resetAllFilters,
       reload,
+
+      toast,
 
       photoModalUrl,
       openPhoto
@@ -493,64 +597,44 @@ export default {
 </script>
 
 <style scoped>
-.page {
-  padding: 16px 0 40px;
-}
+.page { padding: 16px 0 40px; }
+.container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
 
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
+/* TOPBAR */
+.topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.topbar-left { display: flex; flex-direction: column; gap: 2px; }
+.page-title { font-weight: 900; font-size: 18px; }
+.page-sub { font-size: 12px; opacity: 0.65; font-weight: 700; }
+
+.filter-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #efefef;
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
 }
+.filter-btn:hover { background: #fafafa; }
+.filter-icon { width: 18px; height: 18px; opacity: 0.9; }
+.filter-btn-text { font-size: 13px; font-weight: 800; }
 
 /* STATES */
-.state {
-  display: grid;
-  place-items: center;
-  gap: 10px;
-  padding: 40px 0;
-  opacity: 0.75;
-  text-align: center;
-}
-
-.state.error {
-  opacity: 1;
-  color: #d9534f;
-}
-
-.error-title {
-  font-weight: 800;
-}
-
-.error-sub {
-  font-size: 12px;
-  opacity: 0.8;
-  max-width: 680px;
-}
-
-.retry {
-  margin-top: 8px;
-  border: none;
-  border-radius: 12px;
-  padding: 10px 14px;
-  cursor: pointer;
-  background: #efefef;
-}
+.state { display: grid; place-items: center; gap: 10px; padding: 40px 0; opacity: 0.75; text-align: center; }
+.state.error { opacity: 1; color: #d9534f; }
+.error-title { font-weight: 800; }
+.error-sub { font-size: 12px; opacity: 0.8; max-width: 680px; }
+.retry { margin-top: 8px; border: none; border-radius: 12px; padding: 10px 14px; cursor: pointer; background: #efefef; }
 
 .spinner {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 3px solid #eee;
-  border-top-color: #8a75e3;
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid #eee; border-top-color: #8a75e3;
   animation: spin 0.8s linear infinite;
 }
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* EVENTS */
 .events-shell {
@@ -558,45 +642,106 @@ export default {
   border: 1px solid #efefef;
   border-radius: 18px;
   padding: 14px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
 }
+.events-list { display: flex; flex-direction: column; gap: 12px; }
 
-.events-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 900;
-  margin-bottom: 12px;
-}
+/* cards animation */
+.list-enter-active, .list-leave-active { transition: opacity 240ms ease, transform 240ms ease; }
+.list-enter-from, .list-leave-to { opacity: 0; transform: translateY(8px); }
 
-.events-count {
-  font-size: 12px;
-  opacity: 0.6;
-  font-weight: 700;
-}
+/* DRAWER */
+.drawer-root { position: fixed; inset: 0; z-index: 9999; }
+.overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.35); backdrop-filter: blur(2px); }
 
-.events-progress {
-  font-size: 12px;
-  opacity: 0.55;
-  font-weight: 700;
-  margin-left: auto;
-}
-
-.events-list {
+.drawer {
+  position: absolute; top: 0; right: 0;
+  height: 100%;
+  width: min(420px, 92vw);
+  background: #fff;
+  border-left: 1px solid #efefef;
+  box-shadow: -10px 0 30px rgba(0,0,0,0.12);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  animation: slideIn 180ms ease;
+}
+@keyframes slideIn { from { transform: translateX(18px); opacity: .7; } to { transform: translateX(0); opacity: 1; } }
+
+.drawer-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid #f2f2f2;
+}
+.drawer-title { font-weight: 900; font-size: 16px; }
+.close-btn {
+  margin-left: auto;
+  border: 1px solid #efefef;
+  background: #fafafa;
+  border-radius: 12px;
+  padding: 8px 10px;
+  cursor: pointer;
 }
 
-/* плавное появление карточек */
-.list-enter-active,
-.list-leave-active {
-  transition: opacity 240ms ease, transform 240ms ease;
-}
+.drawer-body { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.drawer-foot { padding: 14px; border-top: 1px solid #f2f2f2; display: flex; justify-content: flex-end; }
 
-.list-enter-from,
-.list-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
+.apply-btn {
+  border: none;
+  background: #8a75e3;
+  color: #fff;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.apply-btn:hover { filter: brightness(0.97); }
+
+/* Business card */
+.biz-card {
+  background: #fcfcff;
+  border: 1px solid rgba(138,117,227,.18);
+  border-radius: 16px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+.biz-top { display: flex; align-items: center; gap: 10px; }
+.biz-title { font-weight: 900; }
+.biz-badge {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0, 200, 120, .12);
+  border: 1px solid rgba(0, 200, 120, .22);
+}
+.biz-badge.off {
+  background: rgba(180,180,180,.16);
+  border-color: rgba(180,180,180,.28);
+}
+.biz-text { font-size: 12px; opacity: .8; line-height: 1.25; }
+.biz-btn {
+  border: none;
+  border-radius: 14px;
+  padding: 11px 12px;
+  font-weight: 900;
+  cursor: pointer;
+  background: #8a75e3;
+  color: #fff;
+}
+.biz-btn:hover { filter: brightness(.98); }
+
+/* toast */
+.toast {
+  position: sticky;
+  bottom: 10px;
+  background: #111;
+  color: #fff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 800;
+  font-size: 13px;
+  opacity: .92;
 }
 </style>
