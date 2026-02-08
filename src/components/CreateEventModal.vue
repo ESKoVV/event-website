@@ -269,10 +269,7 @@ export default {
   background: #fff;
   outline: none;
 }
-.input:focus, .textarea:focus {
-  border-color: rgba(138,117,227,.55);
-  box-shadow: 0 0 0 3px rgba(138,117,227,.12);
-}
+.input:focus, .textarea:focus { border-color: rgba(138,117,227,.55); box-shadow: 0 0 0 3px rgba(138,117,227,.12); }
 .textarea { min-height: 120px; resize: vertical; }
 
 .mini { font-size: 12px; opacity: .7; }
@@ -326,13 +323,7 @@ export default {
   gap: 10px;
 }
 
-.btn {
-  border-radius: 14px;
-  padding: 12px 16px;
-  font-weight: 900;
-  cursor: pointer;
-  border: none;
-}
+.btn { border-radius: 14px; padding: 12px 16px; font-weight: 900; cursor: pointer; border: none; }
 .btn.secondary { background: #efefef; }
 .btn.primary { background: #8a75e3; color: #fff; }
 .btn:disabled { opacity: .6; cursor: not-allowed; }

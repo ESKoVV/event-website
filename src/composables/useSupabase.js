@@ -69,7 +69,7 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
-  // ✅ BUSINESS: create draft (not published)
+  // ✅ BUSINESS: create draft event (not published)
   const createBusinessEvent = async (payload) => {
     const { user, error: userErr } = await getUser()
     if (userErr) return { data: null, error: userErr }
@@ -177,7 +177,7 @@ export const useSupabase = () => {
     if (!user) return { data: null, error: new Error('No auth user') }
 
     const safePatch = { ...patch }
-    delete safePatch.It_business // ❌ бизнес меняешь только вручную
+    delete safePatch.It_business
 
     for (const k of Object.keys(safePatch)) {
       if (safePatch[k] === '') safePatch[k] = null
@@ -190,7 +190,7 @@ export const useSupabase = () => {
   }
 
   // ---------------------------
-  // AVATAR UPLOAD
+  // AVATAR UPLOAD (Supabase Storage)
   // ---------------------------
   const uploadAvatar = async (file) => {
     const { user } = await getUser()
@@ -227,7 +227,7 @@ export const useSupabase = () => {
   }
 
   // ---------------------------
-  // TELEGRAM (как было)
+  // TELEGRAM
   // ---------------------------
   const linkTelegramViaEdgeFunction = async (telegramAuthData) => {
     const { data, error } = await supabase.functions.invoke('telegram-verify', { body: telegramAuthData })

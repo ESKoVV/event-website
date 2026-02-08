@@ -13,7 +13,6 @@
 
         <!-- FILTER BUTTON -->
         <button class="filter-btn" @click="openDrawer" aria-label="Открыть меню фильтров">
-          <!-- funnel icon -->
           <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
             <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
           </svg>
@@ -74,14 +73,16 @@
               </div>
 
               <div class="biz-text" v-if="isBusiness">
-                Ты можешь отправлять свои мероприятия в предложку. Они появятся после подтверждения админом
-                (поставит <b>is_published=true</b>).
+                Ты можешь отправлять мероприятия в предложку. Они появятся после подтверждения админом
+                (у события будет <b>is_published=true</b>).
               </div>
               <div class="biz-text" v-else>
-                Business даст возможность предлагать мероприятия. Оплату подключим позже — пока статус меняется вручную.
+                Business даст возможность предлагать мероприятия. Пока статус меняется вручную в базе.
               </div>
 
-              <button v-if="isBusiness" class="biz-btn" @click="openCreateModal">➕ Добавить мероприятие</button>
+              <button v-if="isBusiness" class="biz-btn" @click="openCreateModal">
+                ➕ Добавить мероприятие
+              </button>
             </div>
 
             <!-- Filters -->
@@ -131,9 +132,9 @@ import EventCard from '../../components/EventCard.vue'
 import EventPhotoModal from '../../components/EventPhotoModal.vue'
 import FiltersPanel from '../../components/FiltersPanel.vue'
 import CreateEventModal from '../../components/CreateEventModal.vue'
-import { useSupabase } from '../../composables/useSupabase.js'
+import { useSupabase } from '../../composables/useSupabase'
 
-/** ✅ единые утилиты, без дублей */
+/** единые утилиты, без дублей */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const withRetry = async (fn, tries = 3) => {
@@ -173,10 +174,10 @@ const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0
 const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
 
 /**
- * selectCategory у тебя может хранить:
- * - массив имён категорий (нормально)
- * - строку "спорт,еда"
- * - иногда туда могут попасть id (на будущее) — конвертим через categoryMap
+ * selectCategory может быть:
+ * - массив имён
+ * - строка "спорт,еда"
+ * - иногда id -> преобразуем через categoryMap
  */
 const normalizeCategoryNames = (raw, categoryMap) => {
   const map = categoryMap || {}
@@ -185,7 +186,7 @@ const normalizeCategoryNames = (raw, categoryMap) => {
     if (v === null || v === undefined) return ''
     const s = String(v).trim()
     if (!s) return ''
-    if (map[s]) return String(map[s]).trim() // id -> name
+    if (map[s]) return String(map[s]).trim()
     const n = Number(s)
     if (!Number.isNaN(n) && map[String(n)]) return String(map[String(n)]).trim()
     return s
@@ -226,7 +227,7 @@ export default {
     const error = ref(null)
 
     const allEvents = ref([])
-    const visibleEvents = ref([]) // ✅ чтобы карточки появлялись плавно
+    const visibleEvents = ref([]) // плавное появление
     const photos = ref({})
 
     const categories = ref([])
@@ -269,7 +270,7 @@ export default {
       toastTimer = setTimeout(() => (toast.value = ''), 3200)
     }
 
-    // ✅ progressive list (one-by-one)
+    // progressive list
     let progressiveTimer = null
     const stopProgressive = () => {
       if (progressiveTimer) clearInterval(progressiveTimer)
@@ -284,7 +285,6 @@ export default {
 
       visibleEvents.value.push(src[0])
       let i = 1
-
       progressiveTimer = setInterval(() => {
         if (i >= src.length) {
           stopProgressive()
@@ -452,7 +452,6 @@ export default {
     const loadCategories = async () => {
       const { data, error: err } = await withRetry(() => getCategories())
       if (err) throw err
-
       categories.value = data ?? []
       categoryMap.value = (categories.value || []).reduce((acc, c) => {
         acc[String(c.id)] = c.name
@@ -548,7 +547,6 @@ export default {
       categories,
       categoryMap,
 
-      myProfile,
       isBusiness,
 
       selectedCategoryNames,
@@ -596,7 +594,6 @@ export default {
 .page { padding: 16px 0 40px; }
 .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
 
-/* TOPBAR */
 .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .topbar-left { display: flex; flex-direction: column; gap: 2px; }
 .page-title { font-weight: 900; font-size: 18px; }
@@ -618,7 +615,6 @@ export default {
 .filter-icon { width: 18px; height: 18px; opacity: .9; }
 .filter-btn-text { font-size: 13px; font-weight: 800; }
 
-/* STATES */
 .state { display: grid; place-items: center; gap: 10px; padding: 40px 0; opacity: .75; text-align: center; }
 .state.error { opacity: 1; color: #d9534f; }
 .error-title { font-weight: 800; }
@@ -632,7 +628,6 @@ export default {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* EVENTS */
 .events-shell {
   background: #fff;
   border: 1px solid #efefef;
@@ -642,7 +637,6 @@ export default {
 }
 .events-list { display: flex; flex-direction: column; gap: 12px; }
 
-/* appear animation */
 .list-enter-active, .list-leave-active { transition: opacity 240ms ease, transform 240ms ease; }
 .list-enter-from, .list-leave-to { opacity: 0; transform: translateY(8px); }
 
@@ -690,7 +684,7 @@ export default {
 }
 .apply-btn:hover { filter: brightness(.97); }
 
-/* Business card */
+/* Business */
 .biz-card {
   background: #fcfcff;
   border: 1px solid rgba(138,117,227,.18);
@@ -723,7 +717,6 @@ export default {
 }
 .biz-btn:hover { filter: brightness(.98); }
 
-/* toast */
 .toast {
   position: sticky;
   bottom: 10px;

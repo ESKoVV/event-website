@@ -33,7 +33,7 @@
         <span class="ui"></span>
         <span class="text">Только онлайн</span>
       </label>
-      <div class="hint">Показывает только мероприятия, где <b>is_online = true</b>.</div>
+      <div class="hint">Показывает только мероприятия, где <b>is_online=true</b>.</div>
     </div>
 
     <div class="grid">
@@ -42,30 +42,16 @@
         <div class="cardTitle">Цена</div>
 
         <div class="seg">
-          <button class="segBtn" :class="{ active: priceMode === 'all' }" @click="setPriceMode('all')">
-            Любая
-          </button>
-          <button class="segBtn" :class="{ active: priceMode === 'free' }" @click="setPriceMode('free')">
-            Бесплатно
-          </button>
-          <button class="segBtn" :class="{ active: priceMode === 'custom' }" @click="setPriceMode('custom')">
-            Свой диапазон
-          </button>
+          <button class="segBtn" :class="{ active: priceMode === 'all' }" @click="setPriceMode('all')">Любая</button>
+          <button class="segBtn" :class="{ active: priceMode === 'free' }" @click="setPriceMode('free')">Бесплатно</button>
+          <button class="segBtn" :class="{ active: priceMode === 'custom' }" @click="setPriceMode('custom')">Свой диапазон</button>
         </div>
 
         <div class="chips">
-          <button class="chip" :class="{ active: priceMode === '100_1000' }" @click="setPriceMode('100_1000')">
-            100–1000
-          </button>
-          <button class="chip" :class="{ active: priceMode === '1000_3000' }" @click="setPriceMode('1000_3000')">
-            1000–3000
-          </button>
-          <button class="chip" :class="{ active: priceMode === '3000_10000' }" @click="setPriceMode('3000_10000')">
-            3000–10000
-          </button>
-          <button class="chip" :class="{ active: priceMode === 'gt_10000' }" @click="setPriceMode('gt_10000')">
-            &gt; 10000
-          </button>
+          <button class="chip" :class="{ active: priceMode === '100_1000' }" @click="setPriceMode('100_1000')">100–1000</button>
+          <button class="chip" :class="{ active: priceMode === '1000_3000' }" @click="setPriceMode('1000_3000')">1000–3000</button>
+          <button class="chip" :class="{ active: priceMode === '3000_10000' }" @click="setPriceMode('3000_10000')">3000–10000</button>
+          <button class="chip" :class="{ active: priceMode === 'gt_10000' }" @click="setPriceMode('gt_10000')">&gt; 10000</button>
         </div>
 
         <div v-if="priceMode === 'custom'" class="row">
@@ -106,30 +92,16 @@
         <div class="cardTitle">Дата</div>
 
         <div class="seg">
-          <button class="segBtn" :class="{ active: dateMode === 'all' }" @click="setDateMode('all')">
-            Всё время
-          </button>
-          <button class="segBtn" :class="{ active: dateMode === 'on' }" @click="setDateMode('on')">
-            На дату
-          </button>
-          <button class="segBtn" :class="{ active: dateMode === 'range' }" @click="setDateMode('range')">
-            Диапазон
-          </button>
+          <button class="segBtn" :class="{ active: dateMode === 'all' }" @click="setDateMode('all')">Всё время</button>
+          <button class="segBtn" :class="{ active: dateMode === 'on' }" @click="setDateMode('on')">На дату</button>
+          <button class="segBtn" :class="{ active: dateMode === 'range' }" @click="setDateMode('range')">Диапазон</button>
         </div>
 
         <div class="chips">
-          <button class="chip" :class="{ active: dateMode === 'after' }" @click="setDateMode('after')">
-            После
-          </button>
-          <button class="chip" :class="{ active: dateMode === 'before' }" @click="setDateMode('before')">
-            До
-          </button>
-          <button class="chip" :class="{ active: dateMode === 'next7' }" @click="setDateMode('next7')">
-            След. 7 дней
-          </button>
-          <button class="chip" :class="{ active: dateMode === 'today' }" @click="setDateMode('today')">
-            Сегодня
-          </button>
+          <button class="chip" :class="{ active: dateMode === 'after' }" @click="setDateMode('after')">После</button>
+          <button class="chip" :class="{ active: dateMode === 'before' }" @click="setDateMode('before')">До</button>
+          <button class="chip" :class="{ active: dateMode === 'next7' }" @click="setDateMode('next7')">След. 7 дней</button>
+          <button class="chip" :class="{ active: dateMode === 'today' }" @click="setDateMode('today')">Сегодня</button>
         </div>
 
         <div v-if="dateMode === 'on'" class="row">
@@ -263,7 +235,6 @@ export default {
 }
 .tag.active { background: #8a75e3; border-color: #8a75e3; color: #fff; }
 
-/* Toggle */
 .check { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
 .check input { display: none; }
 .ui {
@@ -281,6 +252,7 @@ export default {
 .check input:checked + .ui { background: rgba(138,117,227,0.85); border-color: rgba(138,117,227,0.55); }
 .check input:checked + .ui::after { transform: translateX(18px); }
 .text { font-weight: 800; font-size: 13px; }
+.hint { font-size: 12px; opacity: .7; line-height: 1.25; }
 
 .grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .card { border: 1px solid #f2f2f2; border-radius: 16px; padding: 12px; background: #fcfcfc; }
@@ -313,7 +285,6 @@ export default {
 .field.grow { flex: 1; min-width: 160px; }
 
 .fieldLabel { font-size: 12px; opacity: .7; font-weight: 700; }
-
 .input {
   border: 1px solid #efefef;
   border-radius: 12px;
@@ -323,6 +294,4 @@ export default {
   outline: none;
 }
 .input:focus { border-color: rgba(138,117,227,0.55); box-shadow: 0 0 0 3px rgba(138,117,227,0.12); }
-
-.hint { margin-top: 10px; font-size: 12px; opacity: .7; line-height: 1.25; }
 </style>
