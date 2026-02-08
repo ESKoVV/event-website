@@ -24,7 +24,7 @@ const compact = (obj) => {
 
 export const useSupabase = () => {
   // ---------------------------
-  // EVENTS (user site: only published)
+  // EVENTS (ONLY PUBLISHED)
   // ---------------------------
   const getEvents = async () => {
     const { data, error } = await supabase
@@ -52,36 +52,6 @@ export const useSupabase = () => {
     return { data, error }
   }
 
-  const searchEvents = async (searchTerm) => {
-    const term = (searchTerm || '').trim()
-    if (!term) return getEvents()
-
-    const { data, error } = await supabase
-      .from('events')
-      .select(
-        `
-        id,
-        title,
-        description,
-        date_time_event,
-        address,
-        organizer,
-        price,
-        is_online,
-        is_free,
-        user_id,
-        selectCategory,
-        is_published,
-        created_at
-      `
-      )
-      .eq('is_published', true)
-      .ilike('title', `%${term}%`)
-      .order('created_at', { ascending: false })
-
-    return { data, error }
-  }
-
   const getCategories = async () => {
     const { data, error } = await supabase.from('category').select('id, name').order('name', { ascending: true })
     return { data, error }
@@ -99,14 +69,14 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
-  // ✅ Business: create draft event (not published)
+  // ✅ BUSINESS: create draft (not published)
   const createBusinessEvent = async (payload) => {
     const { user, error: userErr } = await getUser()
     if (userErr) return { data: null, error: userErr }
     if (!user) return { data: null, error: new Error('Нет авторизации') }
 
     const price = Number(payload?.price ?? 0)
-    const is_free = payload?.is_free === true || (!Number.isNaN(price) && price <= 0)
+    const is_free = payload?.is_free === true || (Number.isFinite(price) && price <= 0)
 
     const eventInsert = {
       title: payload?.title ?? null,
@@ -131,10 +101,7 @@ export const useSupabase = () => {
         event_id: eventRow.id,
         photo_url: photoUrl
       })
-      if (phErr) {
-        // не фейлим создание события из-за фото — просто вернём ошибку отдельно
-        return { data: eventRow, error: phErr }
-      }
+      if (phErr) return { data: eventRow, error: phErr }
     }
 
     return { data: eventRow, error: null }
@@ -210,7 +177,7 @@ export const useSupabase = () => {
     if (!user) return { data: null, error: new Error('No auth user') }
 
     const safePatch = { ...patch }
-    delete safePatch.It_business // нельзя менять с фронта
+    delete safePatch.It_business // ❌ бизнес меняешь только вручную
 
     for (const k of Object.keys(safePatch)) {
       if (safePatch[k] === '') safePatch[k] = null
@@ -260,7 +227,7 @@ export const useSupabase = () => {
   }
 
   // ---------------------------
-  // TELEGRAM (не трогаем)
+  // TELEGRAM (как было)
   // ---------------------------
   const linkTelegramViaEdgeFunction = async (telegramAuthData) => {
     const { data, error } = await supabase.functions.invoke('telegram-verify', { body: telegramAuthData })
@@ -278,7 +245,6 @@ export const useSupabase = () => {
   return {
     // events
     getEvents,
-    searchEvents,
     getCategories,
     getEventPhotos,
     createBusinessEvent,

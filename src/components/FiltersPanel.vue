@@ -142,12 +142,7 @@
         <div v-else-if="dateMode === 'range'" class="row">
           <div class="field grow">
             <div class="fieldLabel">с</div>
-            <input
-              class="input"
-              type="date"
-              :value="dateFrom"
-              @input="$emit('update:dateFrom', $event.target.value)"
-            />
+            <input class="input" type="date" :value="dateFrom" @input="$emit('update:dateFrom', $event.target.value)" />
           </div>
           <div class="field grow">
             <div class="fieldLabel">по</div>
@@ -158,30 +153,18 @@
         <div v-else-if="dateMode === 'after'" class="row">
           <div class="field grow">
             <div class="fieldLabel">После</div>
-            <input
-              class="input"
-              type="date"
-              :value="datePivot"
-              @input="$emit('update:datePivot', $event.target.value)"
-            />
+            <input class="input" type="date" :value="datePivot" @input="$emit('update:datePivot', $event.target.value)" />
           </div>
         </div>
 
         <div v-else-if="dateMode === 'before'" class="row">
           <div class="field grow">
             <div class="fieldLabel">До</div>
-            <input
-              class="input"
-              type="date"
-              :value="datePivot"
-              @input="$emit('update:datePivot', $event.target.value)"
-            />
+            <input class="input" type="date" :value="datePivot" @input="$emit('update:datePivot', $event.target.value)" />
           </div>
         </div>
 
-        <div class="hint">
-          Фильтрация по <b>date_time_event</b>.
-        </div>
+        <div class="hint">Фильтрация по <b>date_time_event</b>.</div>
       </div>
     </div>
   </div>
@@ -248,23 +231,10 @@ export default {
 </script>
 
 <style scoped>
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+.panel { display: flex; flex-direction: column; gap: 12px; }
 
-.head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.title {
-  font-weight: 900;
-  font-size: 16px;
-}
-
+.head { display: flex; align-items: center; gap: 12px; }
+.title { font-weight: 900; font-size: 16px; }
 .reset {
   margin-left: auto;
   border: 1px solid #efefef;
@@ -274,35 +244,14 @@ export default {
   cursor: pointer;
   font-size: 13px;
 }
-.reset:hover {
-  background: #f3f3f3;
-}
+.reset:hover { background: #f3f3f3; }
 
-.block {
-  border: 1px solid #f2f2f2;
-  border-radius: 16px;
-  padding: 12px;
-  background: #fcfcfc;
-}
+.block { border: 1px solid #f2f2f2; border-radius: 16px; padding: 12px; background: #fcfcfc; }
+.inline { display: grid; gap: 8px; }
 
-.inline {
-  display: grid;
-  gap: 8px;
-}
+.label { font-weight: 800; font-size: 13px; opacity: .7; margin-bottom: 10px; }
 
-.label {
-  font-weight: 800;
-  font-size: 13px;
-  opacity: 0.7;
-  margin-bottom: 10px;
-}
-
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
+.tags { display: flex; flex-wrap: wrap; gap: 10px; }
 .tag {
   border: 1px solid #efefef;
   background: #fafafa;
@@ -312,82 +261,32 @@ export default {
   font-size: 13px;
   white-space: nowrap;
 }
-
-.tag.active {
-  background: #8a75e3;
-  border-color: #8a75e3;
-  color: #fff;
-}
+.tag.active { background: #8a75e3; border-color: #8a75e3; color: #fff; }
 
 /* Toggle */
-.check {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  user-select: none;
-}
-.check input {
-  display: none;
-}
+.check { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.check input { display: none; }
 .ui {
-  width: 44px;
-  height: 26px;
-  border-radius: 999px;
-  border: 1px solid #e9e9e9;
-  background: #f3f3f3;
-  position: relative;
-  transition: background 180ms ease, border-color 180ms ease;
+  width: 44px; height: 26px; border-radius: 999px;
+  border: 1px solid #e9e9e9; background: #f3f3f3;
+  position: relative; transition: background 180ms ease, border-color 180ms ease;
 }
 .ui::after {
   content: '';
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  background: #fff;
-  position: absolute;
-  top: 1px;
-  left: 1px;
+  width: 22px; height: 22px; border-radius: 999px;
+  background: #fff; position: absolute; top: 1px; left: 1px;
   box-shadow: 0 2px 10px rgba(0,0,0,0.08);
   transition: transform 180ms ease;
 }
-.check input:checked + .ui {
-  background: rgba(138, 117, 227, 0.85);
-  border-color: rgba(138, 117, 227, 0.55);
-}
-.check input:checked + .ui::after {
-  transform: translateX(18px);
-}
-.text {
-  font-weight: 800;
-  font-size: 13px;
-}
+.check input:checked + .ui { background: rgba(138,117,227,0.85); border-color: rgba(138,117,227,0.55); }
+.check input:checked + .ui::after { transform: translateX(18px); }
+.text { font-weight: 800; font-size: 13px; }
 
-.grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-}
+.grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.card { border: 1px solid #f2f2f2; border-radius: 16px; padding: 12px; background: #fcfcfc; }
+.cardTitle { font-weight: 900; margin-bottom: 10px; }
 
-.card {
-  border: 1px solid #f2f2f2;
-  border-radius: 16px;
-  padding: 12px;
-  background: #fcfcfc;
-}
-
-.cardTitle {
-  font-weight: 900;
-  margin-bottom: 10px;
-}
-
-.seg {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-
+.seg { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .segBtn {
   border: 1px solid #efefef;
   background: #fff;
@@ -396,18 +295,9 @@ export default {
   cursor: pointer;
   font-size: 13px;
 }
-.segBtn.active {
-  background: rgba(138, 117, 227, 0.12);
-  border-color: rgba(138, 117, 227, 0.4);
-}
+.segBtn.active { background: rgba(138,117,227,0.12); border-color: rgba(138,117,227,0.4); }
 
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .chip {
   border: 1px solid #efefef;
   background: #fff;
@@ -416,34 +306,13 @@ export default {
   cursor: pointer;
   font-size: 13px;
 }
-.chip.active {
-  background: #8a75e3;
-  border-color: #8a75e3;
-  color: #fff;
-}
+.chip.active { background: #8a75e3; border-color: #8a75e3; color: #fff; }
 
-.row {
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-}
+.row { display: flex; gap: 10px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 120px; }
+.field.grow { flex: 1; min-width: 160px; }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 120px;
-}
-.field.grow {
-  flex: 1;
-  min-width: 160px;
-}
-
-.fieldLabel {
-  font-size: 12px;
-  opacity: 0.7;
-  font-weight: 700;
-}
+.fieldLabel { font-size: 12px; opacity: .7; font-weight: 700; }
 
 .input {
   border: 1px solid #efefef;
@@ -453,15 +322,7 @@ export default {
   background: #fff;
   outline: none;
 }
-.input:focus {
-  border-color: rgba(138, 117, 227, 0.55);
-  box-shadow: 0 0 0 3px rgba(138, 117, 227, 0.12);
-}
+.input:focus { border-color: rgba(138,117,227,0.55); box-shadow: 0 0 0 3px rgba(138,117,227,0.12); }
 
-.hint {
-  margin-top: 10px;
-  font-size: 12px;
-  opacity: 0.7;
-  line-height: 1.25;
-}
+.hint { margin-top: 10px; font-size: 12px; opacity: .7; line-height: 1.25; }
 </style>

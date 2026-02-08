@@ -11,7 +11,7 @@
 
         <div class="body">
           <div class="hint">
-            Мероприятие уйдёт в предложку и будет видно всем только после того, как админ поставит <b>is_published=true</b>.
+            Мероприятие будет создано с <b>is_published=false</b> и станет видно всем после подтверждения админом.
           </div>
 
           <div class="grid">
@@ -77,7 +77,7 @@
           <div class="field">
             <div class="label">Ссылка на фото (необязательно)</div>
             <input class="input" v-model="form.photo_url" placeholder="https://..." />
-            <div class="mini">Если укажешь — мы добавим в event_photos как первое фото.</div>
+            <div class="mini">Если укажешь — добавим в event_photos как первое фото.</div>
           </div>
 
           <div v-if="error" class="error">{{ error }}</div>
@@ -106,7 +106,7 @@ export default {
   props: {
     open: { type: Boolean, default: false },
     categories: { type: Array, default: () => [] },
-    createBusinessEvent: { type: Function, required: true } // (payload) => Promise<{data,error}>
+    createBusinessEvent: { type: Function, required: true }
   },
   data() {
     return {
@@ -129,11 +129,6 @@ export default {
     isFree() {
       const n = Number(this.form.price)
       return Number.isFinite(n) && n <= 0
-    }
-  },
-  watch: {
-    open(v) {
-      if (v) this.error = ''
     }
   },
   methods: {
@@ -166,13 +161,13 @@ export default {
       const payload = {
         title,
         description,
-        date_time_event: dt, // datetime-local отдаёт ISO-подобную строку
+        date_time_event: dt,
         address: trimOrNull(this.form.address),
         organizer: trimOrNull(this.form.organizer),
         price,
         is_online: !!this.form.is_online,
         is_free,
-        selectCategory: [...this.selectedCategories], // храним имена категорий как и раньше
+        selectCategory: [...this.selectedCategories],
         photo_url: trimOrNull(this.form.photo_url)
       }
 
@@ -185,7 +180,7 @@ export default {
         }
         this.$emit('created', data)
         this.$emit('close')
-        // reset
+
         this.selectedCategories = []
         this.form = {
           title: '',
@@ -226,7 +221,7 @@ export default {
 }
 
 .head {
-  padding: 14px 14px;
+  padding: 14px;
   border-bottom: 1px solid #f2f2f2;
   display: flex;
   align-items: center;
@@ -259,20 +254,13 @@ export default {
   opacity: .9;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-@media (max-width: 720px) {
-  .grid { grid-template-columns: 1fr; }
-}
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field.inline { justify-content: flex-end; }
 
 .label { font-size: 12px; font-weight: 800; opacity: .7; }
-
 .input, .textarea {
   border: 1px solid #efefef;
   border-radius: 12px;
@@ -291,7 +279,6 @@ export default {
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
   background: rgba(138,117,227,.12);
@@ -299,7 +286,6 @@ export default {
   width: fit-content;
 }
 
-/* tags */
 .tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .tag {
   border: 1px solid #efefef;
@@ -309,11 +295,7 @@ export default {
   cursor: pointer;
   font-size: 13px;
 }
-.tag.active {
-  background: #8a75e3;
-  border-color: #8a75e3;
-  color: #fff;
-}
+.tag.active { background: #8a75e3; border-color: #8a75e3; color: #fff; }
 
 /* toggle */
 .check { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
@@ -330,18 +312,11 @@ export default {
   box-shadow: 0 2px 10px rgba(0,0,0,.08);
   transition: transform 180ms ease;
 }
-.check input:checked + .ui {
-  background: rgba(138,117,227,.85);
-  border-color: rgba(138,117,227,.55);
-}
+.check input:checked + .ui { background: rgba(138,117,227,.85); border-color: rgba(138,117,227,.55); }
 .check input:checked + .ui::after { transform: translateX(18px); }
 .text { font-weight: 800; font-size: 13px; }
 
-.error {
-  color: #d9534f;
-  font-weight: 800;
-  font-size: 13px;
-}
+.error { color: #d9534f; font-weight: 800; font-size: 13px; }
 
 .foot {
   padding: 14px;

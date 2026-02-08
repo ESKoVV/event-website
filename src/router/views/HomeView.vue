@@ -11,7 +11,8 @@
           </div>
         </div>
 
-        <button class="filter-btn" @click="openDrawer" aria-label="Открыть меню">
+        <!-- FILTER BUTTON -->
+        <button class="filter-btn" @click="openDrawer" aria-label="Открыть меню фильтров">
           <!-- funnel icon -->
           <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
             <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
@@ -36,7 +37,7 @@
         Мероприятия не найдены
       </div>
 
-      <!-- EVENTS LIST -->
+      <!-- EVENTS -->
       <div v-else class="events-shell">
         <TransitionGroup name="list" tag="div" class="events-list">
           <EventCard
@@ -52,12 +53,12 @@
       </div>
     </div>
 
-    <!-- DRAWER (Filters + Business) -->
+    <!-- DRAWER -->
     <teleport to="body">
       <div v-if="drawerOpen" class="drawer-root" @keydown.esc="closeDrawer" tabindex="-1">
         <div class="overlay" @click="closeDrawer"></div>
 
-        <aside class="drawer" role="dialog" aria-modal="true" aria-label="Меню">
+        <aside class="drawer" role="dialog" aria-modal="true" aria-label="Фильтры">
           <div class="drawer-head">
             <div class="drawer-title">Меню</div>
             <button class="close-btn" @click="closeDrawer" aria-label="Закрыть">✕</button>
@@ -73,18 +74,17 @@
               </div>
 
               <div class="biz-text" v-if="isBusiness">
-                Ты можешь отправлять свои мероприятия в предложку. Они появятся после подтверждения админом.
+                Ты можешь отправлять свои мероприятия в предложку. Они появятся после подтверждения админом
+                (поставит <b>is_published=true</b>).
               </div>
               <div class="biz-text" v-else>
-                Business даёт возможность предлагать мероприятия. Оплату подключим позже — пока статус меняется вручную.
+                Business даст возможность предлагать мероприятия. Оплату подключим позже — пока статус меняется вручную.
               </div>
 
-              <button v-if="isBusiness" class="biz-btn" @click="openCreateModal">
-                ➕ Добавить мероприятие
-              </button>
+              <button v-if="isBusiness" class="biz-btn" @click="openCreateModal">➕ Добавить мероприятие</button>
             </div>
 
-            <!-- Filters panel (your existing component) -->
+            <!-- Filters -->
             <FiltersPanel
               :categories="categories"
               :is-all-categories-active="isAllCategoriesActive"
@@ -111,7 +111,7 @@
       </div>
     </teleport>
 
-    <!-- Create event modal -->
+    <!-- CREATE EVENT MODAL -->
     <CreateEventModal
       :open="createOpen"
       :categories="categories"
@@ -131,8 +131,9 @@ import EventCard from '../../components/EventCard.vue'
 import EventPhotoModal from '../../components/EventPhotoModal.vue'
 import FiltersPanel from '../../components/FiltersPanel.vue'
 import CreateEventModal from '../../components/CreateEventModal.vue'
-import { useSupabase } from '../../composables/useSupabase'
+import { useSupabase } from '../../composables/useSupabase.js'
 
+/** ✅ единые утилиты, без дублей */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const withRetry = async (fn, tries = 3) => {
@@ -148,6 +149,35 @@ const withRetry = async (fn, tries = 3) => {
   throw lastErr
 }
 
+const toNumberOrNull = (v) => {
+  if (v === null || v === undefined) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+const parseEventDate = (value) => {
+  if (!value) return null
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return d
+}
+
+const parseDateInput = (yyyy_mm_dd) => {
+  if (!yyyy_mm_dd) return null
+  const [y, m, day] = yyyy_mm_dd.split('-').map((x) => Number(x))
+  if (!y || !m || !day) return null
+  return new Date(y, m - 1, day)
+}
+
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
+const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+
+/**
+ * selectCategory у тебя может хранить:
+ * - массив имён категорий (нормально)
+ * - строку "спорт,еда"
+ * - иногда туда могут попасть id (на будущее) — конвертим через categoryMap
+ */
 const normalizeCategoryNames = (raw, categoryMap) => {
   const map = categoryMap || {}
 
@@ -155,7 +185,7 @@ const normalizeCategoryNames = (raw, categoryMap) => {
     if (v === null || v === undefined) return ''
     const s = String(v).trim()
     if (!s) return ''
-    if (map[s]) return String(map[s]).trim()
+    if (map[s]) return String(map[s]).trim() // id -> name
     const n = Number(s)
     if (!Number.isNaN(n) && map[String(n)]) return String(map[String(n)]).trim()
     return s
@@ -183,29 +213,6 @@ const normalizeCategoryNames = (raw, categoryMap) => {
   return one ? [one] : []
 }
 
-const toNumberOrNull = (v) => {
-  if (v === null || v === undefined) return null
-  const n = Number(v)
-  return Number.isFinite(n) ? n : null
-}
-
-const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
-const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
-
-const parseEventDate = (value) => {
-  if (!value) return null
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return null
-  return d
-}
-
-const parseDateInput = (yyyy_mm_dd) => {
-  if (!yyyy_mm_dd) return null
-  const [y, m, day] = yyyy_mm_dd.split('-').map((x) => Number(x))
-  if (!y || !m || !day) return null
-  return new Date(y, m - 1, day)
-}
-
 export default {
   name: 'HomeView',
   components: { EventCard, EventPhotoModal, FiltersPanel, CreateEventModal },
@@ -213,29 +220,22 @@ export default {
     globalSearchTerm: { type: String, default: '' }
   },
   setup(props) {
-    const {
-      getEvents,
-      getCategories,
-      getEventPhotos,
-      getMyPublicUser,
-      createBusinessEvent
-    } = useSupabase()
+    const { getEvents, getCategories, getEventPhotos, getMyPublicUser, createBusinessEvent } = useSupabase()
 
     const initialLoaded = ref(false)
     const error = ref(null)
 
     const allEvents = ref([])
-    const visibleEvents = ref([])
+    const visibleEvents = ref([]) // ✅ чтобы карточки появлялись плавно
     const photos = ref({})
 
     const categories = ref([])
-    const categoryMap = ref({})
+    const categoryMap = ref({}) // id -> name
 
-    // profile
     const myProfile = ref(null)
     const isBusiness = computed(() => myProfile.value?.It_business === true)
 
-    // filters state
+    // filters
     const selectedCategoryNames = ref([])
     const onlineOnly = ref(false)
 
@@ -251,12 +251,15 @@ export default {
 
     const isAllCategoriesActive = computed(() => selectedCategoryNames.value.length === 0)
 
-    const photosLoading = ref(false)
-    const stopPhotosLoading = ref(false)
-
-    // drawer + modal
+    // ui
     const drawerOpen = ref(false)
     const createOpen = ref(false)
+
+    const photoModalUrl = ref('')
+    const openPhoto = (url) => {
+      if (!url) return
+      photoModalUrl.value = url
+    }
 
     const toast = ref('')
     let toastTimer = null
@@ -266,13 +269,11 @@ export default {
       toastTimer = setTimeout(() => (toast.value = ''), 3200)
     }
 
-    // progressive
+    // ✅ progressive list (one-by-one)
     let progressiveTimer = null
     const stopProgressive = () => {
-      if (progressiveTimer) {
-        clearInterval(progressiveTimer)
-        progressiveTimer = null
-      }
+      if (progressiveTimer) clearInterval(progressiveTimer)
+      progressiveTimer = null
     }
 
     const startProgressive = (list) => {
@@ -283,6 +284,7 @@ export default {
 
       visibleEvents.value.push(src[0])
       let i = 1
+
       progressiveTimer = setInterval(() => {
         if (i >= src.length) {
           stopProgressive()
@@ -293,12 +295,7 @@ export default {
       }, 140)
     }
 
-    const photoModalUrl = ref('')
-    const openPhoto = (url) => {
-      if (!url) return
-      photoModalUrl.value = url
-    }
-
+    // drawer
     const openDrawer = async () => {
       drawerOpen.value = true
       await nextTick()
@@ -449,19 +446,18 @@ export default {
     })
 
     // loading
+    const photosLoading = ref(false)
+    const stopPhotosLoading = ref(false)
+
     const loadCategories = async () => {
-      try {
-        const { data, error: err } = await withRetry(() => getCategories())
-        if (err) throw err
-        categories.value = data ?? []
-        categoryMap.value = (categories.value || []).reduce((acc, c) => {
-          acc[String(c.id)] = c.name
-          return acc
-        }, {})
-      } catch (e) {
-        categories.value = []
-        categoryMap.value = {}
-      }
+      const { data, error: err } = await withRetry(() => getCategories())
+      if (err) throw err
+
+      categories.value = data ?? []
+      categoryMap.value = (categories.value || []).reduce((acc, c) => {
+        acc[String(c.id)] = c.name
+        return acc
+      }, {})
     }
 
     const loadProfile = async () => {
@@ -481,7 +477,6 @@ export default {
 
         allEvents.value = eventsData ?? []
         initialLoaded.value = true
-
         startProgressive(allEvents.value)
 
         // photos background
@@ -492,16 +487,14 @@ export default {
         if (!ids.length) return
 
         photosLoading.value = true
-
         const batchSize = 5
+
         for (let i = 0; i < ids.length; i += batchSize) {
           if (stopPhotosLoading.value) break
-
           const batch = ids.slice(i, i + batchSize)
-          try {
-            const { data: ph, error: phErr } = await withRetry(() => getEventPhotos(batch))
-            if (phErr) throw phErr
 
+          const { data: ph, error: phErr } = await withRetry(() => getEventPhotos(batch))
+          if (!phErr) {
             const next = { ...photos.value }
             for (const p of ph ?? []) {
               if (!p?.event_id) continue
@@ -509,8 +502,6 @@ export default {
               next[p.event_id].push(p)
             }
             photos.value = next
-          } catch (e) {
-            // ignore
           }
 
           await sleep(120)
@@ -532,7 +523,12 @@ export default {
     }
 
     onMounted(async () => {
-      await loadCategories()
+      try {
+        await loadCategories()
+      } catch (e) {
+        categories.value = []
+        categoryMap.value = {}
+      }
       await loadProfile()
       await loadEventsProgressive()
     })
@@ -604,7 +600,7 @@ export default {
 .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .topbar-left { display: flex; flex-direction: column; gap: 2px; }
 .page-title { font-weight: 900; font-size: 18px; }
-.page-sub { font-size: 12px; opacity: 0.65; font-weight: 700; }
+.page-sub { font-size: 12px; opacity: .65; font-weight: 700; }
 
 .filter-btn {
   margin-left: auto;
@@ -619,20 +615,20 @@ export default {
   box-shadow: 0 2px 10px rgba(0,0,0,0.04);
 }
 .filter-btn:hover { background: #fafafa; }
-.filter-icon { width: 18px; height: 18px; opacity: 0.9; }
+.filter-icon { width: 18px; height: 18px; opacity: .9; }
 .filter-btn-text { font-size: 13px; font-weight: 800; }
 
 /* STATES */
-.state { display: grid; place-items: center; gap: 10px; padding: 40px 0; opacity: 0.75; text-align: center; }
+.state { display: grid; place-items: center; gap: 10px; padding: 40px 0; opacity: .75; text-align: center; }
 .state.error { opacity: 1; color: #d9534f; }
 .error-title { font-weight: 800; }
-.error-sub { font-size: 12px; opacity: 0.8; max-width: 680px; }
+.error-sub { font-size: 12px; opacity: .8; max-width: 680px; }
 .retry { margin-top: 8px; border: none; border-radius: 12px; padding: 10px 14px; cursor: pointer; background: #efefef; }
 
 .spinner {
   width: 26px; height: 26px; border-radius: 50%;
   border: 3px solid #eee; border-top-color: #8a75e3;
-  animation: spin 0.8s linear infinite;
+  animation: spin .8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -646,23 +642,21 @@ export default {
 }
 .events-list { display: flex; flex-direction: column; gap: 12px; }
 
-/* cards animation */
+/* appear animation */
 .list-enter-active, .list-leave-active { transition: opacity 240ms ease, transform 240ms ease; }
 .list-enter-from, .list-leave-to { opacity: 0; transform: translateY(8px); }
 
 /* DRAWER */
 .drawer-root { position: fixed; inset: 0; z-index: 9999; }
-.overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.35); backdrop-filter: blur(2px); }
+.overlay { position: absolute; inset: 0; background: rgba(0,0,0,.35); backdrop-filter: blur(2px); }
 
 .drawer {
-  position: absolute; top: 0; right: 0;
-  height: 100%;
+  position: absolute; top: 0; right: 0; height: 100%;
   width: min(420px, 92vw);
   background: #fff;
   border-left: 1px solid #efefef;
   box-shadow: -10px 0 30px rgba(0,0,0,0.12);
-  display: flex;
-  flex-direction: column;
+  display: flex; flex-direction: column;
   animation: slideIn 180ms ease;
 }
 @keyframes slideIn { from { transform: translateX(18px); opacity: .7; } to { transform: translateX(0); opacity: 1; } }
@@ -694,7 +688,7 @@ export default {
   font-weight: 900;
   cursor: pointer;
 }
-.apply-btn:hover { filter: brightness(0.97); }
+.apply-btn:hover { filter: brightness(.97); }
 
 /* Business card */
 .biz-card {
@@ -716,10 +710,7 @@ export default {
   background: rgba(0, 200, 120, .12);
   border: 1px solid rgba(0, 200, 120, .22);
 }
-.biz-badge.off {
-  background: rgba(180,180,180,.16);
-  border-color: rgba(180,180,180,.28);
-}
+.biz-badge.off { background: rgba(180,180,180,.16); border-color: rgba(180,180,180,.28); }
 .biz-text { font-size: 12px; opacity: .8; line-height: 1.25; }
 .biz-btn {
   border: none;
