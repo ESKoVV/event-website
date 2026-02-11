@@ -7,7 +7,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey)
 
 /**
  * Делает URL из Storage "public", если он вдруг пришёл без /public/.
- * Также чистит пробелы.
+ * (оставляю, т.к. используется и для аватаров/старых ссылок)
  */
 const normalizeStoragePublicUrl = (url) => {
   if (!url || typeof url !== 'string') return ''
@@ -29,16 +29,25 @@ const compact = (obj) => {
 const getFileExt = (file) => {
   const name = String(file?.name || '')
   const ext = name.includes('.') ? name.split('.').pop() : ''
-  const clean = String(ext || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
+  const clean = String(ext || '').toLowerCase().replace(/[^a-z0-9]/g, '')
   return clean || 'png'
 }
 
-const isBadUrlScheme = (url) => {
-  const s = String(url || '').trim().toLowerCase()
-  return s.startsWith('data:') || s.startsWith('blob:')
-}
+/**
+ * ✅ File -> data:image/... base64
+ * Это то, что ты хочешь сохранять в event_photos.photo_url
+ */
+const readFileAsDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    try {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result || ''))
+      reader.onerror = () => reject(reader.error || new Error('FileReader error'))
+      reader.readAsDataURL(file)
+    } catch (e) {
+      reject(e)
+    }
+  })
 
 export const useSupabase = () => {
   // ---------------------------
@@ -208,33 +217,7 @@ export const useSupabase = () => {
   }
 
   // ---------------------------
-  // EVENT PHOTO UPLOAD (Storage -> event_photos.photo_url)
-  // ---------------------------
-  const uploadEventPhotoToStorage = async (eventId, file) => {
-    if (!eventId) return { publicUrl: null, error: new Error('No eventId') }
-    if (!file) return { publicUrl: null, error: new Error('No file') }
-
-    // ✅ ОДИН источник истины: этот bucket
-    // .env: VITE_SUPABASE_EVENT_PHOTOS_BUCKET=event-photos
-    const bucket = (import.meta.env.VITE_SUPABASE_EVENT_PHOTOS_BUCKET || 'event-photos').trim()
-
-    const ext = getFileExt(file)
-    const path = `EventPhotos/${eventId}/${Date.now()}.${ext}`
-
-    const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
-    if (upErr) return { publicUrl: null, error: upErr }
-
-    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-    const publicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
-
-    if (!publicUrl) return { publicUrl: null, error: new Error('Не удалось получить publicUrl') }
-    if (isBadUrlScheme(publicUrl)) return { publicUrl: null, error: new Error('Bad url scheme for photo') }
-
-    return { publicUrl, error: null }
-  }
-
-  // ---------------------------
-  // BUSINESS EVENTS: create draft (is_published=false) + optional photo file
+  // BUSINESS EVENTS: create draft + photo saved to public.event_photos.photo_url as data:image...
   // ---------------------------
   const createBusinessEvent = async (payload) => {
     const { user, error: userErr } = await getUser()
@@ -258,20 +241,27 @@ export const useSupabase = () => {
       is_published: false
     }
 
-    // 1) создаём событие
+    // 1) создаём event
     const { data: eventRow, error: insErr } = await supabase.from('events').insert(eventInsert).select().single()
     if (insErr) return { data: null, error: insErr }
 
-    // 2) если есть файл — грузим в Storage и пишем в public.event_photos.photo_url
+    // 2) ✅ фото сохраняем В ТАБЛИЦУ public.event_photos, в photo_url кладём data:image...
     const file = payload?.photo_file || null
     if (file) {
-      const { publicUrl, error: upErr } = await uploadEventPhotoToStorage(eventRow.id, file)
-      if (upErr) return { data: eventRow, error: upErr }
+      // подстраховка на тип
+      const mime = String(file?.type || '')
+      if (!mime.startsWith('image/')) {
+        return { data: eventRow, error: new Error('Файл не является изображением') }
+      }
 
-      // ✅ ВОТ СЮДА сохраняем фото
+      const dataUrl = await readFileAsDataUrl(file)
+      if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+        return { data: eventRow, error: new Error('Не удалось получить data:image url') }
+      }
+
       const { error: phErr } = await supabase.from('event_photos').insert({
         event_id: eventRow.id,
-        photo_url: publicUrl
+        photo_url: dataUrl
       })
       if (phErr) return { data: eventRow, error: phErr }
     }
