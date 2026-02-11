@@ -1,7 +1,6 @@
 <template>
   <div class="page">
     <div class="container">
-      <!-- TOP BAR -->
       <div class="topbar">
         <div class="topbar-left">
           <div class="page-title">Мероприятия</div>
@@ -11,8 +10,8 @@
           </div>
         </div>
 
-        <!-- FILTER BUTTON -->
-        <button class="filter-btn" @click="openDrawer" aria-label="Открыть меню фильтров">
+        <!-- filter drawer -->
+        <button class="filter-btn" @click="openDrawer" aria-label="Открыть фильтры">
           <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
             <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
           </svg>
@@ -20,7 +19,6 @@
         </button>
       </div>
 
-      <!-- STATES -->
       <div v-if="!initialLoaded" class="state">
         <div class="spinner"></div>
         <div>Загрузка мероприятий…</div>
@@ -32,11 +30,8 @@
         <button class="retry" @click="reload">Повторить</button>
       </div>
 
-      <div v-else-if="filteredEvents.length === 0" class="state">
-        Мероприятия не найдены
-      </div>
+      <div v-else-if="filteredEvents.length === 0" class="state">Мероприятия не найдены</div>
 
-      <!-- EVENTS -->
       <div v-else class="events-shell">
         <TransitionGroup name="list" tag="div" class="events-list">
           <EventCard
@@ -52,40 +47,18 @@
       </div>
     </div>
 
-    <!-- DRAWER -->
+    <!-- FILTER DRAWER ONLY -->
     <teleport to="body">
       <div v-if="drawerOpen" class="drawer-root" @keydown.esc="closeDrawer" tabindex="-1">
         <div class="overlay" @click="closeDrawer"></div>
 
         <aside class="drawer" role="dialog" aria-modal="true" aria-label="Фильтры">
           <div class="drawer-head">
-            <div class="drawer-title">Меню</div>
+            <div class="drawer-title">Фильтры</div>
             <button class="close-btn" @click="closeDrawer" aria-label="Закрыть">✕</button>
           </div>
 
           <div class="drawer-body">
-            <!-- Business block -->
-            <div class="biz-card">
-              <div class="biz-top">
-                <div class="biz-title">Business аккаунт</div>
-                <span v-if="isBusiness" class="biz-badge">Активен</span>
-                <span v-else class="biz-badge off">Не активен</span>
-              </div>
-
-              <div class="biz-text" v-if="isBusiness">
-                Ты можешь отправлять мероприятия в предложку. Они появятся после подтверждения админом
-                (у события будет <b>is_published=true</b>).
-              </div>
-              <div class="biz-text" v-else>
-                Business даст возможность предлагать мероприятия. Пока статус меняется вручную в базе.
-              </div>
-
-              <button v-if="isBusiness" class="biz-btn" @click="openCreateModal">
-                ➕ Добавить мероприятие
-              </button>
-            </div>
-
-            <!-- Filters -->
             <FiltersPanel
               :categories="categories"
               :is-all-categories-active="isAllCategoriesActive"
@@ -101,8 +74,6 @@
               v-model:datePivot="datePivot"
               @reset="resetAllFilters"
             />
-
-            <div v-if="toast" class="toast">{{ toast }}</div>
           </div>
 
           <div class="drawer-foot">
@@ -112,16 +83,6 @@
       </div>
     </teleport>
 
-    <!-- CREATE EVENT MODAL -->
-    <CreateEventModal
-      :open="createOpen"
-      :categories="categories"
-      :create-business-event="createBusinessEvent"
-      @close="createOpen = false"
-      @created="onCreatedDraft"
-    />
-
-    <!-- PHOTO MODAL -->
     <EventPhotoModal v-if="photoModalUrl" :url="photoModalUrl" @close="photoModalUrl = ''" />
   </div>
 </template>
@@ -131,10 +92,8 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import EventCard from '../../components/EventCard.vue'
 import EventPhotoModal from '../../components/EventPhotoModal.vue'
 import FiltersPanel from '../../components/FiltersPanel.vue'
-import CreateEventModal from '../../components/CreateEventModal.vue'
 import { useSupabase } from '../../composables/useSupabase'
 
-/** единые утилиты, без дублей */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const withRetry = async (fn, tries = 3) => {
@@ -173,12 +132,6 @@ const parseDateInput = (yyyy_mm_dd) => {
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
 const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
 
-/**
- * selectCategory может быть:
- * - массив имён
- * - строка "спорт,еда"
- * - иногда id -> преобразуем через categoryMap
- */
 const normalizeCategoryNames = (raw, categoryMap) => {
   const map = categoryMap || {}
 
@@ -216,25 +169,20 @@ const normalizeCategoryNames = (raw, categoryMap) => {
 
 export default {
   name: 'HomeView',
-  components: { EventCard, EventPhotoModal, FiltersPanel, CreateEventModal },
-  props: {
-    globalSearchTerm: { type: String, default: '' }
-  },
+  components: { EventCard, EventPhotoModal, FiltersPanel },
+  props: { globalSearchTerm: { type: String, default: '' } },
   setup(props) {
-    const { getEvents, getCategories, getEventPhotos, getMyPublicUser, createBusinessEvent } = useSupabase()
+    const { getEvents, getCategories, getEventPhotos } = useSupabase()
 
     const initialLoaded = ref(false)
     const error = ref(null)
 
     const allEvents = ref([])
-    const visibleEvents = ref([]) // плавное появление
+    const visibleEvents = ref([])
     const photos = ref({})
 
     const categories = ref([])
-    const categoryMap = ref({}) // id -> name
-
-    const myProfile = ref(null)
-    const isBusiness = computed(() => myProfile.value?.It_business === true)
+    const categoryMap = ref({})
 
     // filters
     const selectedCategoryNames = ref([])
@@ -254,20 +202,23 @@ export default {
 
     // ui
     const drawerOpen = ref(false)
-    const createOpen = ref(false)
+    const openDrawer = async () => {
+      drawerOpen.value = true
+      await nextTick()
+      document.documentElement.style.overflow = 'hidden'
+      document.body.style.overflow = 'hidden'
+    }
+    const closeDrawer = () => {
+      drawerOpen.value = false
+      document.documentElement.style.overflow = ''
+      document.body.style.overflow = ''
+    }
 
+    // photo modal
     const photoModalUrl = ref('')
     const openPhoto = (url) => {
       if (!url) return
       photoModalUrl.value = url
-    }
-
-    const toast = ref('')
-    let toastTimer = null
-    const showToast = (msg) => {
-      toast.value = msg
-      if (toastTimer) clearTimeout(toastTimer)
-      toastTimer = setTimeout(() => (toast.value = ''), 3200)
     }
 
     // progressive list
@@ -276,46 +227,18 @@ export default {
       if (progressiveTimer) clearInterval(progressiveTimer)
       progressiveTimer = null
     }
-
     const startProgressive = (list) => {
       stopProgressive()
       visibleEvents.value = []
       const src = Array.isArray(list) ? list : []
       if (!src.length) return
-
       visibleEvents.value.push(src[0])
       let i = 1
       progressiveTimer = setInterval(() => {
-        if (i >= src.length) {
-          stopProgressive()
-          return
-        }
+        if (i >= src.length) return stopProgressive()
         visibleEvents.value.push(src[i])
         i++
       }, 140)
-    }
-
-    // drawer
-    const openDrawer = async () => {
-      drawerOpen.value = true
-      await nextTick()
-      document.documentElement.style.overflow = 'hidden'
-      document.body.style.overflow = 'hidden'
-    }
-
-    const closeDrawer = () => {
-      drawerOpen.value = false
-      document.documentElement.style.overflow = ''
-      document.body.style.overflow = ''
-    }
-
-    const openCreateModal = () => {
-      if (!isBusiness.value) return
-      createOpen.value = true
-    }
-
-    const onCreatedDraft = () => {
-      showToast('✅ Мероприятие отправлено. Оно появится после подтверждения админом.')
     }
 
     const resetAllFilters = () => {
@@ -333,7 +256,6 @@ export default {
       datePivot.value = ''
     }
 
-    // filtering
     const matchesCategories = (event) => {
       if (selectedCategoryNames.value.length === 0) return true
       const eventCats = normalizeCategoryNames(event?.selectCategory, categoryMap.value)
@@ -445,7 +367,7 @@ export default {
       )
     })
 
-    // loading
+    // load
     const photosLoading = ref(false)
     const stopPhotosLoading = ref(false)
 
@@ -457,11 +379,6 @@ export default {
         acc[String(c.id)] = c.name
         return acc
       }, {})
-    }
-
-    const loadProfile = async () => {
-      const { data } = await getMyPublicUser()
-      myProfile.value = data
     }
 
     const loadEventsProgressive = async () => {
@@ -478,7 +395,6 @@ export default {
         initialLoaded.value = true
         startProgressive(allEvents.value)
 
-        // photos background
         photos.value = {}
         stopPhotosLoading.value = false
 
@@ -487,7 +403,6 @@ export default {
 
         photosLoading.value = true
         const batchSize = 5
-
         for (let i = 0; i < ids.length; i += batchSize) {
           if (stopPhotosLoading.value) break
           const batch = ids.slice(i, i + batchSize)
@@ -502,7 +417,6 @@ export default {
             }
             photos.value = next
           }
-
           await sleep(120)
         }
       } catch (e) {
@@ -517,25 +431,22 @@ export default {
     }
 
     const reload = async () => {
-      await loadProfile()
       await loadEventsProgressive()
     }
 
     onMounted(async () => {
       try {
         await loadCategories()
-      } catch (e) {
+      } catch {
         categories.value = []
         categoryMap.value = {}
       }
-      await loadProfile()
       await loadEventsProgressive()
     })
 
     onBeforeUnmount(() => {
       stopProgressive()
       stopPhotosLoading.value = true
-      if (toastTimer) clearTimeout(toastTimer)
       document.documentElement.style.overflow = ''
       document.body.style.overflow = ''
     })
@@ -546,8 +457,6 @@ export default {
 
       categories,
       categoryMap,
-
-      isBusiness,
 
       selectedCategoryNames,
       isAllCategoriesActive,
@@ -572,16 +481,8 @@ export default {
       openDrawer,
       closeDrawer,
 
-      createOpen,
-      openCreateModal,
-
-      createBusinessEvent,
-      onCreatedDraft,
-
       resetAllFilters,
       reload,
-
-      toast,
 
       photoModalUrl,
       openPhoto
@@ -640,8 +541,8 @@ export default {
 .list-enter-active, .list-leave-active { transition: opacity 240ms ease, transform 240ms ease; }
 .list-enter-from, .list-leave-to { opacity: 0; transform: translateY(8px); }
 
-/* DRAWER */
-.drawer-root { position: fixed; inset: 0; z-index: 9999; }
+/* FILTER DRAWER */
+.drawer-root { position: fixed; inset: 0; z-index: 9998; }
 .overlay { position: absolute; inset: 0; background: rgba(0,0,0,.35); backdrop-filter: blur(2px); }
 
 .drawer {
@@ -670,7 +571,7 @@ export default {
   cursor: pointer;
 }
 
-.drawer-body { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.drawer-body { padding: 14px; overflow: auto; }
 .drawer-foot { padding: 14px; border-top: 1px solid #f2f2f2; display: flex; justify-content: flex-end; }
 
 .apply-btn {
@@ -681,51 +582,5 @@ export default {
   padding: 12px 16px;
   font-weight: 900;
   cursor: pointer;
-}
-.apply-btn:hover { filter: brightness(.97); }
-
-/* Business */
-.biz-card {
-  background: #fcfcff;
-  border: 1px solid rgba(138,117,227,.18);
-  border-radius: 16px;
-  padding: 12px;
-  display: grid;
-  gap: 10px;
-}
-.biz-top { display: flex; align-items: center; gap: 10px; }
-.biz-title { font-weight: 900; }
-.biz-badge {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 900;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(0, 200, 120, .12);
-  border: 1px solid rgba(0, 200, 120, .22);
-}
-.biz-badge.off { background: rgba(180,180,180,.16); border-color: rgba(180,180,180,.28); }
-.biz-text { font-size: 12px; opacity: .8; line-height: 1.25; }
-.biz-btn {
-  border: none;
-  border-radius: 14px;
-  padding: 11px 12px;
-  font-weight: 900;
-  cursor: pointer;
-  background: #8a75e3;
-  color: #fff;
-}
-.biz-btn:hover { filter: brightness(.98); }
-
-.toast {
-  position: sticky;
-  bottom: 10px;
-  background: #111;
-  color: #fff;
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-weight: 800;
-  font-size: 13px;
-  opacity: .92;
 }
 </style>

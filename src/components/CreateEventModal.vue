@@ -11,7 +11,7 @@
 
         <div class="body">
           <div class="hint">
-            Мероприятие будет создано с <b>is_published=false</b> и станет видно всем после подтверждения админом.
+            Мероприятие создаётся с <b>is_published=false</b> и появится после подтверждения админом.
           </div>
 
           <div class="grid">
@@ -27,7 +27,7 @@
 
             <div class="field">
               <div class="label">Адрес</div>
-              <input class="input" v-model="form.address" placeholder="Город, улица, дом / или ссылка для онлайн" />
+              <input class="input" v-model="form.address" placeholder="Город, улица, дом / или ссылка" />
             </div>
 
             <div class="field">
@@ -38,9 +38,7 @@
             <div class="field">
               <div class="label">Цена (₽)</div>
               <input class="input" type="number" min="0" inputmode="numeric" v-model="form.price" placeholder="0" />
-              <div class="mini">
-                <span class="badge" v-if="isFree">🆓 Бесплатно</span>
-              </div>
+              <div class="mini"><span class="badge" v-if="isFree">🆓 Бесплатно</span></div>
             </div>
 
             <div class="field inline">
@@ -77,7 +75,6 @@
           <div class="field">
             <div class="label">Ссылка на фото (необязательно)</div>
             <input class="input" v-model="form.photo_url" placeholder="https://..." />
-            <div class="mini">Если укажешь — добавим в event_photos как первое фото.</div>
           </div>
 
           <div v-if="error" class="error">{{ error }}</div>
@@ -145,7 +142,6 @@ export default {
     },
     async submit() {
       this.error = ''
-
       const title = trimOrNull(this.form.title)
       const description = trimOrNull(this.form.description)
       const dt = trimOrNull(this.form.date_time_event)
@@ -180,18 +176,6 @@ export default {
         }
         this.$emit('created', data)
         this.$emit('close')
-
-        this.selectedCategories = []
-        this.form = {
-          title: '',
-          description: '',
-          date_time_event: '',
-          address: '',
-          organizer: '',
-          price: '0',
-          is_online: false,
-          photo_url: ''
-        }
       } finally {
         this.saving = false
       }
@@ -237,13 +221,7 @@ export default {
   cursor: pointer;
 }
 
-.body {
-  padding: 14px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+.body { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
 
 .hint {
   background: #fcfcff;
@@ -294,7 +272,6 @@ export default {
 }
 .tag.active { background: #8a75e3; border-color: #8a75e3; color: #fff; }
 
-/* toggle */
 .check { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
 .check input { display: none; }
 .ui {
@@ -322,7 +299,6 @@ export default {
   justify-content: flex-end;
   gap: 10px;
 }
-
 .btn { border-radius: 14px; padding: 12px 16px; font-weight: 900; cursor: pointer; border: none; }
 .btn.secondary { background: #efefef; }
 .btn.primary { background: #8a75e3; color: #fff; }

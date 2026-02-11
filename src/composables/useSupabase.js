@@ -190,7 +190,7 @@ export const useSupabase = () => {
   }
 
   // ---------------------------
-  // AVATAR UPLOAD (Supabase Storage)
+  // AVATAR UPLOAD
   // ---------------------------
   const uploadAvatar = async (file) => {
     const { user } = await getUser()
@@ -243,25 +243,21 @@ export const useSupabase = () => {
   }
 
   return {
-    // events
     getEvents,
     getCategories,
     getEventPhotos,
     createBusinessEvent,
 
-    // auth
     getSession,
     getUser,
     signInWithGoogle,
     signOut,
 
-    // profile
     ensurePublicUserRow,
     getMyPublicUser,
     updateMyPublicUser,
     uploadAvatar,
 
-    // telegram
     linkTelegramViaEdgeFunction,
     getMyTelegramLink
   }
