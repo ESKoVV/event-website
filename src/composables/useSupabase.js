@@ -5,6 +5,10 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseKey)
 
+/**
+ * Делает URL из Storage "public", если он вдруг пришёл без /public/.
+ * Также чистит пробелы.
+ */
 const normalizeStoragePublicUrl = (url) => {
   if (!url || typeof url !== 'string') return ''
   const u = url.trim()
@@ -25,14 +29,15 @@ const compact = (obj) => {
 const getFileExt = (file) => {
   const name = String(file?.name || '')
   const ext = name.includes('.') ? name.split('.').pop() : ''
-  const clean = String(ext || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const clean = String(ext || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
   return clean || 'png'
 }
 
-const isHttpUrl = (s) => {
-  const str = String(s || '').trim()
-  if (!str) return false
-  return /^https?:\/\/.+/i.test(str)
+const isBadUrlScheme = (url) => {
+  const s = String(url || '').trim().toLowerCase()
+  return s.startsWith('data:') || s.startsWith('blob:')
 }
 
 export const useSupabase = () => {
@@ -152,6 +157,7 @@ export const useSupabase = () => {
     if (!user) return { data: null, error: new Error('No auth user') }
 
     const safePatch = { ...patch }
+    // запрещаем менять бизнес-флаг из клиента
     delete safePatch.It_business
 
     for (const k of Object.keys(safePatch)) {
@@ -165,7 +171,7 @@ export const useSupabase = () => {
   }
 
   // ---------------------------
-  // AVATAR UPLOAD
+  // AVATAR UPLOAD (Storage -> users.image_path)
   // ---------------------------
   const uploadAvatar = async (file) => {
     const { user } = await getUser()
@@ -202,43 +208,34 @@ export const useSupabase = () => {
   }
 
   // ---------------------------
-  // EVENT PHOTO UPLOAD (Storage -> event_photos)
+  // EVENT PHOTO UPLOAD (Storage -> event_photos.photo_url)
   // ---------------------------
   const uploadEventPhotoToStorage = async (eventId, file) => {
     if (!eventId) return { publicUrl: null, error: new Error('No eventId') }
     if (!file) return { publicUrl: null, error: new Error('No file') }
 
-    const envBucket = (import.meta.env.VITE_SUPABASE_EVENT_PHOTOS_BUCKET || '').trim()
-    const buckets = [...new Set([envBucket, 'event-photos', 'event_photos', 'events', 'Biom', 'biom'].filter(Boolean))]
+    // ✅ ОДИН источник истины: этот bucket
+    // .env: VITE_SUPABASE_EVENT_PHOTOS_BUCKET=event-photos
+    const bucket = (import.meta.env.VITE_SUPABASE_EVENT_PHOTOS_BUCKET || 'event-photos').trim()
 
     const ext = getFileExt(file)
     const path = `EventPhotos/${eventId}/${Date.now()}.${ext}`
 
-    let lastErr = null
-    for (const bucket of buckets) {
-      const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
-      if (upErr) {
-        lastErr = upErr
-        if (String(upErr?.message || '').toLowerCase().includes('bucket not found')) continue
-        return { publicUrl: null, error: upErr }
-      }
+    const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
+    if (upErr) return { publicUrl: null, error: upErr }
 
-      const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-      const publicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
-      return { publicUrl, error: null }
-    }
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+    const publicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
 
-    return {
-      publicUrl: null,
-      error:
-        lastErr ||
-        new Error(
-          'Bucket not found for event photos. Создай bucket в Storage (например "event-photos") и укажи VITE_SUPABASE_EVENT_PHOTOS_BUCKET.'
-        )
-    }
+    if (!publicUrl) return { publicUrl: null, error: new Error('Не удалось получить publicUrl') }
+    if (isBadUrlScheme(publicUrl)) return { publicUrl: null, error: new Error('Bad url scheme for photo') }
+
+    return { publicUrl, error: null }
   }
 
-  // ✅ BUSINESS create draft + фото
+  // ---------------------------
+  // BUSINESS EVENTS: create draft (is_published=false) + optional photo file
+  // ---------------------------
   const createBusinessEvent = async (payload) => {
     const { user, error: userErr } = await getUser()
     if (userErr) return { data: null, error: userErr }
@@ -261,34 +258,22 @@ export const useSupabase = () => {
       is_published: false
     }
 
+    // 1) создаём событие
     const { data: eventRow, error: insErr } = await supabase.from('events').insert(eventInsert).select().single()
     if (insErr) return { data: null, error: insErr }
 
-    // 1) FILE -> storage -> event_photos
+    // 2) если есть файл — грузим в Storage и пишем в public.event_photos.photo_url
     const file = payload?.photo_file || null
     if (file) {
       const { publicUrl, error: upErr } = await uploadEventPhotoToStorage(eventRow.id, file)
       if (upErr) return { data: eventRow, error: upErr }
 
+      // ✅ ВОТ СЮДА сохраняем фото
       const { error: phErr } = await supabase.from('event_photos').insert({
         event_id: eventRow.id,
         photo_url: publicUrl
       })
       if (phErr) return { data: eventRow, error: phErr }
-    }
-
-    // 2) URL (only http/https)
-    const photoUrl = String(payload?.photo_url ?? '').trim()
-    if (photoUrl) {
-      if (!isHttpUrl(photoUrl)) {
-        return { data: eventRow, error: new Error('photo_url должен быть ссылкой http/https. data: и blob: запрещены.') }
-      }
-
-      const { error: phErr2 } = await supabase.from('event_photos').insert({
-        event_id: eventRow.id,
-        photo_url: photoUrl
-      })
-      if (phErr2) return { data: eventRow, error: phErr2 }
     }
 
     return { data: eventRow, error: null }
@@ -311,21 +296,25 @@ export const useSupabase = () => {
   }
 
   return {
+    // events
     getEvents,
     getCategories,
     getEventPhotos,
     createBusinessEvent,
 
+    // auth
     getSession,
     getUser,
     signInWithGoogle,
     signOut,
 
+    // profile
     ensurePublicUserRow,
     getMyPublicUser,
     updateMyPublicUser,
     uploadAvatar,
 
+    // telegram
     linkTelegramViaEdgeFunction,
     getMyTelegramLink
   }

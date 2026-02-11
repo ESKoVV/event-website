@@ -67,7 +67,7 @@
             <div class="mini">Можно выбрать несколько.</div>
           </div>
 
-          <!-- IMAGE -->
+          <!-- ✅ ONLY FILE -->
           <div class="field">
             <div class="label">Картинка мероприятия</div>
 
@@ -91,13 +91,8 @@
             </div>
 
             <div class="mini">
-              Файл загрузится в Storage, а ссылка сохранится в <b>event_photos.photo_url</b>.
+              Файл загрузится в Storage, а ссылка сохранится в <b>public.event_photos.photo_url</b>.
             </div>
-
-            <div class="mini" style="margin-top: 8px; opacity:.75;">
-              Или можно указать ссылку (только http/https):
-            </div>
-            <input class="input" v-model="form.photo_url" placeholder="https://..." />
           </div>
 
           <div class="field">
@@ -125,8 +120,6 @@ const trimOrNull = (v) => {
   return s ? s : null
 }
 
-const isHttpUrl = (s) => /^https?:\/\/.+/i.test(String(s || '').trim())
-
 export default {
   name: 'CreateEventModal',
   emits: ['close', 'created'],
@@ -147,8 +140,7 @@ export default {
         address: '',
         organizer: '',
         price: '0',
-        is_online: false,
-        photo_url: ''
+        is_online: false
       },
       pickedFile: null,
       previewUrl: ''
@@ -234,11 +226,6 @@ export default {
       if (!dt) return (this.error = 'Укажи дату и время.')
       if (!description) return (this.error = 'Укажи описание.')
 
-      const url = trimOrNull(this.form.photo_url)
-      if (url && !isHttpUrl(url)) {
-        return (this.error = 'Ссылка на фото должна быть http/https. Форматы data: и blob: запрещены.')
-      }
-
       const priceNum = Number(this.form.price)
       const price = Number.isFinite(priceNum) ? priceNum : 0
       const is_free = price <= 0
@@ -253,8 +240,7 @@ export default {
         is_online: !!this.form.is_online,
         is_free,
         selectCategory: [...this.selectedCategories],
-        photo_file: this.pickedFile || null,
-        photo_url: url
+        photo_file: this.pickedFile || null
       }
 
       this.saving = true
@@ -274,8 +260,7 @@ export default {
           address: '',
           organizer: '',
           price: '0',
-          is_online: false,
-          photo_url: ''
+          is_online: false
         }
         this.clearFile()
 
