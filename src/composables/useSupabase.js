@@ -22,6 +22,13 @@ const compact = (obj) => {
   return out
 }
 
+const getFileExt = (file) => {
+  const name = String(file?.name || '')
+  const ext = name.includes('.') ? name.split('.').pop() : ''
+  const clean = String(ext || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  return clean || 'png'
+}
+
 export const useSupabase = () => {
   // ---------------------------
   // EVENTS (ONLY PUBLISHED)
@@ -67,44 +74,6 @@ export const useSupabase = () => {
       .order('id', { ascending: true })
 
     return { data: data ?? [], error }
-  }
-
-  // ✅ BUSINESS: create draft event (not published)
-  const createBusinessEvent = async (payload) => {
-    const { user, error: userErr } = await getUser()
-    if (userErr) return { data: null, error: userErr }
-    if (!user) return { data: null, error: new Error('Нет авторизации') }
-
-    const price = Number(payload?.price ?? 0)
-    const is_free = payload?.is_free === true || (Number.isFinite(price) && price <= 0)
-
-    const eventInsert = {
-      title: payload?.title ?? null,
-      description: payload?.description ?? null,
-      date_time_event: payload?.date_time_event ?? null,
-      address: payload?.address ?? null,
-      organizer: payload?.organizer ?? null,
-      price: Number.isFinite(price) ? price : 0,
-      is_online: !!payload?.is_online,
-      is_free,
-      user_id: user.id,
-      selectCategory: Array.isArray(payload?.selectCategory) ? payload.selectCategory : [],
-      is_published: false
-    }
-
-    const { data: eventRow, error: insErr } = await supabase.from('events').insert(eventInsert).select().single()
-    if (insErr) return { data: null, error: insErr }
-
-    const photoUrl = String(payload?.photo_url ?? '').trim()
-    if (photoUrl) {
-      const { error: phErr } = await supabase.from('event_photos').insert({
-        event_id: eventRow.id,
-        photo_url: photoUrl
-      })
-      if (phErr) return { data: eventRow, error: phErr }
-    }
-
-    return { data: eventRow, error: null }
   }
 
   // ---------------------------
@@ -200,7 +169,7 @@ export const useSupabase = () => {
     const envBucket = (import.meta.env.VITE_SUPABASE_AVATAR_BUCKET || '').trim()
     const buckets = [...new Set([envBucket, 'avatars', 'Biom', 'biom'].filter(Boolean))]
 
-    const ext = (file.name.split('.').pop() || 'png').toLowerCase()
+    const ext = getFileExt(file)
     const path = `ProfileImage/${user.id}/${Date.now()}.${ext}`
 
     let lastErr = null
@@ -227,6 +196,96 @@ export const useSupabase = () => {
   }
 
   // ---------------------------
+  // EVENT PHOTO UPLOAD (Storage -> event_photos)
+  // ---------------------------
+  const uploadEventPhotoToStorage = async (eventId, file) => {
+    if (!eventId) return { publicUrl: null, error: new Error('No eventId') }
+    if (!file) return { publicUrl: null, error: new Error('No file') }
+
+    // можно задать свой bucket в .env: VITE_SUPABASE_EVENT_PHOTOS_BUCKET
+    const envBucket = (import.meta.env.VITE_SUPABASE_EVENT_PHOTOS_BUCKET || '').trim()
+    const buckets = [...new Set([envBucket, 'event-photos', 'event_photos', 'events', 'Biom', 'biom'].filter(Boolean))]
+
+    const ext = getFileExt(file)
+    const path = `EventPhotos/${eventId}/${Date.now()}.${ext}`
+
+    let lastErr = null
+    for (const bucket of buckets) {
+      const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
+      if (upErr) {
+        lastErr = upErr
+        if (String(upErr?.message || '').toLowerCase().includes('bucket not found')) continue
+        return { publicUrl: null, error: upErr }
+      }
+
+      const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+      const publicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
+      return { publicUrl, error: null }
+    }
+
+    return {
+      publicUrl: null,
+      error:
+        lastErr ||
+        new Error(
+          'Bucket not found for event photos. Создай bucket в Storage (например "event-photos") и укажи VITE_SUPABASE_EVENT_PHOTOS_BUCKET.'
+        )
+    }
+  }
+
+  // ✅ BUSINESS: create draft event (not published) + optional image file/url
+  const createBusinessEvent = async (payload) => {
+    const { user, error: userErr } = await getUser()
+    if (userErr) return { data: null, error: userErr }
+    if (!user) return { data: null, error: new Error('Нет авторизации') }
+
+    const price = Number(payload?.price ?? 0)
+    const is_free = payload?.is_free === true || (Number.isFinite(price) && price <= 0)
+
+    const eventInsert = {
+      title: payload?.title ?? null,
+      description: payload?.description ?? null,
+      date_time_event: payload?.date_time_event ?? null,
+      address: payload?.address ?? null,
+      organizer: payload?.organizer ?? null,
+      price: Number.isFinite(price) ? price : 0,
+      is_online: !!payload?.is_online,
+      is_free,
+      user_id: user.id,
+      selectCategory: Array.isArray(payload?.selectCategory) ? payload.selectCategory : [],
+      is_published: false
+    }
+
+    const { data: eventRow, error: insErr } = await supabase.from('events').insert(eventInsert).select().single()
+    if (insErr) return { data: null, error: insErr }
+
+    // 1) если есть файл — загружаем в storage и пишем в event_photos
+    const file = payload?.photo_file || null
+    if (file) {
+      const { publicUrl, error: upErr } = await uploadEventPhotoToStorage(eventRow.id, file)
+      if (upErr) return { data: eventRow, error: upErr }
+
+      const { error: phErr } = await supabase.from('event_photos').insert({
+        event_id: eventRow.id,
+        photo_url: publicUrl
+      })
+      if (phErr) return { data: eventRow, error: phErr }
+    }
+
+    // 2) если есть URL — тоже добавим (может быть как доп вариант)
+    const photoUrl = String(payload?.photo_url ?? '').trim()
+    if (photoUrl) {
+      const { error: phErr2 } = await supabase.from('event_photos').insert({
+        event_id: eventRow.id,
+        photo_url: photoUrl
+      })
+      if (phErr2) return { data: eventRow, error: phErr2 }
+    }
+
+    return { data: eventRow, error: null }
+  }
+
+  // ---------------------------
   // TELEGRAM
   // ---------------------------
   const linkTelegramViaEdgeFunction = async (telegramAuthData) => {
@@ -243,21 +302,25 @@ export const useSupabase = () => {
   }
 
   return {
+    // events
     getEvents,
     getCategories,
     getEventPhotos,
     createBusinessEvent,
 
+    // auth
     getSession,
     getUser,
     signInWithGoogle,
     signOut,
 
+    // profile
     ensurePublicUserRow,
     getMyPublicUser,
     updateMyPublicUser,
     uploadAvatar,
 
+    // telegram
     linkTelegramViaEdgeFunction,
     getMyTelegramLink
   }

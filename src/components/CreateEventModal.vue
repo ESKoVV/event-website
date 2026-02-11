@@ -67,14 +67,42 @@
             <div class="mini">Можно выбрать несколько.</div>
           </div>
 
+          <!-- ✅ IMAGE -->
           <div class="field">
-            <div class="label">Описание *</div>
-            <textarea class="textarea" v-model="form.description" placeholder="Опиши, что будет происходить"></textarea>
+            <div class="label">Картинка мероприятия</div>
+
+            <div class="image-row">
+              <label class="file-btn">
+                <input class="file-input" type="file" accept="image/*" @change="onPickFile" />
+                📷 Выбрать файл
+              </label>
+
+              <button v-if="pickedFile" class="file-clear" type="button" @click="clearFile">
+                Убрать
+              </button>
+            </div>
+
+            <div v-if="pickedFile" class="preview">
+              <img :src="previewUrl" alt="preview" />
+              <div class="preview-meta">
+                <div class="preview-name">{{ pickedFile.name }}</div>
+                <div class="preview-sub">{{ prettySize(pickedFile.size) }}</div>
+              </div>
+            </div>
+
+            <div class="mini">
+              Файл загрузится в Storage, а ссылка попадёт в <b>event_photos.photo_url</b>.
+            </div>
+
+            <div class="mini" style="margin-top: 8px; opacity:.75;">
+              Или можно указать ссылку (необязательно):
+            </div>
+            <input class="input" v-model="form.photo_url" placeholder="https://..." />
           </div>
 
           <div class="field">
-            <div class="label">Ссылка на фото (необязательно)</div>
-            <input class="input" v-model="form.photo_url" placeholder="https://..." />
+            <div class="label">Описание *</div>
+            <textarea class="textarea" v-model="form.description" placeholder="Опиши, что будет происходить"></textarea>
           </div>
 
           <div v-if="error" class="error">{{ error }}</div>
@@ -119,13 +147,22 @@ export default {
         price: '0',
         is_online: false,
         photo_url: ''
-      }
+      },
+      pickedFile: null,
+      previewUrl: ''
     }
   },
   computed: {
     isFree() {
       const n = Number(this.form.price)
       return Number.isFinite(n) && n <= 0
+    }
+  },
+  watch: {
+    open(v) {
+      if (!v) {
+        this.cleanupPreview()
+      }
     }
   },
   methods: {
@@ -140,8 +177,56 @@ export default {
       if (idx >= 0) this.selectedCategories.splice(idx, 1)
       else this.selectedCategories.push(n)
     },
+
+    prettySize(bytes) {
+      const b = Number(bytes || 0)
+      if (b < 1024) return `${b} B`
+      const kb = b / 1024
+      if (kb < 1024) return `${kb.toFixed(1)} KB`
+      const mb = kb / 1024
+      return `${mb.toFixed(1)} MB`
+    },
+
+    onPickFile(e) {
+      const file = e?.target?.files?.[0]
+      if (!file) return
+
+      if (!String(file.type || '').startsWith('image/')) {
+        this.error = 'Нужно выбрать изображение.'
+        e.target.value = ''
+        return
+      }
+
+      // лимит (чтобы не улетали огромные) — можно менять
+      const maxMB = 8
+      if (file.size > maxMB * 1024 * 1024) {
+        this.error = `Слишком большой файл. Максимум ${maxMB}MB.`
+        e.target.value = ''
+        return
+      }
+
+      this.error = ''
+      this.pickedFile = file
+
+      this.cleanupPreview()
+      this.previewUrl = URL.createObjectURL(file)
+    },
+
+    clearFile() {
+      this.pickedFile = null
+      this.cleanupPreview()
+      this.previewUrl = ''
+    },
+
+    cleanupPreview() {
+      try {
+        if (this.previewUrl) URL.revokeObjectURL(this.previewUrl)
+      } catch {}
+    },
+
     async submit() {
       this.error = ''
+
       const title = trimOrNull(this.form.title)
       const description = trimOrNull(this.form.description)
       const dt = trimOrNull(this.form.date_time_event)
@@ -164,6 +249,9 @@ export default {
         is_online: !!this.form.is_online,
         is_free,
         selectCategory: [...this.selectedCategories],
+
+        // ✅ file + url
+        photo_file: this.pickedFile || null,
         photo_url: trimOrNull(this.form.photo_url)
       }
 
@@ -174,6 +262,21 @@ export default {
           this.error = String(error.message || error)
           return
         }
+
+        // reset
+        this.selectedCategories = []
+        this.form = {
+          title: '',
+          description: '',
+          date_time_event: '',
+          address: '',
+          organizer: '',
+          price: '0',
+          is_online: false,
+          photo_url: ''
+        }
+        this.clearFile()
+
         this.$emit('created', data)
         this.$emit('close')
       } finally {
@@ -250,7 +353,7 @@ export default {
 .input:focus, .textarea:focus { border-color: rgba(138,117,227,.55); box-shadow: 0 0 0 3px rgba(138,117,227,.12); }
 .textarea { min-height: 120px; resize: vertical; }
 
-.mini { font-size: 12px; opacity: .7; }
+.mini { font-size: 12px; opacity: .7; line-height: 1.25; }
 .badge {
   display: inline-flex;
   align-items: center;
@@ -272,6 +375,7 @@ export default {
 }
 .tag.active { background: #8a75e3; border-color: #8a75e3; color: #fff; }
 
+/* toggle */
 .check { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
 .check input { display: none; }
 .ui {
@@ -289,6 +393,51 @@ export default {
 .check input:checked + .ui { background: rgba(138,117,227,.85); border-color: rgba(138,117,227,.55); }
 .check input:checked + .ui::after { transform: translateX(18px); }
 .text { font-weight: 800; font-size: 13px; }
+
+.image-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.file-input { display: none; }
+.file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #efefef;
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.file-btn:hover { background: #fafafa; }
+.file-clear {
+  border: 1px solid #efefef;
+  background: #fafafa;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.file-clear:hover { background: #f0f0f0; }
+
+.preview {
+  margin-top: 8px;
+  border: 1px solid #efefef;
+  border-radius: 16px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 0;
+  background: #fff;
+}
+.preview img {
+  width: 140px;
+  height: 110px;
+  object-fit: cover;
+  display: block;
+  background: #f2f2f2;
+}
+.preview-meta { padding: 10px; display: grid; gap: 6px; align-content: center; }
+.preview-name { font-weight: 900; font-size: 13px; word-break: break-word; }
+.preview-sub { font-size: 12px; opacity: .7; }
 
 .error { color: #d9534f; font-weight: 800; font-size: 13px; }
 
