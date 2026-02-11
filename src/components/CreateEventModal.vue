@@ -11,7 +11,7 @@
 
         <div class="body">
           <div class="hint">
-            Мероприятие создаётся с <b>is_published=false</b> и появится после подтверждения админом.
+            Мероприятие отправится в предложку и появится после подтверждения админом.
           </div>
 
           <div class="grid">
@@ -67,7 +67,7 @@
             <div class="mini">Можно выбрать несколько.</div>
           </div>
 
-          <!-- ✅ IMAGE -->
+          <!-- IMAGE -->
           <div class="field">
             <div class="label">Картинка мероприятия</div>
 
@@ -91,11 +91,11 @@
             </div>
 
             <div class="mini">
-              Файл загрузится в Storage, а ссылка попадёт в <b>event_photos.photo_url</b>.
+              Файл загрузится в Storage, а ссылка сохранится в <b>event_photos.photo_url</b>.
             </div>
 
             <div class="mini" style="margin-top: 8px; opacity:.75;">
-              Или можно указать ссылку (необязательно):
+              Или можно указать ссылку (только http/https):
             </div>
             <input class="input" v-model="form.photo_url" placeholder="https://..." />
           </div>
@@ -124,6 +124,8 @@ const trimOrNull = (v) => {
   const s = String(v ?? '').trim()
   return s ? s : null
 }
+
+const isHttpUrl = (s) => /^https?:\/\/.+/i.test(String(s || '').trim())
 
 export default {
   name: 'CreateEventModal',
@@ -160,9 +162,7 @@ export default {
   },
   watch: {
     open(v) {
-      if (!v) {
-        this.cleanupPreview()
-      }
+      if (!v) this.cleanupPreview()
     }
   },
   methods: {
@@ -197,7 +197,6 @@ export default {
         return
       }
 
-      // лимит (чтобы не улетали огромные) — можно менять
       const maxMB = 8
       if (file.size > maxMB * 1024 * 1024) {
         this.error = `Слишком большой файл. Максимум ${maxMB}MB.`
@@ -235,6 +234,11 @@ export default {
       if (!dt) return (this.error = 'Укажи дату и время.')
       if (!description) return (this.error = 'Укажи описание.')
 
+      const url = trimOrNull(this.form.photo_url)
+      if (url && !isHttpUrl(url)) {
+        return (this.error = 'Ссылка на фото должна быть http/https. Форматы data: и blob: запрещены.')
+      }
+
       const priceNum = Number(this.form.price)
       const price = Number.isFinite(priceNum) ? priceNum : 0
       const is_free = price <= 0
@@ -249,10 +253,8 @@ export default {
         is_online: !!this.form.is_online,
         is_free,
         selectCategory: [...this.selectedCategories],
-
-        // ✅ file + url
         photo_file: this.pickedFile || null,
-        photo_url: trimOrNull(this.form.photo_url)
+        photo_url: url
       }
 
       this.saving = true
@@ -292,47 +294,23 @@ export default {
 .overlay { position: absolute; inset: 0; background: rgba(0,0,0,.38); backdrop-filter: blur(2px); }
 
 .modal {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(760px, 94vw);
-  max-height: 90vh;
+  position: absolute; left: 50%; top: 50%;
+  width: min(760px, 94vw); max-height: 90vh;
   transform: translate(-50%, -50%);
-  background: #fff;
-  border: 1px solid #efefef;
-  border-radius: 18px;
+  background: #fff; border: 1px solid #efefef; border-radius: 18px;
   box-shadow: 0 18px 60px rgba(0,0,0,.18);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  display: flex; flex-direction: column; overflow: hidden;
 }
 
-.head {
-  padding: 14px;
-  border-bottom: 1px solid #f2f2f2;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.head { padding: 14px; border-bottom: 1px solid #f2f2f2; display: flex; align-items: center; gap: 12px; }
 .title { font-weight: 900; font-size: 16px; }
-.x {
-  margin-left: auto;
-  border: 1px solid #efefef;
-  background: #fafafa;
-  border-radius: 12px;
-  padding: 8px 10px;
-  cursor: pointer;
-}
+.x { margin-left: auto; border: 1px solid #efefef; background: #fafafa; border-radius: 12px; padding: 8px 10px; cursor: pointer; }
 
 .body { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
 
 .hint {
-  background: #fcfcff;
-  border: 1px solid rgba(138,117,227,.18);
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-size: 13px;
-  opacity: .9;
+  background: #fcfcff; border: 1px solid rgba(138,117,227,.18);
+  border-radius: 14px; padding: 10px 12px; font-size: 13px; opacity: .9;
 }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -343,51 +321,31 @@ export default {
 
 .label { font-size: 12px; font-weight: 800; opacity: .7; }
 .input, .textarea {
-  border: 1px solid #efefef;
-  border-radius: 12px;
-  padding: 10px 10px;
-  font-size: 14px;
-  background: #fff;
-  outline: none;
+  border: 1px solid #efefef; border-radius: 12px; padding: 10px 10px;
+  font-size: 14px; background: #fff; outline: none;
 }
 .input:focus, .textarea:focus { border-color: rgba(138,117,227,.55); box-shadow: 0 0 0 3px rgba(138,117,227,.12); }
 .textarea { min-height: 120px; resize: vertical; }
 
 .mini { font-size: 12px; opacity: .7; line-height: 1.25; }
 .badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(138,117,227,.12);
-  border: 1px solid rgba(138,117,227,.22);
-  width: fit-content;
+  display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px;
+  background: rgba(138,117,227,.12); border: 1px solid rgba(138,117,227,.22); width: fit-content;
 }
 
 .tags { display: flex; flex-wrap: wrap; gap: 8px; }
-.tag {
-  border: 1px solid #efefef;
-  background: #fff;
-  border-radius: 999px;
-  padding: 7px 10px;
-  cursor: pointer;
-  font-size: 13px;
-}
+.tag { border: 1px solid #efefef; background: #fff; border-radius: 999px; padding: 7px 10px; cursor: pointer; font-size: 13px; }
 .tag.active { background: #8a75e3; border-color: #8a75e3; color: #fff; }
 
-/* toggle */
 .check { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
 .check input { display: none; }
 .ui {
-  width: 44px; height: 26px; border-radius: 999px;
-  border: 1px solid #e9e9e9; background: #f3f3f3;
+  width: 44px; height: 26px; border-radius: 999px; border: 1px solid #e9e9e9; background: #f3f3f3;
   position: relative; transition: background 180ms ease, border-color 180ms ease;
 }
 .ui::after {
-  content: '';
-  width: 22px; height: 22px; border-radius: 999px;
-  background: #fff; position: absolute; top: 1px; left: 1px;
-  box-shadow: 0 2px 10px rgba(0,0,0,.08);
+  content: ''; width: 22px; height: 22px; border-radius: 999px; background: #fff;
+  position: absolute; top: 1px; left: 1px; box-shadow: 0 2px 10px rgba(0,0,0,.08);
   transition: transform 180ms ease;
 }
 .check input:checked + .ui { background: rgba(138,117,227,.85); border-color: rgba(138,117,227,.55); }
@@ -397,57 +355,29 @@ export default {
 .image-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .file-input { display: none; }
 .file-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #efefef;
-  background: #fff;
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-weight: 900;
-  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1px solid #efefef; background: #fff; border-radius: 14px;
+  padding: 10px 12px; font-weight: 900; cursor: pointer;
 }
 .file-btn:hover { background: #fafafa; }
 .file-clear {
-  border: 1px solid #efefef;
-  background: #fafafa;
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-weight: 900;
-  cursor: pointer;
+  border: 1px solid #efefef; background: #fafafa; border-radius: 14px;
+  padding: 10px 12px; font-weight: 900; cursor: pointer;
 }
 .file-clear:hover { background: #f0f0f0; }
 
 .preview {
-  margin-top: 8px;
-  border: 1px solid #efefef;
-  border-radius: 16px;
-  overflow: hidden;
-  display: grid;
-  grid-template-columns: 140px 1fr;
-  gap: 0;
-  background: #fff;
+  margin-top: 8px; border: 1px solid #efefef; border-radius: 16px; overflow: hidden;
+  display: grid; grid-template-columns: 140px 1fr; background: #fff;
 }
-.preview img {
-  width: 140px;
-  height: 110px;
-  object-fit: cover;
-  display: block;
-  background: #f2f2f2;
-}
+.preview img { width: 140px; height: 110px; object-fit: cover; display: block; background: #f2f2f2; }
 .preview-meta { padding: 10px; display: grid; gap: 6px; align-content: center; }
 .preview-name { font-weight: 900; font-size: 13px; word-break: break-word; }
 .preview-sub { font-size: 12px; opacity: .7; }
 
 .error { color: #d9534f; font-weight: 800; font-size: 13px; }
 
-.foot {
-  padding: 14px;
-  border-top: 1px solid #f2f2f2;
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
+.foot { padding: 14px; border-top: 1px solid #f2f2f2; display: flex; justify-content: flex-end; gap: 10px; }
 .btn { border-radius: 14px; padding: 12px 16px; font-weight: 900; cursor: pointer; border: none; }
 .btn.secondary { background: #efefef; }
 .btn.primary { background: #8a75e3; color: #fff; }

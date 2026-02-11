@@ -29,6 +29,12 @@ const getFileExt = (file) => {
   return clean || 'png'
 }
 
+const isHttpUrl = (s) => {
+  const str = String(s || '').trim()
+  if (!str) return false
+  return /^https?:\/\/.+/i.test(str)
+}
+
 export const useSupabase = () => {
   // ---------------------------
   // EVENTS (ONLY PUBLISHED)
@@ -202,7 +208,6 @@ export const useSupabase = () => {
     if (!eventId) return { publicUrl: null, error: new Error('No eventId') }
     if (!file) return { publicUrl: null, error: new Error('No file') }
 
-    // можно задать свой bucket в .env: VITE_SUPABASE_EVENT_PHOTOS_BUCKET
     const envBucket = (import.meta.env.VITE_SUPABASE_EVENT_PHOTOS_BUCKET || '').trim()
     const buckets = [...new Set([envBucket, 'event-photos', 'event_photos', 'events', 'Biom', 'biom'].filter(Boolean))]
 
@@ -233,7 +238,7 @@ export const useSupabase = () => {
     }
   }
 
-  // ✅ BUSINESS: create draft event (not published) + optional image file/url
+  // ✅ BUSINESS create draft + фото
   const createBusinessEvent = async (payload) => {
     const { user, error: userErr } = await getUser()
     if (userErr) return { data: null, error: userErr }
@@ -259,7 +264,7 @@ export const useSupabase = () => {
     const { data: eventRow, error: insErr } = await supabase.from('events').insert(eventInsert).select().single()
     if (insErr) return { data: null, error: insErr }
 
-    // 1) если есть файл — загружаем в storage и пишем в event_photos
+    // 1) FILE -> storage -> event_photos
     const file = payload?.photo_file || null
     if (file) {
       const { publicUrl, error: upErr } = await uploadEventPhotoToStorage(eventRow.id, file)
@@ -272,9 +277,13 @@ export const useSupabase = () => {
       if (phErr) return { data: eventRow, error: phErr }
     }
 
-    // 2) если есть URL — тоже добавим (может быть как доп вариант)
+    // 2) URL (only http/https)
     const photoUrl = String(payload?.photo_url ?? '').trim()
     if (photoUrl) {
+      if (!isHttpUrl(photoUrl)) {
+        return { data: eventRow, error: new Error('photo_url должен быть ссылкой http/https. data: и blob: запрещены.') }
+      }
+
       const { error: phErr2 } = await supabase.from('event_photos').insert({
         event_id: eventRow.id,
         photo_url: photoUrl
@@ -302,25 +311,21 @@ export const useSupabase = () => {
   }
 
   return {
-    // events
     getEvents,
     getCategories,
     getEventPhotos,
     createBusinessEvent,
 
-    // auth
     getSession,
     getUser,
     signInWithGoogle,
     signOut,
 
-    // profile
     ensurePublicUserRow,
     getMyPublicUser,
     updateMyPublicUser,
     uploadAvatar,
 
-    // telegram
     linkTelegramViaEdgeFunction,
     getMyTelegramLink
   }

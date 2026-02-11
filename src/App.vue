@@ -3,7 +3,6 @@
     <header class="header">
       <div class="header-container">
         <div class="header-left">
-          <!-- MENU BUTTON -->
           <button class="menu-button" aria-label="Меню" @click="openMenu">
             <div class="menu-icon"><span></span><span></span><span></span></div>
           </button>
@@ -31,7 +30,7 @@
       <component :is="Component" :global-search-term="searchTerm" />
     </router-view>
 
-    <!-- MENU DRAWER (menu-button) -->
+    <!-- MENU DRAWER -->
     <teleport to="body">
       <div v-if="menuOpen" class="menu-root" @keydown.esc="closeMenu" tabindex="-1">
         <div class="overlay" @click="closeMenu"></div>
@@ -43,7 +42,6 @@
           </div>
 
           <div class="menu-body">
-            <!-- ✅ BIZ CARD moved here -->
             <div class="biz-card">
               <div class="biz-top">
                 <div class="biz-title">Business аккаунт</div>
@@ -51,13 +49,10 @@
                 <span v-else class="biz-badge off">Не активен</span>
               </div>
 
-              <div class="biz-text" v-if="isBusiness">
-                Ты можешь отправлять мероприятия в предложку. Они появятся после подтверждения админом
-                (<b>is_published=true</b>).
-              </div>
-              <div class="biz-text" v-else>
-                Business даст возможность предлагать мероприятия. Оплату подключим позже — сейчас статус меняется вручную
-                в базе.
+              <div class="biz-text">
+                Бизнес аккаунт позволяет публиковать мероприятия.
+                Стоимость — <b>200 рублей в месяц</b>.
+                Для приобретения нужно написать администратору.
               </div>
 
               <div class="biz-actions">
@@ -66,23 +61,30 @@
                 </button>
 
                 <button v-else class="biz-btn secondary" @click="openProfileOrAuth">
-                  Узнать про Business
+                  👤 Войти / Профиль
                 </button>
               </div>
             </div>
 
             <div class="menu-divider"></div>
 
-            <!-- optional quick actions -->
-            <button class="menu-item" @click="openProfileOrAuth">
-              👤 Профиль / Вход
-            </button>
+            <button class="menu-item" @click="openProfileOrAuth">👤 Профиль / Вход</button>
           </div>
 
           <div class="menu-foot">
             <button class="apply-btn" @click="closeMenu">Закрыть</button>
           </div>
         </aside>
+      </div>
+    </teleport>
+
+    <!-- CENTER NOTICE -->
+    <teleport to="body">
+      <div v-if="noticeOpen" class="notice-root">
+        <div class="notice-card">
+          <div class="notice-title">✅ Готово</div>
+          <div class="notice-text">Мероприятие ждёт одобрения администратора</div>
+        </div>
       </div>
     </teleport>
 
@@ -107,7 +109,6 @@
       @logout="logout"
     />
 
-    <!-- ✅ Create event modal is now here (single source of truth) -->
     <CreateEventModal
       :open="createEventOpen"
       :categories="categories"
@@ -199,6 +200,17 @@ export default {
       document.body.style.overflow = ''
     }
 
+    // notice
+    const noticeOpen = ref(false)
+    let noticeTimer = null
+    const showNotice = () => {
+      noticeOpen.value = true
+      if (noticeTimer) clearTimeout(noticeTimer)
+      noticeTimer = setTimeout(() => {
+        noticeOpen.value = false
+      }, 2600)
+    }
+
     // categories for create modal
     const categories = ref([])
     const categoriesLoaded = ref(false)
@@ -224,7 +236,8 @@ export default {
     }
 
     const onDraftCreated = () => {
-      alert('✅ Мероприятие отправлено. Оно появится после подтверждения админом.')
+      // ✅ вместо alert
+      showNotice()
     }
 
     // auth/profile loader
@@ -343,8 +356,6 @@ export default {
 
         pickedAvatarFile.value = null
         headerImgBroken.value = false
-
-        alert('Сохранено')
       } catch (e) {
         console.error('Save profile error:', e)
         alert('Ошибка сохранения (см. консоль)')
@@ -383,6 +394,8 @@ export default {
       openMenu,
       closeMenu,
 
+      noticeOpen,
+
       categories,
       createEventOpen,
       openCreateEvent,
@@ -405,14 +418,9 @@ export default {
 
 <style>
 .header-placeholder {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #f2f2f2;
-  display: grid;
-  place-items: center;
-  font-size: 18px;
-  color: #9aa0a6;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: #f2f2f2; display: grid; place-items: center;
+  font-size: 18px; color: #9aa0a6;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -450,7 +458,7 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
 }
 .header-avatar { width: 40px; height: 40px; object-fit: cover; border-radius: 50%; display: block; }
 
-/* --- MENU DRAWER --- */
+/* MENU DRAWER */
 .menu-root { position: fixed; inset: 0; z-index: 9999; }
 .overlay { position: absolute; inset: 0; background: rgba(0,0,0,.35); backdrop-filter: blur(2px); }
 
@@ -467,8 +475,7 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
 
 .menu-head {
   display: flex; align-items: center; gap: 10px;
-  padding: 14px;
-  border-bottom: 1px solid #f2f2f2;
+  padding: 14px; border-bottom: 1px solid #f2f2f2;
 }
 .menu-title { font-weight: 900; font-size: 16px; }
 .close-btn {
@@ -483,16 +490,11 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
 .menu-body { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
 .menu-foot { padding: 14px; border-top: 1px solid #f2f2f2; display: flex; justify-content: flex-end; }
 .apply-btn {
-  border: none;
-  background: #8a75e3;
-  color: #fff;
-  border-radius: 14px;
-  padding: 12px 16px;
-  font-weight: 900;
-  cursor: pointer;
+  border: none; background: #8a75e3; color: #fff;
+  border-radius: 14px; padding: 12px 16px;
+  font-weight: 900; cursor: pointer;
 }
 
-/* biz-card (moved here) */
 .biz-card {
   background: #fcfcff;
   border: 1px solid rgba(138,117,227,.18);
@@ -505,25 +507,19 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
 .biz-title { font-weight: 900; }
 .biz-badge {
   margin-left: auto;
-  font-size: 12px;
-  font-weight: 900;
-  padding: 6px 10px;
-  border-radius: 999px;
+  font-size: 12px; font-weight: 900;
+  padding: 6px 10px; border-radius: 999px;
   background: rgba(0, 200, 120, .12);
   border: 1px solid rgba(0, 200, 120, .22);
 }
 .biz-badge.off { background: rgba(180,180,180,.16); border-color: rgba(180,180,180,.28); }
-.biz-text { font-size: 12px; opacity: .8; line-height: 1.25; }
+.biz-text { font-size: 12px; opacity: .85; line-height: 1.25; }
 
 .biz-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .biz-btn {
-  border: none;
-  border-radius: 14px;
-  padding: 11px 12px;
-  font-weight: 900;
-  cursor: pointer;
-  background: #8a75e3;
-  color: #fff;
+  border: none; border-radius: 14px;
+  padding: 11px 12px; font-weight: 900;
+  cursor: pointer; background: #8a75e3; color: #fff;
 }
 .biz-btn.secondary { background: #efefef; color: #14181b; }
 .biz-btn:hover { filter: brightness(.98); }
@@ -531,13 +527,30 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
 .menu-divider { height: 1px; background: #f2f2f2; margin: 6px 0; }
 
 .menu-item {
-  border: 1px solid #efefef;
-  background: #fff;
-  border-radius: 14px;
-  padding: 12px 12px;
-  font-weight: 900;
-  cursor: pointer;
-  text-align: left;
+  border: 1px solid #efefef; background: #fff;
+  border-radius: 14px; padding: 12px 12px;
+  font-weight: 900; cursor: pointer; text-align: left;
 }
 .menu-item:hover { background: #fafafa; }
+
+/* CENTER NOTICE */
+.notice-root {
+  position: fixed; inset: 0; z-index: 10001;
+  display: grid; place-items: center;
+  pointer-events: none;
+}
+.notice-card {
+  pointer-events: none;
+  width: min(520px, 92vw);
+  background: #fff;
+  border: 1px solid rgba(138,117,227,.24);
+  box-shadow: 0 18px 60px rgba(0,0,0,.18);
+  border-radius: 18px;
+  padding: 16px;
+  text-align: center;
+  animation: pop 180ms ease;
+}
+@keyframes pop { from { transform: scale(.98); opacity: .6; } to { transform: scale(1); opacity: 1; } }
+.notice-title { font-weight: 900; }
+.notice-text { margin-top: 6px; opacity: .85; font-weight: 800; }
 </style>

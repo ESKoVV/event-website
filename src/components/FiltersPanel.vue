@@ -1,144 +1,112 @@
 <template>
   <div class="panel">
-    <div class="head">
-      <div class="title">Фильтры</div>
-      <button class="reset" @click="$emit('reset')">Сбросить</button>
+    <div class="row">
+      <div class="spacer"></div>
+      <button class="reset" type="button" @click="$emit('reset')">Сбросить</button>
     </div>
 
-    <!-- Categories -->
-    <div class="block">
-      <div class="label">Категории</div>
+    <section class="card">
+      <div class="h">Категории</div>
 
       <div class="tags">
-        <button class="tag" :class="{ active: isAllCategoriesActive }" @click="selectAllCategories">
+        <button class="tag" :class="{ active: selectedCategoryNames.length === 0 }" type="button" @click="setAll()">
           Все
         </button>
 
         <button
-          v-for="cat in categories"
-          :key="cat.id"
+          v-for="c in categories"
+          :key="c.id"
           class="tag"
-          :class="{ active: selectedCategoryNames.includes(cat.name) }"
-          @click="toggleCategory(cat.name)"
+          :class="{ active: selectedCategoryNames.includes(c.name) }"
+          type="button"
+          @click="toggleCategory(c.name)"
         >
-          {{ cat.name }}
+          {{ c.name }}
         </button>
       </div>
-    </div>
+    </section>
 
-    <!-- Online -->
-    <div class="block inline">
-      <label class="check">
-        <input type="checkbox" :checked="onlineOnly" @change="onToggleOnline" />
+    <section class="card">
+      <div class="h">Онлайн</div>
+      <label class="toggle">
+        <input type="checkbox" :checked="onlineOnly" @change="$emit('update:onlineOnly', $event.target.checked)" />
         <span class="ui"></span>
-        <span class="text">Только онлайн</span>
+        <span class="txt">Только онлайн</span>
       </label>
-      <div class="hint">Показывает только мероприятия, где <b>is_online=true</b>.</div>
-    </div>
+      <div class="sub">Показывает только мероприятия, где <b>is_online=true</b>.</div>
+    </section>
 
-    <div class="grid">
-      <!-- PRICE -->
-      <div class="card">
-        <div class="cardTitle">Цена</div>
-
-        <div class="seg">
-          <button class="segBtn" :class="{ active: priceMode === 'all' }" @click="setPriceMode('all')">Любая</button>
-          <button class="segBtn" :class="{ active: priceMode === 'free' }" @click="setPriceMode('free')">Бесплатно</button>
-          <button class="segBtn" :class="{ active: priceMode === 'custom' }" @click="setPriceMode('custom')">Свой диапазон</button>
-        </div>
-
-        <div class="chips">
-          <button class="chip" :class="{ active: priceMode === '100_1000' }" @click="setPriceMode('100_1000')">100–1000</button>
-          <button class="chip" :class="{ active: priceMode === '1000_3000' }" @click="setPriceMode('1000_3000')">1000–3000</button>
-          <button class="chip" :class="{ active: priceMode === '3000_10000' }" @click="setPriceMode('3000_10000')">3000–10000</button>
-          <button class="chip" :class="{ active: priceMode === 'gt_10000' }" @click="setPriceMode('gt_10000')">&gt; 10000</button>
-        </div>
-
-        <div v-if="priceMode === 'custom'" class="row">
-          <div class="field">
-            <div class="fieldLabel">от</div>
-            <input
-              class="input"
-              type="number"
-              min="0"
-              inputmode="numeric"
-              placeholder="0"
-              :value="customPriceMin"
-              @input="$emit('update:customPriceMin', $event.target.value)"
-            />
-          </div>
-
-          <div class="field">
-            <div class="fieldLabel">до</div>
-            <input
-              class="input"
-              type="number"
-              min="0"
-              inputmode="numeric"
-              placeholder="∞"
-              :value="customPriceMax"
-              @input="$emit('update:customPriceMax', $event.target.value)"
-            />
-          </div>
-        </div>
-
-        <div class="hint">
-          Если <b>is_free=true</b> или <b>price=0</b> — это “Бесплатно”.
-        </div>
+    <section class="card">
+      <div class="h">Цена</div>
+      <div class="chips">
+        <button class="chip" :class="{ active: priceMode === 'all' }" type="button" @click="setPrice('all')">
+          Любая
+        </button>
+        <button class="chip" :class="{ active: priceMode === 'free' }" type="button" @click="setPrice('free')">
+          Бесплатно
+        </button>
+        <button class="chip" :class="{ active: priceMode === 'custom' }" type="button" @click="setPrice('custom')">
+          Свой диапазон
+        </button>
       </div>
 
-      <!-- DATE -->
-      <div class="card">
-        <div class="cardTitle">Дата</div>
-
-        <div class="seg">
-          <button class="segBtn" :class="{ active: dateMode === 'all' }" @click="setDateMode('all')">Всё время</button>
-          <button class="segBtn" :class="{ active: dateMode === 'on' }" @click="setDateMode('on')">На дату</button>
-          <button class="segBtn" :class="{ active: dateMode === 'range' }" @click="setDateMode('range')">Диапазон</button>
-        </div>
-
-        <div class="chips">
-          <button class="chip" :class="{ active: dateMode === 'after' }" @click="setDateMode('after')">После</button>
-          <button class="chip" :class="{ active: dateMode === 'before' }" @click="setDateMode('before')">До</button>
-          <button class="chip" :class="{ active: dateMode === 'next7' }" @click="setDateMode('next7')">След. 7 дней</button>
-          <button class="chip" :class="{ active: dateMode === 'today' }" @click="setDateMode('today')">Сегодня</button>
-        </div>
-
-        <div v-if="dateMode === 'on'" class="row">
-          <div class="field grow">
-            <div class="fieldLabel">Дата</div>
-            <input class="input" type="date" :value="dateOn" @input="$emit('update:dateOn', $event.target.value)" />
-          </div>
-        </div>
-
-        <div v-else-if="dateMode === 'range'" class="row">
-          <div class="field grow">
-            <div class="fieldLabel">с</div>
-            <input class="input" type="date" :value="dateFrom" @input="$emit('update:dateFrom', $event.target.value)" />
-          </div>
-          <div class="field grow">
-            <div class="fieldLabel">по</div>
-            <input class="input" type="date" :value="dateTo" @input="$emit('update:dateTo', $event.target.value)" />
-          </div>
-        </div>
-
-        <div v-else-if="dateMode === 'after'" class="row">
-          <div class="field grow">
-            <div class="fieldLabel">После</div>
-            <input class="input" type="date" :value="datePivot" @input="$emit('update:datePivot', $event.target.value)" />
-          </div>
-        </div>
-
-        <div v-else-if="dateMode === 'before'" class="row">
-          <div class="field grow">
-            <div class="fieldLabel">До</div>
-            <input class="input" type="date" :value="datePivot" @input="$emit('update:datePivot', $event.target.value)" />
-          </div>
-        </div>
-
-        <div class="hint">Фильтрация по <b>date_time_event</b>.</div>
+      <div class="chips">
+        <button class="chip" :class="{ active: priceMode === '100_1000' }" type="button" @click="setPrice('100_1000')">
+          100–1000
+        </button>
+        <button class="chip" :class="{ active: priceMode === '1000_3000' }" type="button" @click="setPrice('1000_3000')">
+          1000–3000
+        </button>
+        <button
+          class="chip"
+          :class="{ active: priceMode === '3000_10000' }"
+          type="button"
+          @click="setPrice('3000_10000')"
+        >
+          3000–10000
+        </button>
+        <button class="chip" :class="{ active: priceMode === 'gt_10000' }" type="button" @click="setPrice('gt_10000')">
+          &gt; 10000
+        </button>
       </div>
-    </div>
+
+      <div v-if="priceMode === 'custom'" class="range">
+        <input class="input" type="number" inputmode="numeric" placeholder="От" :value="customPriceMin" @input="$emit('update:customPriceMin', $event.target.value)" />
+        <input class="input" type="number" inputmode="numeric" placeholder="До" :value="customPriceMax" @input="$emit('update:customPriceMax', $event.target.value)" />
+      </div>
+
+      <div class="sub">Если <b>is_free=true</b> или price=0 — это “Бесплатно”.</div>
+    </section>
+
+    <section class="card">
+      <div class="h">Дата</div>
+
+      <div class="chips">
+        <button class="chip" :class="{ active: dateMode === 'all' }" type="button" @click="setDate('all')">Все время</button>
+        <button class="chip" :class="{ active: dateMode === 'today' }" type="button" @click="setDate('today')">Сегодня</button>
+        <button class="chip" :class="{ active: dateMode === 'next7' }" type="button" @click="setDate('next7')">7 дней</button>
+      </div>
+
+      <div class="chips">
+        <button class="chip" :class="{ active: dateMode === 'on' }" type="button" @click="setDate('on')">Определённая</button>
+        <button class="chip" :class="{ active: dateMode === 'range' }" type="button" @click="setDate('range')">Диапазон</button>
+        <button class="chip" :class="{ active: dateMode === 'after' }" type="button" @click="setDate('after')">После</button>
+        <button class="chip" :class="{ active: dateMode === 'before' }" type="button" @click="setDate('before')">До</button>
+      </div>
+
+      <div v-if="dateMode === 'on'" class="range">
+        <input class="input" type="date" :value="dateOn" @input="$emit('update:dateOn', $event.target.value)" />
+      </div>
+
+      <div v-if="dateMode === 'range'" class="range">
+        <input class="input" type="date" :value="dateFrom" @input="$emit('update:dateFrom', $event.target.value)" />
+        <input class="input" type="date" :value="dateTo" @input="$emit('update:dateTo', $event.target.value)" />
+      </div>
+
+      <div v-if="dateMode === 'after' || dateMode === 'before'" class="range">
+        <input class="input" type="date" :value="datePivot" @input="$emit('update:datePivot', $event.target.value)" />
+      </div>
+    </section>
   </div>
 </template>
 
@@ -160,16 +128,11 @@ export default {
   ],
   props: {
     categories: { type: Array, default: () => [] },
-
     selectedCategoryNames: { type: Array, default: () => [] },
-    isAllCategoriesActive: { type: Boolean, default: true },
-
     onlineOnly: { type: Boolean, default: false },
-
     priceMode: { type: String, default: 'all' },
     customPriceMin: { type: String, default: '' },
     customPriceMax: { type: String, default: '' },
-
     dateMode: { type: String, default: 'all' },
     dateOn: { type: String, default: '' },
     dateFrom: { type: String, default: '' },
@@ -177,25 +140,21 @@ export default {
     datePivot: { type: String, default: '' }
   },
   methods: {
-    selectAllCategories() {
+    setAll() {
       this.$emit('update:selectedCategoryNames', [])
     },
     toggleCategory(name) {
       const n = String(name || '').trim()
       if (!n) return
-      const next = [...this.selectedCategoryNames]
-      const idx = next.indexOf(n)
-      if (idx >= 0) next.splice(idx, 1)
-      else next.push(n)
-      this.$emit('update:selectedCategoryNames', next)
+      const set = new Set(this.selectedCategoryNames)
+      if (set.has(n)) set.delete(n)
+      else set.add(n)
+      this.$emit('update:selectedCategoryNames', Array.from(set))
     },
-    onToggleOnline(e) {
-      this.$emit('update:onlineOnly', !!e.target.checked)
-    },
-    setPriceMode(mode) {
+    setPrice(mode) {
       this.$emit('update:priceMode', mode)
     },
-    setDateMode(mode) {
+    setDate(mode) {
       this.$emit('update:dateMode', mode)
     }
   }
@@ -203,95 +162,78 @@ export default {
 </script>
 
 <style scoped>
-.panel { display: flex; flex-direction: column; gap: 12px; }
+.panel { display: grid; gap: 12px; }
 
-.head { display: flex; align-items: center; gap: 12px; }
-.title { font-weight: 900; font-size: 16px; }
+.row { display: flex; align-items: center; }
+.spacer { flex: 1; }
 .reset {
-  margin-left: auto;
   border: 1px solid #efefef;
   background: #fafafa;
   border-radius: 12px;
   padding: 8px 10px;
   cursor: pointer;
-  font-size: 13px;
+  font-weight: 900;
 }
-.reset:hover { background: #f3f3f3; }
+.reset:hover { background: #f0f0f0; }
 
-.block { border: 1px solid #f2f2f2; border-radius: 16px; padding: 12px; background: #fcfcfc; }
-.inline { display: grid; gap: 8px; }
+.card {
+  background: #fff;
+  border: 1px solid #efefef;
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.03);
+}
+.h { font-weight: 900; margin-bottom: 10px; }
 
-.label { font-weight: 800; font-size: 13px; opacity: .7; margin-bottom: 10px; }
-
-.tags { display: flex; flex-wrap: wrap; gap: 10px; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .tag {
   border: 1px solid #efefef;
-  background: #fafafa;
+  background: #fff;
   border-radius: 999px;
-  padding: 8px 12px;
+  padding: 8px 10px;
   cursor: pointer;
+  font-weight: 800;
   font-size: 13px;
-  white-space: nowrap;
 }
 .tag.active { background: #8a75e3; border-color: #8a75e3; color: #fff; }
 
-.check { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
-.check input { display: none; }
+.toggle { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.toggle input { display: none; }
 .ui {
   width: 44px; height: 26px; border-radius: 999px;
-  border: 1px solid #e9e9e9; background: #f3f3f3;
-  position: relative; transition: background 180ms ease, border-color 180ms ease;
+  border: 1px solid #e9e9e9; background: #f3f3f3; position: relative;
+  transition: background 180ms ease, border-color 180ms ease;
 }
 .ui::after {
-  content: '';
-  width: 22px; height: 22px; border-radius: 999px;
+  content: ''; width: 22px; height: 22px; border-radius: 999px;
   background: #fff; position: absolute; top: 1px; left: 1px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 10px rgba(0,0,0,.08);
   transition: transform 180ms ease;
 }
-.check input:checked + .ui { background: rgba(138,117,227,0.85); border-color: rgba(138,117,227,0.55); }
-.check input:checked + .ui::after { transform: translateX(18px); }
-.text { font-weight: 800; font-size: 13px; }
-.hint { font-size: 12px; opacity: .7; line-height: 1.25; }
+.toggle input:checked + .ui { background: rgba(138,117,227,.85); border-color: rgba(138,117,227,.55); }
+.toggle input:checked + .ui::after { transform: translateX(18px); }
+.txt { font-weight: 900; }
 
-.grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
-.card { border: 1px solid #f2f2f2; border-radius: 16px; padding: 12px; background: #fcfcfc; }
-.cardTitle { font-weight: 900; margin-bottom: 10px; }
-
-.seg { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-.segBtn {
-  border: 1px solid #efefef;
-  background: #fff;
-  border-radius: 12px;
-  padding: 8px 10px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.segBtn.active { background: rgba(138,117,227,0.12); border-color: rgba(138,117,227,0.4); }
-
-.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .chip {
   border: 1px solid #efefef;
   background: #fff;
   border-radius: 999px;
-  padding: 7px 10px;
+  padding: 8px 10px;
   cursor: pointer;
-  font-size: 13px;
+  font-weight: 900;
+  font-size: 12px;
 }
-.chip.active { background: #8a75e3; border-color: #8a75e3; color: #fff; }
+.chip.active { background: rgba(138,117,227,.12); border-color: rgba(138,117,227,.35); }
 
-.row { display: flex; gap: 10px; align-items: flex-end; }
-.field { display: flex; flex-direction: column; gap: 6px; min-width: 120px; }
-.field.grow { flex: 1; min-width: 160px; }
-
-.fieldLabel { font-size: 12px; opacity: .7; font-weight: 700; }
+.range { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 6px; }
 .input {
   border: 1px solid #efefef;
   border-radius: 12px;
-  padding: 10px 10px;
-  font-size: 14px;
-  background: #fff;
+  padding: 10px;
   outline: none;
 }
-.input:focus { border-color: rgba(138,117,227,0.55); box-shadow: 0 0 0 3px rgba(138,117,227,0.12); }
+.input:focus { border-color: rgba(138,117,227,.55); box-shadow: 0 0 0 3px rgba(138,117,227,.12); }
+
+.sub { font-size: 12px; opacity: .7; margin-top: 6px; line-height: 1.2; }
 </style>

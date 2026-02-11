@@ -2,15 +2,6 @@
   <div class="page">
     <div class="container">
       <div class="topbar">
-        <div class="topbar-left">
-          <div class="page-title">Мероприятия</div>
-          <div class="page-sub">
-            <span v-if="initialLoaded">{{ filteredEvents.length }}</span>
-            <span v-else>…</span>
-          </div>
-        </div>
-
-        <!-- filter drawer -->
         <button class="filter-btn" @click="openDrawer" aria-label="Открыть фильтры">
           <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
             <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
@@ -47,7 +38,7 @@
       </div>
     </div>
 
-    <!-- FILTER DRAWER ONLY -->
+    <!-- FILTER DRAWER -->
     <teleport to="body">
       <div v-if="drawerOpen" class="drawer-root" @keydown.esc="closeDrawer" tabindex="-1">
         <div class="overlay" @click="closeDrawer"></div>
@@ -61,7 +52,6 @@
           <div class="drawer-body">
             <FiltersPanel
               :categories="categories"
-              :is-all-categories-active="isAllCategoriesActive"
               v-model:selectedCategoryNames="selectedCategoryNames"
               v-model:onlineOnly="onlineOnly"
               v-model:priceMode="priceMode"
@@ -197,8 +187,6 @@ export default {
     const dateFrom = ref('')
     const dateTo = ref('')
     const datePivot = ref('')
-
-    const isAllCategoriesActive = computed(() => selectedCategoryNames.value.length === 0)
 
     // ui
     const drawerOpen = ref(false)
@@ -459,13 +447,10 @@ export default {
       categoryMap,
 
       selectedCategoryNames,
-      isAllCategoriesActive,
-
       onlineOnly,
       priceMode,
       customPriceMin,
       customPriceMax,
-
       dateMode,
       dateOn,
       dateFrom,
@@ -495,11 +480,7 @@ export default {
 .page { padding: 16px 0 40px; }
 .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
 
-.topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.topbar-left { display: flex; flex-direction: column; gap: 2px; }
-.page-title { font-weight: 900; font-size: 18px; }
-.page-sub { font-size: 12px; opacity: .65; font-weight: 700; }
-
+.topbar { display: flex; align-items: center; margin-bottom: 12px; }
 .filter-btn {
   margin-left: auto;
   display: inline-flex;
