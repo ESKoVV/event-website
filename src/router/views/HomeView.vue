@@ -2,27 +2,21 @@
   <div class="page">
     <div class="container">
       <div class="topbar">
-        <!-- Фильтр -->
         <button class="filter-btn" @click="openDrawer" aria-label="Открыть фильтры">
           <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
             <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
           </svg>
         </button>
 
-        <!-- Моя лента -->
         <button class="tab" :class="{ active: activeTab === 'feed' }" type="button" @click="activeTab = 'feed'">
-          <span class="ico">📰</span>
-          <span class="txt">Моя лента</span>
+          <span class="ico">📰</span><span class="txt">Моя лента</span>
         </button>
 
-        <!-- Избранное -->
         <button class="tab" :class="{ active: activeTab === 'favorites' }" type="button" @click="activeTab = 'favorites'">
-          <span class="ico">❤️</span>
-          <span class="txt">Избранное</span>
+          <span class="ico">❤️</span><span class="txt">Избранное</span>
           <span v-if="favoriteIds.size" class="count">{{ favoriteIds.size }}</span>
         </button>
 
-        <!-- Справа: Мои мероприятия (для бизнес) или реклама -->
         <button
           v-if="isBusiness"
           class="tab"
@@ -30,8 +24,7 @@
           type="button"
           @click="activeTab = 'mine'"
         >
-          <span class="ico">📌</span>
-          <span class="txt">Мои мероприятия</span>
+          <span class="ico">📌</span><span class="txt">Мои мероприятия</span>
         </button>
 
         <button
@@ -41,12 +34,14 @@
           type="button"
           @click="activeTab = 'biz'"
         >
-          <span class="ico">💼</span>
-          <span class="txt">Бизнес</span>
+          <span class="ico">💼</span><span class="txt">Бизнес</span>
+        </button>
+
+        <button class="refresh" type="button" @click="forceReload" title="Обновить">
+          ⟳
         </button>
       </div>
 
-      <!-- Реклама бизнес-аккаунта -->
       <div v-if="activeTab === 'biz' && !isBusiness" class="biz-ad">
         <div class="biz-ad-title">💼 Business аккаунт</div>
         <div class="biz-ad-text">
@@ -55,7 +50,6 @@
         <button class="biz-ad-btn" type="button" @click="goToProfile">Узнать</button>
       </div>
 
-      <!-- Loading / Error -->
       <div v-if="!initialLoaded" class="state">
         <div class="spinner"></div>
         <div>Загрузка мероприятий…</div>
@@ -64,10 +58,9 @@
       <div v-else-if="error" class="state error">
         <div class="error-title">Не удалось загрузить мероприятия</div>
         <div class="error-sub">{{ error }}</div>
-        <button class="retry" @click="reload">Повторить</button>
+        <button class="retry" @click="forceReload">Повторить</button>
       </div>
 
-      <!-- Списки (все через EventCard) -->
       <template v-else>
         <div v-if="activeTab === 'mine' && isBusiness">
           <div v-if="myEventsForCards.length === 0" class="state">
@@ -157,23 +150,17 @@
 
 <script>
 import { ref, computed, onMounted, nextTick } from 'vue'
-import EventCard from '../../components/EventCard.vue'
-import EventPhotoModal from '../../components/EventPhotoModal.vue'
-import FiltersPanel from '../../components/FiltersPanel.vue'
-import { useSupabase } from '../../composables/useSupabase'
-import { setEventsCache } from '../../composables/eventsCache'
+import EventCard from '@/components/EventCard.vue'
+import EventPhotoModal from '@/components/EventPhotoModal.vue'
+import FiltersPanel from '@/components/FiltersPanel.vue'
+import { useSupabase } from '@/composables/useSupabase'
+import { getEventsCache, setEventsCache, clearEventsCache } from '@/composables/eventsCache'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
 const withRetry = async (fn, tries = 3) => {
   let lastErr = null
   for (let i = 0; i < tries; i++) {
-    try {
-      return await fn()
-    } catch (e) {
-      lastErr = e
-      await sleep(350 * (i + 1))
-    }
+    try { return await fn() } catch (e) { lastErr = e; await sleep(350 * (i + 1)) }
   }
   throw lastErr
 }
@@ -203,7 +190,6 @@ const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23,
 
 const normalizeCategoryNames = (raw, categoryMap) => {
   const map = categoryMap || {}
-
   const toName = (v) => {
     if (v === null || v === undefined) return ''
     const s = String(v).trim()
@@ -243,14 +229,10 @@ const loadFavLS = (key) => {
     if (!raw) return []
     const arr = JSON.parse(raw)
     return Array.isArray(arr) ? arr.map((x) => Number(x)).filter((n) => Number.isFinite(n)) : []
-  } catch {
-    return []
-  }
+  } catch { return [] }
 }
 const saveFavLS = (key, idsSet) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(Array.from(idsSet)))
-  } catch {}
+  try { localStorage.setItem(key, JSON.stringify(Array.from(idsSet))) } catch {}
 }
 
 export default {
@@ -263,31 +245,26 @@ export default {
     const initialLoaded = ref(false)
     const error = ref('')
 
-    // data
     const allEvents = ref([])
     const categories = ref([])
     const categoryMap = ref({})
     const photos = ref({})
     const photosLoading = ref(false)
 
-    // tabs
     const activeTab = ref('feed') // feed | favorites | mine | biz
     const isBusiness = ref(false)
     const userId = ref(null)
 
-    // favorites
     const favoriteIds = ref(new Set())
     const favKey = ref(makeFavKey(null))
 
     // filters
     const selectedCategoryNames = ref([])
     const onlineOnly = ref(false)
-
-    const priceMode = ref('all') // all | free | paid | custom
+    const priceMode = ref('all')
     const customPriceMin = ref('')
     const customPriceMax = ref('')
-
-    const dateMode = ref('all') // all | today | tomorrow | on | range
+    const dateMode = ref('all')
     const dateOn = ref('')
     const dateFrom = ref('')
     const dateTo = ref('')
@@ -324,15 +301,12 @@ export default {
     }
 
     const goToProfile = () => {
-      // если у тебя другой путь — поменяй
       const base = import.meta.env.BASE_URL || '/'
       window.location.href = `${base}profile`
     }
 
-    // ✅ ВАЖНО: лента показывает только опубликованные
     const basePublishedFeed = computed(() => (allEvents.value || []).filter((e) => e?.is_published !== false))
 
-    // ✅ Мои мероприятия: те же EventCard, берём из уже загруженных allEvents
     const myEventsForCards = computed(() => {
       if (!userId.value) return []
       return (allEvents.value || []).filter((e) => String(e?.user_id || '') === String(userId.value))
@@ -364,7 +338,6 @@ export default {
         if (!e) return false
 
         if (activeTab.value === 'favorites' && !favoriteIds.value.has(e.id)) return false
-
         if (online && !e.is_online) return false
 
         if (catsSel.length) {
@@ -396,11 +369,7 @@ export default {
     const filteredEvents = computed(() => {
       const term = (props.globalSearchTerm || '').trim().toLowerCase()
       let list = basePublishedFeed.value
-
-      if (term) {
-        list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
-      }
-
+      if (term) list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
       return applyFilters(list)
     })
 
@@ -421,11 +390,7 @@ export default {
       favKey.value = makeFavKey(userId.value)
       favoriteIds.value = new Set(loadFavLS(favKey.value))
 
-      if (!userId.value) {
-        isBusiness.value = false
-        return
-      }
-
+      if (!userId.value) { isBusiness.value = false; return }
       try {
         const { data: p } = await getMyPublicUser()
         isBusiness.value = p?.It_business === true
@@ -446,26 +411,21 @@ export default {
       categoryMap.value = map
     }
 
-    const loadEvents = async () => {
+    const loadEventsAndPhotos = async () => {
       const { data, error: e } = await withRetry(() => getEvents())
       if (e) throw e
       allEvents.value = data || []
-    }
 
-    const loadPhotos = async () => {
       photosLoading.value = true
       try {
-        const ids = (allEvents.value || []).map((e) => e.id)
-        if (!ids.length) {
-          photos.value = {}
-          return
-        }
+        const ids = (allEvents.value || []).map((ev) => ev.id)
+        if (!ids.length) { photos.value = {}; return }
 
-        const { data, error: e } = await withRetry(() => getEventPhotos(ids))
-        if (e) throw e
+        const { data: ph, error: e2 } = await withRetry(() => getEventPhotos(ids))
+        if (e2) throw e2
 
         const grouped = {}
-        for (const row of data || []) {
+        for (const row of ph || []) {
           if (!row?.event_id) continue
           if (!grouped[row.event_id]) grouped[row.event_id] = []
           grouped[row.event_id].push(row)
@@ -474,25 +434,47 @@ export default {
       } finally {
         photosLoading.value = false
       }
+
+      // ✅ записываем в кеш (и он улетит в sessionStorage)
+      setEventsCache({
+        events: allEvents.value,
+        photosByEventId: photos.value,
+        categoryMap: categoryMap.value
+      })
     }
 
-    const reload = async () => {
+    const hydrateFromCacheIfPossible = () => {
+      const cache = getEventsCache()
+      const ok = Array.isArray(cache?.events) && cache.events.length > 0
+      if (!ok) return false
+
+      allEvents.value = cache.events
+      photos.value = cache.photosByEventId || {}
+      categoryMap.value = cache.categoryMap || {}
+      return true
+    }
+
+    const boot = async ({ force = false } = {}) => {
       initialLoaded.value = false
       error.value = ''
+
       try {
         await loadUser()
+
+        // категории всегда можно догрузить (они лёгкие и нужны для UI),
+        // но если в кеше уже есть categoryMap и категории не нужны — можно оставить.
         await loadCategories()
-        await loadEvents()
-        await nextTick()
-        await loadPhotos()
 
-        // ✅ кладём в кэш, чтобы EventView мог использовать без Supabase
-        setEventsCache({
-          events: allEvents.value,
-          photosByEventId: photos.value,
-          categoryMap: categoryMap.value
-        })
+        if (!force) {
+          const hydrated = hydrateFromCacheIfPossible()
+          if (hydrated) {
+            initialLoaded.value = true
+            return
+          }
+        }
 
+        // если кэша нет (или force) — грузим из Supabase
+        await loadEventsAndPhotos()
         initialLoaded.value = true
       } catch (e) {
         error.value = String(e?.message || e)
@@ -500,10 +482,14 @@ export default {
       }
     }
 
-    onMounted(reload)
+    const forceReload = async () => {
+      clearEventsCache()
+      await boot({ force: true })
+    }
+
+    onMounted(() => boot())
 
     return {
-      // state
       initialLoaded,
       error,
       categories,
@@ -511,26 +497,21 @@ export default {
       photos,
       photosLoading,
 
-      // tabs
       activeTab,
       isBusiness,
 
-      // lists
       filteredEvents,
       myEventsForCards,
 
-      // favorites
       favoriteIds,
       onToggleFavorite,
 
-      // ui
       drawerOpen,
       openDrawer,
       closeDrawer,
       openPhoto,
       photoModalUrl,
 
-      // filters
       selectedCategoryNames,
       onlineOnly,
       priceMode,
@@ -543,8 +524,8 @@ export default {
       datePivot,
       resetAllFilters,
 
-      reload,
-      goToProfile
+      goToProfile,
+      forceReload
     }
   }
 }
@@ -552,101 +533,64 @@ export default {
 
 <style scoped>
 .page { padding: 12px 0; }
-.container { max-width: 1100px; margin: 0 auto; padding: 0 12px; }
+.container { max-width: 1200px; margin: 0 auto; padding: 0 12px; }
 
-.topbar{
-  display:flex;
-  align-items:center;
-  gap: 10px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
-}
+.topbar{ display:flex; align-items:center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 
 .filter-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
-  border: 1px solid #efefef;
-  background: #fff;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
+  width: 40px; height: 40px; border-radius: 14px;
+  border: 1px solid #efefef; background: #fff; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
 }
-.filter-btn:hover { background:#fafafa; }
 .filter-icon { width: 18px; height: 18px; }
 
 .tab{
-  display:inline-flex;
-  align-items:center;
-  gap: 8px;
-  border: 1px solid #efefef;
-  background: #fff;
-  border-radius: 14px;
-  padding: 10px 12px;
-  cursor: pointer;
-  font-weight: 900;
+  display:inline-flex; align-items:center; gap: 8px;
+  border: 1px solid #efefef; background: #fff; border-radius: 14px;
+  padding: 10px 12px; cursor: pointer; font-weight: 900;
 }
 .tab .ico{ font-size: 16px; }
 .tab .txt{ font-size: 13px; }
 .tab .count{
-  margin-left: 2px;
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(138,117,227,.12);
-  border: 1px solid rgba(138,117,227,.22);
+  font-size: 12px; padding: 4px 8px; border-radius: 999px;
+  background: rgba(138,117,227,.12); border: 1px solid rgba(138,117,227,.22);
 }
-.tab.active{
-  background: #8a75e3;
-  border-color: #8a75e3;
-  color: #fff;
+.tab.active{ background:#8a75e3; border-color:#8a75e3; color:#fff; }
+
+.refresh{
+  margin-left:auto;
+  width: 40px; height: 40px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 900;
 }
-@media (max-width: 520px){ .tab .txt{ display:none; } }
+@media (max-width: 520px){ .tab .txt{ display:none; } .refresh{ margin-left:0; } }
 
 .biz-ad{
-  margin-bottom: 10px;
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(138,117,227,.22);
-  background: #fcfcff;
-  display: grid;
-  gap: 10px;
+  margin-bottom: 10px; padding: 14px; border-radius: 18px;
+  border: 1px solid rgba(138,117,227,.22); background: #fcfcff;
+  display: grid; gap: 10px;
 }
 .biz-ad-title{ font-weight: 900; font-size: 16px; }
 .biz-ad-text{ font-weight: 800; opacity: .85; line-height: 1.3; }
 .biz-ad-btn{
-  width: fit-content;
-  border: none;
-  border-radius: 14px;
-  padding: 12px 16px;
-  font-weight: 900;
-  cursor: pointer;
-  background: #8a75e3;
-  color: #fff;
+  width: fit-content; border: none; border-radius: 14px;
+  padding: 12px 16px; font-weight: 900; cursor: pointer;
+  background: #8a75e3; color: #fff;
 }
 
 .state{
-  padding: 18px;
-  border: 1px solid #efefef;
-  border-radius: 18px;
-  background: #fff;
-  display:flex;
-  align-items:center;
-  gap: 10px;
-  font-weight: 800;
+  padding: 18px; border: 1px solid #efefef; border-radius: 18px; background: #fff;
+  display:flex; align-items:center; gap: 10px; font-weight: 800;
 }
 .state.error{ color:#d9534f; display:block; }
 .error-title{ font-weight: 900; margin-bottom: 6px; }
 .error-sub{ opacity:.85; margin-bottom: 10px; }
 .retry{
-  border: 1px solid #efefef;
-  background: #fafafa;
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-weight: 900;
-  cursor: pointer;
+  border: 1px solid #efefef; background: #fafafa;
+  border-radius: 14px; padding: 10px 12px; font-weight: 900; cursor: pointer;
 }
 
 .spinner{
@@ -657,48 +601,29 @@ export default {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .events-shell { margin-top: 10px; }
-.events-list { display: grid; gap: 12px; }
+.events-list { display: grid; gap: 14px; }
 
 .drawer-root { position: fixed; inset: 0; z-index: 10000; }
 .overlay { position: absolute; inset: 0; background: rgba(0,0,0,.38); backdrop-filter: blur(2px); }
 .drawer {
-  position: absolute;
-  right: 0; top: 0;
-  height: 100%;
-  width: min(420px, 92vw);
-  background: #fff;
-  border-left: 1px solid #efefef;
+  position: absolute; right: 0; top: 0;
+  height: 100%; width: min(420px, 92vw);
+  background: #fff; border-left: 1px solid #efefef;
   box-shadow: -10px 0 50px rgba(0,0,0,.12);
-  display: flex;
-  flex-direction: column;
+  display: flex; flex-direction: column;
 }
-.drawer-head{
-  padding: 14px;
-  border-bottom: 1px solid #f2f2f2;
-  display:flex;
-  align-items:center;
-  gap: 12px;
-}
+.drawer-head{ padding: 14px; border-bottom: 1px solid #f2f2f2; display:flex; align-items:center; gap: 12px; }
 .drawer-title{ font-weight: 900; }
 .close-btn{
-  margin-left:auto;
-  border: 1px solid #efefef;
-  background: #fafafa;
-  border-radius: 12px;
-  padding: 8px 10px;
-  cursor: pointer;
+  margin-left:auto; border: 1px solid #efefef; background: #fafafa;
+  border-radius: 12px; padding: 8px 10px; cursor: pointer;
 }
 .drawer-body{ padding: 14px; overflow:auto; }
 .drawer-foot{ padding: 14px; border-top: 1px solid #f2f2f2; }
 .apply-btn{
-  width:100%;
-  border:none;
-  border-radius: 14px;
-  padding: 12px 16px;
-  font-weight: 900;
-  cursor: pointer;
-  background: #8a75e3;
-  color: #fff;
+  width:100%; border:none; border-radius: 14px;
+  padding: 12px 16px; font-weight: 900; cursor: pointer;
+  background: #8a75e3; color: #fff;
 }
 
 .list-enter-active, .list-leave-active { transition: all .18s ease; }
