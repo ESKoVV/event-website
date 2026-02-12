@@ -266,11 +266,11 @@ export default {
 /* ПК: высокая карточка, фото целиком */
 .photo{
   width: 100%;
-  height: 420px;        /* 🔥 можно 400–500, подбирай */
-  border-radius: 16px;
+  height: 500px;        /* 🔥 можно 400–500, подбирай */
+  
   overflow: hidden;
-  background: linear-gradient(180deg,#111,#1a1a1a);
-
+  background: white;
+  border: none;
   position: relative;
 }
 
@@ -280,6 +280,7 @@ export default {
   object-fit: contain;   /* ❗ ВАЖНО — не режет */
   object-position: center;
   display: block;
+  
 }
 
 .photo img.loaded {
