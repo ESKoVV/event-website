@@ -2,24 +2,42 @@
   <div class="page">
     <div class="container">
       <div class="topbar">
-        <!-- ✅ фильтр слева, только иконка -->
+        <!-- ✅ Фильтр слева, только иконка -->
         <button class="filter-btn" @click="openDrawer" aria-label="Открыть фильтры">
           <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
             <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
           </svg>
         </button>
 
-        <!-- ✅ Избранное слева от списка (рядом с фильтром) -->
+        <!-- ✅ Моя лента (между фильтром и избранным) -->
         <button
-          class="fav-tab"
+          class="tab"
+          :class="{ active: activeTab === 'feed' }"
+          type="button"
+          @click="activeTab = 'feed'"
+          aria-label="Моя лента"
+        >
+          <span class="ico">📰</span>
+          <span class="txt">Моя лента</span>
+        </button>
+
+        <!-- ✅ Избранное -->
+        <button
+          class="tab"
           :class="{ active: activeTab === 'favorites' }"
-          @click="activeTab = activeTab === 'favorites' ? 'all' : 'favorites'"
+          type="button"
+          @click="activeTab = 'favorites'"
           aria-label="Избранное"
         >
           <span class="ico">❤️</span>
           <span class="txt">Избранное</span>
           <span v-if="favoriteIds.size" class="count">{{ favoriteIds.size }}</span>
         </button>
+      </div>
+
+      <!-- подсказка про интересы (только в Моей ленте) -->
+      <div v-if="activeTab === 'feed' && initialLoaded && !myInterests.length" class="hint">
+        Выбери интересные категории в профиле — и «Моя лента» станет персональной
       </div>
 
       <div v-if="!initialLoaded" class="state">
@@ -33,11 +51,14 @@
         <button class="retry" @click="reload">Повторить</button>
       </div>
 
-      <div v-else-if="activeTab === 'favorites' && filteredEvents.length === 0" class="state">
-        В избранном пока пусто
+      <div v-else-if="filteredEvents.length === 0" class="state">
+        <template v-if="activeTab === 'favorites'">
+          В избранном пока пусто
+        </template>
+        <template v-else>
+          Мероприятия не найдены
+        </template>
       </div>
-
-      <div v-else-if="filteredEvents.length === 0" class="state">Мероприятия не найдены</div>
 
       <div v-else class="events-shell">
         <TransitionGroup name="list" tag="div" class="events-list">
@@ -175,10 +196,11 @@ const normalizeCategoryNames = (raw, categoryMap) => {
   return one ? [one] : []
 }
 
-const LS_KEY = 'fav_event_ids_v1'
-const loadFavLS = () => {
+const makeFavKey = (userId) => (userId ? `fav_event_ids_v1_${userId}` : 'fav_event_ids_v1_guest')
+
+const loadFavLS = (key) => {
   try {
-    const raw = localStorage.getItem(LS_KEY)
+    const raw = localStorage.getItem(key)
     if (!raw) return []
     const arr = JSON.parse(raw)
     return Array.isArray(arr) ? arr.map((x) => Number(x)).filter((n) => Number.isFinite(n)) : []
@@ -186,9 +208,10 @@ const loadFavLS = () => {
     return []
   }
 }
-const saveFavLS = (ids) => {
+
+const saveFavLS = (key, idsSet) => {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(Array.from(ids)))
+    localStorage.setItem(key, JSON.stringify(Array.from(idsSet)))
   } catch {}
 }
 
@@ -197,7 +220,7 @@ export default {
   components: { EventCard, EventPhotoModal, FiltersPanel },
   props: { globalSearchTerm: { type: String, default: '' } },
   setup(props) {
-    const { getEvents, getCategories, getEventPhotos, getUser, getFavoriteEventIds, toggleFavorite } = useSupabase()
+    const { getEvents, getCategories, getEventPhotos, getUser, getMyPublicUser } = useSupabase()
 
     const initialLoaded = ref(false)
     const error = ref('')
@@ -210,10 +233,16 @@ export default {
     const drawerOpen = ref(false)
     const photoModalUrl = ref('')
 
-    const activeTab = ref('all')
+    // ✅ tabs
+    const activeTab = ref('feed') // 'feed' | 'favorites'
 
-    const favoriteIds = ref(new Set())
+    // ✅ profile interests
+    const myInterests = ref([]) // text[]
     const userId = ref(null)
+
+    // ✅ favorites (localStorage)
+    const favoriteIds = ref(new Set())
+    const favKey = ref(makeFavKey(null))
 
     // filters
     const selectedCategoryNames = ref([])
@@ -268,11 +297,21 @@ export default {
       const tomorrowEnd = endOfDay(tomorrow)
 
       const map = categoryMap.value || {}
+      const interests = Array.isArray(myInterests.value) ? myInterests.value : []
 
       return (list || []).filter((e) => {
         if (!e) return false
 
+        // ✅ вкладка избранного
         if (activeTab.value === 'favorites' && !favoriteIds.value.has(e.id)) return false
+
+        // ✅ Моя лента: фильтр по интересам (если интересы выбраны)
+        if (activeTab.value === 'feed' && interests.length) {
+          const evCats = normalizeCategoryNames(e.selectCategory, map)
+          const ok = interests.some((c) => evCats.includes(String(c)))
+          if (!ok) return false
+        }
+
         if (online && !e.is_online) return false
 
         if (catsSel.length) {
@@ -352,51 +391,46 @@ export default {
       }
     }
 
-    const loadFavorites = async () => {
+    const loadUserAndInterests = async () => {
       const { user } = await getUser()
       userId.value = user?.id || null
+      favKey.value = makeFavKey(userId.value)
 
+      // favorites from LS
+      favoriteIds.value = new Set(loadFavLS(favKey.value))
+
+      // interests from profile
       if (!userId.value) {
-        favoriteIds.value = new Set(loadFavLS())
+        myInterests.value = []
         return
       }
 
-      const { data, error: e } = await getFavoriteEventIds()
-      if (e) {
-        favoriteIds.value = new Set(loadFavLS())
-        return
+      try {
+        const { data: p, error: e } = await getMyPublicUser()
+        if (e) throw e
+        myInterests.value = Array.isArray(p?.interests) ? p.interests : []
+      } catch {
+        myInterests.value = []
       }
-      favoriteIds.value = new Set(data || [])
     }
 
-    const onToggleFavorite = async ({ eventId, makeFavorite }) => {
+    const onToggleFavorite = ({ eventId, makeFavorite }) => {
       const idNum = Number(eventId)
       if (!Number.isFinite(idNum)) return
 
       const next = new Set(favoriteIds.value)
       if (makeFavorite) next.add(idNum)
       else next.delete(idNum)
+
       favoriteIds.value = next
-
-      if (!userId.value) {
-        saveFavLS(favoriteIds.value)
-        return
-      }
-
-      const { error: e } = await toggleFavorite(idNum, makeFavorite)
-      if (e) {
-        const rollback = new Set(favoriteIds.value)
-        if (makeFavorite) rollback.delete(idNum)
-        else rollback.add(idNum)
-        favoriteIds.value = rollback
-      }
+      saveFavLS(favKey.value, favoriteIds.value)
     }
 
     const reload = async () => {
       error.value = ''
       initialLoaded.value = false
       try {
-        await loadFavorites()
+        await loadUserAndInterests()
         await loadCategories()
         await loadEvents()
         await nextTick()
@@ -418,6 +452,7 @@ export default {
       photos,
       photosLoading,
       filteredEvents,
+
       drawerOpen,
       photoModalUrl,
 
@@ -432,7 +467,9 @@ export default {
       dateTo,
       datePivot,
 
+      // tabs + interests + favorites
       activeTab,
+      myInterests,
       favoriteIds,
 
       openDrawer,
@@ -454,10 +491,10 @@ export default {
   display:flex;
   align-items:center;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
-/* ✅ filter icon only + left */
+/* filter icon only */
 .filter-btn {
   width: 40px;
   height: 40px;
@@ -468,11 +505,12 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
 }
 .filter-btn:hover { background:#fafafa; }
 .filter-icon { width: 18px; height: 18px; }
 
-.fav-tab{
+.tab{
   display:inline-flex;
   align-items:center;
   gap: 8px;
@@ -483,9 +521,9 @@ export default {
   cursor: pointer;
   font-weight: 900;
 }
-.fav-tab .ico{ font-size: 16px; }
-.fav-tab .txt{ font-size: 13px; }
-.fav-tab .count{
+.tab .ico{ font-size: 16px; }
+.tab .txt{ font-size: 13px; }
+.tab .count{
   margin-left: 2px;
   font-size: 12px;
   padding: 4px 8px;
@@ -493,14 +531,25 @@ export default {
   background: rgba(138,117,227,.12);
   border: 1px solid rgba(138,117,227,.22);
 }
-.fav-tab.active{
+.tab.active{
   background: #8a75e3;
   border-color: #8a75e3;
   color: #fff;
 }
 
 @media (max-width: 520px){
-  .fav-tab .txt{ display:none; }
+  .tab .txt{ display:none; }
+}
+
+.hint{
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid #efefef;
+  background: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  opacity: .9;
 }
 
 .state{

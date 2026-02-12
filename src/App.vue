@@ -68,6 +68,7 @@
       :profile="profile"
       :telegram-link="telegramLink"
       :saving="saving"
+      :categories="categories"
       @close="showProfileEdit = false"
       @save="saveProfile"
       @pick-avatar="onPickedAvatar"
