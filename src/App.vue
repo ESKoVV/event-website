@@ -42,32 +42,7 @@
           </div>
 
           <div class="menu-body">
-            <div class="biz-card">
-              <div class="biz-top">
-                <div class="biz-title">Business аккаунт</div>
-                <span v-if="isBusiness" class="biz-badge">Активен</span>
-                <span v-else class="biz-badge off">Не активен</span>
-              </div>
-
-              <div class="biz-text">
-                Бизнес аккаунт позволяет публиковать мероприятия.
-                Стоимость — <b>200 рублей в месяц</b>.
-                Для приобретения нужно написать администратору.
-              </div>
-
-              <div class="biz-actions">
-                <button v-if="isBusiness" class="biz-btn" @click="openCreateEvent">
-                  ➕ Добавить мероприятие
-                </button>
-
-                <button v-else class="biz-btn secondary" @click="openProfileOrAuth">
-                  👤 Войти / Профиль
-                </button>
-              </div>
-            </div>
-
-            <div class="menu-divider"></div>
-
+            <!-- ✅ УБРАН блок Business аккаунт отсюда -->
             <button class="menu-item" @click="openProfileOrAuth">👤 Профиль / Вход</button>
           </div>
 
@@ -78,43 +53,36 @@
       </div>
     </teleport>
 
-    <!-- CENTER NOTICE -->
-    <teleport to="body">
-      <div v-if="noticeOpen" class="notice-root">
-        <div class="notice-card">
-          <div class="notice-title">✅ Готово</div>
-          <div class="notice-text">Мероприятие ждёт одобрения администратора</div>
-        </div>
-      </div>
-    </teleport>
-
-    <!-- AUTH / PROFILE -->
+    <!-- AUTH MODAL -->
     <AuthModal
       v-if="showAuth"
       :telegram-bot-username="telegramBotUsername"
-      @close="closeAllModals"
+      @close="showAuth = false"
       @google="loginGoogle"
-      @telegram-auth="onTelegramAuth"
+      @telegram="handleTelegramLogin"
     />
 
+    <!-- PROFILE MODAL -->
     <ProfileModal
       v-if="showProfileEdit"
       :profile="profile"
       :telegram-link="telegramLink"
       :saving="saving"
-      :loading="profileLoading"
-      @close="closeAllModals"
+      @close="showProfileEdit = false"
       @save="saveProfile"
-      @pick-avatar="onPickAvatar"
+      @pick-avatar="onPickedAvatar"
       @logout="logout"
+      @open-create-event="openCreateEvent"
     />
 
+    <!-- CREATE EVENT MODAL -->
     <CreateEventModal
-      :open="createEventOpen"
+      v-if="showCreateEvent"
+      :open="showCreateEvent"
       :categories="categories"
       :create-business-event="createBusinessEvent"
-      @close="createEventOpen = false"
-      @created="onDraftCreated"
+      @close="showCreateEvent = false"
+      @created="onCreatedEvent"
     />
   </div>
 </template>
@@ -163,254 +131,173 @@ export default {
 
     const showAuth = ref(false)
     const showProfileEdit = ref(false)
+    const showCreateEvent = ref(false)
 
     const profileLoading = ref(false)
     const saving = ref(false)
     const pickedAvatarFile = ref(null)
 
-    const headerImgBroken = ref(false)
-    const headerAvatarUrl = computed(() => normalizeStoragePublicUrl(profile.value?.image_path || ''))
-    const hasHeaderAvatarUrl = computed(() => headerAvatarUrl.value.trim().length > 0)
-    const showHeaderAvatar = computed(() => hasHeaderAvatarUrl.value && !headerImgBroken.value)
+    const categories = ref([])
 
-    const onHeaderImgError = () => {
-      headerImgBroken.value = true
-    }
-
-    watch(
-      () => profile.value?.image_path,
-      () => {
-        headerImgBroken.value = false
-      }
-    )
+    const menuOpen = ref(false)
+    const openMenu = () => (menuOpen.value = true)
+    const closeMenu = () => (menuOpen.value = false)
 
     const isBusiness = computed(() => profile.value?.It_business === true)
 
-    // menu drawer
-    const menuOpen = ref(false)
-    const openMenu = async () => {
-      menuOpen.value = true
-      await nextTick()
-      document.documentElement.style.overflow = 'hidden'
-      document.body.style.overflow = 'hidden'
-    }
-    const closeMenu = () => {
-      menuOpen.value = false
-      document.documentElement.style.overflow = ''
-      document.body.style.overflow = ''
+    const headerAvatarUrl = computed(() => normalizeStoragePublicUrl(profile.value?.avatar_url || ''))
+    const headerAvatarErrored = ref(false)
+
+    const showHeaderAvatar = computed(() => {
+      const url = headerAvatarUrl.value
+      return !!url && !headerAvatarErrored.value
+    })
+
+    const onHeaderImgError = () => {
+      headerAvatarErrored.value = true
     }
 
-    // notice
-    const noticeOpen = ref(false)
-    let noticeTimer = null
-    const showNotice = () => {
-      noticeOpen.value = true
-      if (noticeTimer) clearTimeout(noticeTimer)
-      noticeTimer = setTimeout(() => {
-        noticeOpen.value = false
-      }, 2600)
-    }
-
-    // categories for create modal
-    const categories = ref([])
-    const categoriesLoaded = ref(false)
-    const loadCategoriesOnce = async () => {
-      if (categoriesLoaded.value) return
-      const { data } = await getCategories()
-      categories.value = data ?? []
-      categoriesLoaded.value = true
-    }
-
-    // create event modal
-    const createEventOpen = ref(false)
-    const openCreateEvent = async () => {
-      await loadAuthAndProfile()
+    const openProfileModal = () => {
       if (!session.value) {
-        closeMenu()
         showAuth.value = true
         return
       }
-      await loadCategoriesOnce()
-      closeMenu()
-      createEventOpen.value = true
-    }
-
-    const onDraftCreated = () => {
-      // ✅ вместо alert
-      showNotice()
-    }
-
-    // auth/profile loader
-    const loadAuthAndProfile = async () => {
-      profileLoading.value = true
-      try {
-        const { session: s } = await getSession()
-        session.value = s
-
-        if (!s) {
-          profile.value = null
-          telegramLink.value = null
-          return
-        }
-
-        const { user } = await getUser()
-        if (user) await ensurePublicUserRow(user)
-
-        const { data: p } = await getMyPublicUser()
-        if (p?.image_path) p.image_path = normalizeStoragePublicUrl(p.image_path)
-        profile.value = p
-
-        const { data: tg } = await getMyTelegramLink()
-        telegramLink.value = tg
-      } finally {
-        profileLoading.value = false
-      }
-    }
-
-    const closeAllModals = () => {
-      showAuth.value = false
-      showProfileEdit.value = false
-    }
-
-    const openProfileModal = async () => {
-      showAuth.value = false
       showProfileEdit.value = true
-      profileLoading.value = true
-
-      await loadAuthAndProfile()
-
-      if (!session.value) {
-        showProfileEdit.value = false
-        showAuth.value = true
-        profileLoading.value = false
-        return
-      }
-      profileLoading.value = false
     }
 
-    const openProfileOrAuth = async () => {
-      await loadAuthAndProfile()
+    const openProfileOrAuth = () => {
       closeMenu()
-      if (!session.value) showAuth.value = true
-      else showProfileEdit.value = true
+      openProfileModal()
+    }
+
+    const openCreateEvent = () => {
+      if (!session.value) {
+        showAuth.value = true
+        return
+      }
+      // только бизнес
+      if (!isBusiness.value) {
+        showProfileEdit.value = true
+        return
+      }
+      showCreateEvent.value = true
     }
 
     const loginGoogle = async () => {
-      const redirectTo = window.location.origin + import.meta.env.BASE_URL
-      const { error } = await signInWithGoogle({ redirectTo })
-      if (error) {
-        console.error(error)
-        alert('Ошибка входа через Google (см. консоль)')
-      }
+      const redirectTo = window.location.origin
+      await signInWithGoogle({ redirectTo })
     }
 
-    const onTelegramAuth = async (telegramData) => {
-      await loadAuthAndProfile()
-      if (!session.value) {
-        alert('Сначала войди через Google, затем подтверди Telegram.')
-        return
-      }
-
-      const { error } = await linkTelegramViaEdgeFunction(telegramData)
-      if (error) {
-        console.error(error)
-        alert('Ошибка Telegram подтверждения (см. консоль)')
-        return
-      }
-
-      await loadAuthAndProfile()
+    const handleTelegramLogin = async (telegramAuthData) => {
+      await linkTelegramViaEdgeFunction(telegramAuthData)
+      await refreshAll()
       showAuth.value = false
-      showProfileEdit.value = true
     }
 
-    const onPickAvatar = (file) => {
-      pickedAvatarFile.value = file || null
+    const refreshAll = async () => {
+      profileLoading.value = true
+      try {
+        const { session: s } = await getSession()
+        session.value = s || null
+
+        const { user } = await getUser()
+        if (user) {
+          await ensurePublicUserRow(user)
+          const { data: p } = await getMyPublicUser()
+          profile.value = p || null
+
+          const { data: tg } = await getMyTelegramLink()
+          telegramLink.value = tg || null
+        } else {
+          profile.value = null
+          telegramLink.value = null
+        }
+
+        const { data: cats } = await getCategories()
+        categories.value = cats || []
+      } finally {
+        profileLoading.value = false
+      }
     }
 
     const saveProfile = async (form) => {
       saving.value = true
       try {
-        let avatarUrl = null
+        const patch = { ...form }
 
+        // avatar upload (если выбрали)
         if (pickedAvatarFile.value) {
-          const { publicUrl, error } = await uploadAvatar(pickedAvatarFile.value)
-          if (error) throw error
-          avatarUrl = publicUrl
+          const { publicUrl } = await uploadAvatar(pickedAvatarFile.value)
+          if (publicUrl) patch.avatar_url = publicUrl
+          pickedAvatarFile.value = null
+          headerAvatarErrored.value = false
         }
 
-        const patch = {
-          first_name: form.first_name || null,
-          last_name: form.last_name || null,
-          birth_day: form.birth_day || null,
-          phone: form.phone || null,
-          email: form.email || null,
-          gender: form.gender || null
-        }
-        if (avatarUrl) patch.image_path = normalizeStoragePublicUrl(avatarUrl)
-
-        const { data, error } = await updateMyPublicUser(patch)
-        if (error) throw error
-
-        if (data?.image_path) data.image_path = normalizeStoragePublicUrl(data.image_path)
-        profile.value = data
-
-        pickedAvatarFile.value = null
-        headerImgBroken.value = false
-      } catch (e) {
-        console.error('Save profile error:', e)
-        alert('Ошибка сохранения (см. консоль)')
+        await updateMyPublicUser(patch)
+        await refreshAll()
+        showProfileEdit.value = false
       } finally {
         saving.value = false
       }
     }
 
-    const logout = async () => {
-      await signOut()
-      await loadAuthAndProfile()
-      closeAllModals()
-      closeMenu()
+    const onPickedAvatar = (file) => {
+      pickedAvatarFile.value = file || null
     }
 
-    onMounted(loadAuthAndProfile)
+    const logout = async () => {
+      await signOut()
+      await refreshAll()
+      showProfileEdit.value = false
+      showAuth.value = false
+      showCreateEvent.value = false
+    }
+
+    const onCreatedEvent = async () => {
+      // можно тут что-то обновлять, если надо
+      await nextTick()
+    }
+
+    onMounted(refreshAll)
+    watch(() => session.value, () => {}) // оставлено как было
 
     return {
       telegramBotUsername,
       searchTerm,
 
-      headerAvatarUrl,
-      showHeaderAvatar,
-      onHeaderImgError,
-
-      showAuth,
-      showProfileEdit,
-      profileLoading,
-      profile,
-      telegramLink,
-      saving,
-
-      isBusiness,
-
       menuOpen,
       openMenu,
       closeMenu,
 
-      noticeOpen,
-
+      session,
+      profile,
+      telegramLink,
       categories,
-      createEventOpen,
-      openCreateEvent,
-      onDraftCreated,
 
-      createBusinessEvent,
+      showAuth,
+      showProfileEdit,
+      showCreateEvent,
+
+      isBusiness,
+
+      headerAvatarUrl,
+      showHeaderAvatar,
+      onHeaderImgError,
 
       openProfileModal,
       openProfileOrAuth,
-      closeAllModals,
+      openCreateEvent,
+
       loginGoogle,
-      onTelegramAuth,
-      onPickAvatar,
+      handleTelegramLogin,
+
       saveProfile,
-      logout
+      onPickedAvatar,
+      logout,
+
+      createBusinessEvent,
+      saving,
+      onCreatedEvent
     }
   }
 }
@@ -431,21 +318,39 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
 .header-container {
   max-width: 1200px; margin: 0 auto; padding: 16px 20px;
   display: flex; justify-content: space-between; align-items: center;
+  gap: 12px;
 }
-.header-left { display: flex; align-items: center; gap: 16px; }
+
+/* ✅ FIX: header-left растягивается, поиск ужимается, профиль не уезжает */
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
 
 .menu-button {
   width: 40px; height: 40px; border-radius: 50%;
   background: #fff; border: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
 }
 .menu-icon { display: flex; flex-direction: column; gap: 3px; }
 .menu-icon span { width: 18px; height: 2px; background: #14181b; border-radius: 1px; }
 
-.search-container { position: relative; display: flex; align-items: center; }
+.search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .search-icon { position: absolute; left: 12px; font-size: 14px; opacity: .6; }
 .search-input {
-  width: 300px; padding: 10px 12px 10px 36px;
+  width: 100%;
+  max-width: 520px;
+  padding: 10px 12px 10px 36px;
   border: 2px solid #efefef; border-radius: 20px;
   outline: none; font-size: 14px;
 }
@@ -455,6 +360,7 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
   background: #fff; border: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   overflow: hidden;
+  flex: 0 0 auto;
 }
 .header-avatar { width: 40px; height: 40px; object-fit: cover; border-radius: 50%; display: block; }
 
@@ -488,6 +394,16 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
 }
 
 .menu-body { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.menu-item{
+  border: 1px solid #efefef;
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px;
+  cursor: pointer;
+  font-weight: 900;
+  text-align: left;
+}
+
 .menu-foot { padding: 14px; border-top: 1px solid #f2f2f2; display: flex; justify-content: flex-end; }
 .apply-btn {
   border: none; background: #8a75e3; color: #fff;
@@ -495,62 +411,9 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
   font-weight: 900; cursor: pointer;
 }
 
-.biz-card {
-  background: #fcfcff;
-  border: 1px solid rgba(138,117,227,.18);
-  border-radius: 16px;
-  padding: 12px;
-  display: grid;
-  gap: 10px;
+/* ✅ extra mobile polish */
+@media (max-width: 520px){
+  .header-container{ padding: 12px 12px; }
+  .search-input{ max-width: none; }
 }
-.biz-top { display: flex; align-items: center; gap: 10px; }
-.biz-title { font-weight: 900; }
-.biz-badge {
-  margin-left: auto;
-  font-size: 12px; font-weight: 900;
-  padding: 6px 10px; border-radius: 999px;
-  background: rgba(0, 200, 120, .12);
-  border: 1px solid rgba(0, 200, 120, .22);
-}
-.biz-badge.off { background: rgba(180,180,180,.16); border-color: rgba(180,180,180,.28); }
-.biz-text { font-size: 12px; opacity: .85; line-height: 1.25; }
-
-.biz-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.biz-btn {
-  border: none; border-radius: 14px;
-  padding: 11px 12px; font-weight: 900;
-  cursor: pointer; background: #8a75e3; color: #fff;
-}
-.biz-btn.secondary { background: #efefef; color: #14181b; }
-.biz-btn:hover { filter: brightness(.98); }
-
-.menu-divider { height: 1px; background: #f2f2f2; margin: 6px 0; }
-
-.menu-item {
-  border: 1px solid #efefef; background: #fff;
-  border-radius: 14px; padding: 12px 12px;
-  font-weight: 900; cursor: pointer; text-align: left;
-}
-.menu-item:hover { background: #fafafa; }
-
-/* CENTER NOTICE */
-.notice-root {
-  position: fixed; inset: 0; z-index: 10001;
-  display: grid; place-items: center;
-  pointer-events: none;
-}
-.notice-card {
-  pointer-events: none;
-  width: min(520px, 92vw);
-  background: #fff;
-  border: 1px solid rgba(138,117,227,.24);
-  box-shadow: 0 18px 60px rgba(0,0,0,.18);
-  border-radius: 18px;
-  padding: 16px;
-  text-align: center;
-  animation: pop 180ms ease;
-}
-@keyframes pop { from { transform: scale(.98); opacity: .6; } to { transform: scale(1); opacity: 1; } }
-.notice-title { font-weight: 900; }
-.notice-text { margin-top: 6px; opacity: .85; font-weight: 800; }
 </style>

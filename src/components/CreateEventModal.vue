@@ -67,31 +67,49 @@
             <div class="mini">Можно выбрать несколько.</div>
           </div>
 
-          <!-- ✅ ONLY FILE -->
+          <!-- ✅ MULTI FILES -->
           <div class="field">
-            <div class="label">Картинка мероприятия</div>
+            <div class="label">Фотографии мероприятия</div>
 
             <div class="image-row">
               <label class="file-btn">
-                <input class="file-input" type="file" accept="image/*" @change="onPickFile" />
-                📷 Выбрать файл
+                <input
+                  class="file-input"
+                  :key="fileInputKey"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  @change="onPickFiles"
+                />
+                📷 Выбрать фото
               </label>
 
-              <button v-if="pickedFile" class="file-clear" type="button" @click="clearFile">
-                Убрать
+              <button v-if="pickedFiles.length" class="file-clear" type="button" @click="clearFiles">
+                Убрать все
               </button>
+
+              <div v-if="pickedFiles.length" class="count">
+                Выбрано: <b>{{ pickedFiles.length }}</b>
+              </div>
             </div>
 
-            <div v-if="pickedFile" class="preview">
-              <img :src="previewUrl" alt="preview" />
-              <div class="preview-meta">
-                <div class="preview-name">{{ pickedFile.name }}</div>
-                <div class="preview-sub">{{ prettySize(pickedFile.size) }}</div>
+            <!-- previews -->
+            <div v-if="pickedFiles.length" class="previews" aria-label="Превью фотографий">
+              <div v-for="(f, idx) in pickedFiles" :key="f._key" class="preview-card">
+                <div class="preview-img">
+                  <img :src="previewUrls[idx]" alt="preview" />
+                  <button class="remove" type="button" @click="removeFile(idx)" aria-label="Удалить фото">✕</button>
+                </div>
+
+                <div class="preview-meta">
+                  <div class="preview-name">{{ f.name }}</div>
+                  <div class="preview-sub">{{ prettySize(f.size) }}</div>
+                </div>
               </div>
             </div>
 
             <div class="mini">
-              Файл загрузится в Storage, а ссылка сохранится в <b>public.event_photos.photo_url</b>.
+              Фото сохраняются в <b>public.event_photos.photo_url</b> (для каждого фото создаётся отдельная строка).
             </div>
           </div>
 
@@ -120,6 +138,8 @@ const trimOrNull = (v) => {
   return s ? s : null
 }
 
+const makeKey = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`
+
 export default {
   name: 'CreateEventModal',
   emits: ['close', 'created'],
@@ -142,8 +162,11 @@ export default {
         price: '0',
         is_online: false
       },
-      pickedFile: null,
-      previewUrl: ''
+
+      // ✅ multi photos
+      pickedFiles: [],
+      previewUrls: [],
+      fileInputKey: 1
     }
   },
   computed: {
@@ -154,7 +177,7 @@ export default {
   },
   watch: {
     open(v) {
-      if (!v) this.cleanupPreview()
+      if (!v) this.cleanupPreviews()
     }
   },
   methods: {
@@ -179,39 +202,74 @@ export default {
       return `${mb.toFixed(1)} MB`
     },
 
-    onPickFile(e) {
-      const file = e?.target?.files?.[0]
-      if (!file) return
+    onPickFiles(e) {
+      const list = Array.from(e?.target?.files || [])
+      if (!list.length) return
 
-      if (!String(file.type || '').startsWith('image/')) {
-        this.error = 'Нужно выбрать изображение.'
-        e.target.value = ''
-        return
+      const maxFiles = 8
+      const maxMB = 8
+
+      // уже выбранные + новые
+      const next = [...this.pickedFiles]
+      const nextUrls = [...this.previewUrls]
+
+      for (const file of list) {
+        if (next.length >= maxFiles) break
+
+        if (!String(file.type || '').startsWith('image/')) continue
+        if (file.size > maxMB * 1024 * 1024) continue
+
+        // добавим “стабильный ключ”, чтобы v-for не прыгал
+        file._key = makeKey()
+
+        next.push(file)
+        nextUrls.push(URL.createObjectURL(file))
       }
 
-      const maxMB = 8
-      if (file.size > maxMB * 1024 * 1024) {
-        this.error = `Слишком большой файл. Максимум ${maxMB}MB.`
-        e.target.value = ''
+      if (!next.length) {
+        this.error = `Нужно выбрать изображения до ${maxMB}MB.`
+        this.fileInputKey++
         return
       }
 
       this.error = ''
-      this.pickedFile = file
+      this.pickedFiles = next
+      this.previewUrls = nextUrls
 
-      this.cleanupPreview()
-      this.previewUrl = URL.createObjectURL(file)
+      // чтобы повторный выбор тех же файлов снова триггерил change
+      this.fileInputKey++
     },
 
-    clearFile() {
-      this.pickedFile = null
-      this.cleanupPreview()
-      this.previewUrl = ''
-    },
+    removeFile(idx) {
+      const i = Number(idx)
+      if (!Number.isFinite(i) || i < 0 || i >= this.pickedFiles.length) return
 
-    cleanupPreview() {
       try {
-        if (this.previewUrl) URL.revokeObjectURL(this.previewUrl)
+        const url = this.previewUrls[i]
+        if (url) URL.revokeObjectURL(url)
+      } catch {}
+
+      const nextFiles = [...this.pickedFiles]
+      const nextUrls = [...this.previewUrls]
+      nextFiles.splice(i, 1)
+      nextUrls.splice(i, 1)
+
+      this.pickedFiles = nextFiles
+      this.previewUrls = nextUrls
+    },
+
+    clearFiles() {
+      this.cleanupPreviews()
+      this.pickedFiles = []
+      this.previewUrls = []
+      this.fileInputKey++
+    },
+
+    cleanupPreviews() {
+      try {
+        for (const url of this.previewUrls) {
+          if (url) URL.revokeObjectURL(url)
+        }
       } catch {}
     },
 
@@ -240,7 +298,9 @@ export default {
         is_online: !!this.form.is_online,
         is_free,
         selectCategory: [...this.selectedCategories],
-        photo_file: this.pickedFile || null
+
+        // ✅ важно: массив файлов
+        photo_files: this.pickedFiles
       }
 
       this.saving = true
@@ -262,7 +322,7 @@ export default {
           price: '0',
           is_online: false
         }
-        this.clearFile()
+        this.clearFiles()
 
         this.$emit('created', data)
         this.$emit('close')
@@ -350,13 +410,55 @@ export default {
   padding: 10px 12px; font-weight: 900; cursor: pointer;
 }
 .file-clear:hover { background: #f0f0f0; }
+.count { font-size: 12px; opacity: .8; }
 
-.preview {
-  margin-top: 8px; border: 1px solid #efefef; border-radius: 16px; overflow: hidden;
-  display: grid; grid-template-columns: 140px 1fr; background: #fff;
+.previews{
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
-.preview img { width: 140px; height: 110px; object-fit: cover; display: block; background: #f2f2f2; }
-.preview-meta { padding: 10px; display: grid; gap: 6px; align-content: center; }
+@media (max-width: 720px) {
+  /* ✅ на телефоне удобнее скролл */
+  .previews{
+    display: flex;
+    overflow-x: auto;
+    gap: 10px;
+    padding-bottom: 6px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .preview-card{ flex: 0 0 72%; scroll-snap-align: start; }
+}
+
+.preview-card{
+  border: 1px solid #efefef;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  display: grid;
+}
+
+.preview-img{ position: relative; }
+.preview-img img{
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  display: block;
+  background: #f2f2f2;
+}
+.remove{
+  position: absolute;
+  right: 8px; top: 8px;
+  width: 28px; height: 28px;
+  border-radius: 999px;
+  border: 1px solid #efefef;
+  background: rgba(255,255,255,.9);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.preview-meta { padding: 10px; display: grid; gap: 6px; }
 .preview-name { font-weight: 900; font-size: 13px; word-break: break-word; }
 .preview-sub { font-size: 12px; opacity: .7; }
 

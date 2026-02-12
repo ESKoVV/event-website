@@ -2,11 +2,23 @@
   <div class="page">
     <div class="container">
       <div class="topbar">
+        <!-- ✅ фильтр слева, только иконка -->
         <button class="filter-btn" @click="openDrawer" aria-label="Открыть фильтры">
           <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
             <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
           </svg>
-          <span class="filter-btn-text">Фильтры</span>
+        </button>
+
+        <!-- ✅ Избранное слева от списка (рядом с фильтром) -->
+        <button
+          class="fav-tab"
+          :class="{ active: activeTab === 'favorites' }"
+          @click="activeTab = activeTab === 'favorites' ? 'all' : 'favorites'"
+          aria-label="Избранное"
+        >
+          <span class="ico">❤️</span>
+          <span class="txt">Избранное</span>
+          <span v-if="favoriteIds.size" class="count">{{ favoriteIds.size }}</span>
         </button>
       </div>
 
@@ -21,6 +33,10 @@
         <button class="retry" @click="reload">Повторить</button>
       </div>
 
+      <div v-else-if="activeTab === 'favorites' && filteredEvents.length === 0" class="state">
+        В избранном пока пусто
+      </div>
+
       <div v-else-if="filteredEvents.length === 0" class="state">Мероприятия не найдены</div>
 
       <div v-else class="events-shell">
@@ -32,7 +48,9 @@
             :photos="photos[event.id] || []"
             :photos-loading="photosLoading"
             :category-map="categoryMap"
+            :is-favorite="favoriteIds.has(event.id)"
             @open-photo="openPhoto"
+            @toggle-favorite="onToggleFavorite"
           />
         </TransitionGroup>
       </div>
@@ -78,7 +96,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import EventCard from '../../components/EventCard.vue'
 import EventPhotoModal from '../../components/EventPhotoModal.vue'
 import FiltersPanel from '../../components/FiltersPanel.vue'
@@ -157,294 +175,251 @@ const normalizeCategoryNames = (raw, categoryMap) => {
   return one ? [one] : []
 }
 
+const LS_KEY = 'fav_event_ids_v1'
+const loadFavLS = () => {
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    if (!raw) return []
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? arr.map((x) => Number(x)).filter((n) => Number.isFinite(n)) : []
+  } catch {
+    return []
+  }
+}
+const saveFavLS = (ids) => {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(Array.from(ids)))
+  } catch {}
+}
+
 export default {
   name: 'HomeView',
   components: { EventCard, EventPhotoModal, FiltersPanel },
   props: { globalSearchTerm: { type: String, default: '' } },
   setup(props) {
-    const { getEvents, getCategories, getEventPhotos } = useSupabase()
+    const { getEvents, getCategories, getEventPhotos, getUser, getFavoriteEventIds, toggleFavorite } = useSupabase()
 
     const initialLoaded = ref(false)
-    const error = ref(null)
-
-    const allEvents = ref([])
-    const visibleEvents = ref([])
-    const photos = ref({})
-
+    const error = ref('')
+    const events = ref([])
     const categories = ref([])
     const categoryMap = ref({})
+    const photos = ref({})
+    const photosLoading = ref(false)
+
+    const drawerOpen = ref(false)
+    const photoModalUrl = ref('')
+
+    const activeTab = ref('all')
+
+    const favoriteIds = ref(new Set())
+    const userId = ref(null)
 
     // filters
     const selectedCategoryNames = ref([])
     const onlineOnly = ref(false)
-
-    const priceMode = ref('all')
+    const priceMode = ref('any')
     const customPriceMin = ref('')
     const customPriceMax = ref('')
-
-    const dateMode = ref('all')
+    const dateMode = ref('any')
     const dateOn = ref('')
     const dateFrom = ref('')
     const dateTo = ref('')
     const datePivot = ref('')
 
-    // ui
-    const drawerOpen = ref(false)
-    const openDrawer = async () => {
-      drawerOpen.value = true
-      await nextTick()
-      document.documentElement.style.overflow = 'hidden'
-      document.body.style.overflow = 'hidden'
-    }
-    const closeDrawer = () => {
-      drawerOpen.value = false
-      document.documentElement.style.overflow = ''
-      document.body.style.overflow = ''
-    }
+    const openDrawer = () => (drawerOpen.value = true)
+    const closeDrawer = () => (drawerOpen.value = false)
 
-    // photo modal
-    const photoModalUrl = ref('')
     const openPhoto = (url) => {
-      if (!url) return
-      photoModalUrl.value = url
-    }
-
-    // progressive list
-    let progressiveTimer = null
-    const stopProgressive = () => {
-      if (progressiveTimer) clearInterval(progressiveTimer)
-      progressiveTimer = null
-    }
-    const startProgressive = (list) => {
-      stopProgressive()
-      visibleEvents.value = []
-      const src = Array.isArray(list) ? list : []
-      if (!src.length) return
-      visibleEvents.value.push(src[0])
-      let i = 1
-      progressiveTimer = setInterval(() => {
-        if (i >= src.length) return stopProgressive()
-        visibleEvents.value.push(src[i])
-        i++
-      }, 140)
+      photoModalUrl.value = url || ''
     }
 
     const resetAllFilters = () => {
       selectedCategoryNames.value = []
       onlineOnly.value = false
-
-      priceMode.value = 'all'
+      priceMode.value = 'any'
       customPriceMin.value = ''
       customPriceMax.value = ''
-
-      dateMode.value = 'all'
+      dateMode.value = 'any'
       dateOn.value = ''
       dateFrom.value = ''
       dateTo.value = ''
       datePivot.value = ''
     }
 
-    const matchesCategories = (event) => {
-      if (selectedCategoryNames.value.length === 0) return true
-      const eventCats = normalizeCategoryNames(event?.selectCategory, categoryMap.value)
-      if (!eventCats.length) return false
-      const set = new Set(selectedCategoryNames.value)
-      return eventCats.some((c) => set.has(c))
-    }
+    const applyFilters = (list) => {
+      const catsSel = selectedCategoryNames.value
+      const online = onlineOnly.value
 
-    const matchesOnline = (event) => {
-      if (!onlineOnly.value) return true
-      return event?.is_online === true
-    }
+      const pm = priceMode.value
+      const minP = toNumberOrNull(customPriceMin.value)
+      const maxP = toNumberOrNull(customPriceMax.value)
 
-    const getEventPrice = (event) => {
-      if (event?.is_free === true) return 0
-      const p = toNumberOrNull(event?.price)
-      if (p === null) return null
-      return p
-    }
+      const dm = dateMode.value
+      const onD = parseDateInput(dateOn.value)
+      const fromD = parseDateInput(dateFrom.value)
+      const toD = parseDateInput(dateTo.value)
 
-    const matchesPrice = (event) => {
-      const mode = priceMode.value
-      if (mode === 'all') return true
+      const now = new Date()
+      const todayStart = startOfDay(now)
+      const todayEnd = endOfDay(now)
+      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+      const tomorrowStart = startOfDay(tomorrow)
+      const tomorrowEnd = endOfDay(tomorrow)
 
-      const price = getEventPrice(event)
-      if (mode === 'free') return price === 0
-      if (price === null) return false
+      const map = categoryMap.value || {}
 
-      if (mode === '100_1000') return price >= 100 && price <= 1000
-      if (mode === '1000_3000') return price >= 1000 && price <= 3000
-      if (mode === '3000_10000') return price >= 3000 && price <= 10000
-      if (mode === 'gt_10000') return price > 10000
+      return (list || []).filter((e) => {
+        if (!e) return false
 
-      if (mode === 'custom') {
-        const min = customPriceMin.value === '' ? null : toNumberOrNull(customPriceMin.value)
-        const max = customPriceMax.value === '' ? null : toNumberOrNull(customPriceMax.value)
-        const okMin = min === null ? true : price >= min
-        const okMax = max === null ? true : price <= max
-        return okMin && okMax
-      }
+        if (activeTab.value === 'favorites' && !favoriteIds.value.has(e.id)) return false
+        if (online && !e.is_online) return false
 
-      return true
-    }
+        if (catsSel.length) {
+          const evCats = normalizeCategoryNames(e.selectCategory, map)
+          const ok = catsSel.some((c) => evCats.includes(c))
+          if (!ok) return false
+        }
 
-    const matchesDate = (event) => {
-      const mode = dateMode.value
-      if (mode === 'all') return true
+        if (pm === 'free' && !e.is_free) return false
+        if (pm === 'paid' && e.is_free) return false
+        if (pm === 'custom') {
+          const p = Number(e.price ?? 0)
+          if (Number.isFinite(minP) && p < minP) return false
+          if (Number.isFinite(maxP) && p > maxP) return false
+        }
 
-      const d = parseEventDate(event?.date_time_event)
-      if (!d) return false
+        const evDate = parseEventDate(e.date_time_event)
+        if (!evDate) return true
 
-      if (mode === 'today') {
-        const now = new Date()
-        return d >= startOfDay(now) && d <= endOfDay(now)
-      }
+        if (dm === 'today') return evDate >= todayStart && evDate <= todayEnd
+        if (dm === 'tomorrow') return evDate >= tomorrowStart && evDate <= tomorrowEnd
+        if (dm === 'on' && onD) return evDate >= startOfDay(onD) && evDate <= endOfDay(onD)
+        if (dm === 'range' && fromD && toD) return evDate >= startOfDay(fromD) && evDate <= endOfDay(toD)
 
-      if (mode === 'next7') {
-        const now = new Date()
-        const from = startOfDay(now)
-        const to = endOfDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7))
-        return d >= from && d <= to
-      }
-
-      if (mode === 'on') {
-        const on = parseDateInput(dateOn.value)
-        if (!on) return true
-        return d >= startOfDay(on) && d <= endOfDay(on)
-      }
-
-      if (mode === 'range') {
-        const fromD = parseDateInput(dateFrom.value)
-        const toD = parseDateInput(dateTo.value)
-        if (!fromD && !toD) return true
-        const from = fromD ? startOfDay(fromD) : null
-        const to = toD ? endOfDay(toD) : null
-        const okFrom = from ? d >= from : true
-        const okTo = to ? d <= to : true
-        return okFrom && okTo
-      }
-
-      if (mode === 'after') {
-        const pivot = parseDateInput(datePivot.value)
-        if (!pivot) return true
-        return d >= startOfDay(pivot)
-      }
-
-      if (mode === 'before') {
-        const pivot = parseDateInput(datePivot.value)
-        if (!pivot) return true
-        return d <= endOfDay(pivot)
-      }
-
-      return true
-    }
-
-    const matchesSearch = (event) => {
-      const term = (props.globalSearchTerm || '').trim().toLowerCase()
-      if (!term) return true
-      const t = (event.title || '').toLowerCase()
-      const desc = (event.description || '').toLowerCase()
-      const a = (event.address || '').toLowerCase()
-      const o = (event.organizer || '').toLowerCase()
-      return t.includes(term) || desc.includes(term) || a.includes(term) || o.includes(term)
+        return true
+      })
     }
 
     const filteredEvents = computed(() => {
-      return visibleEvents.value.filter(
-        (e) => matchesCategories(e) && matchesOnline(e) && matchesPrice(e) && matchesDate(e) && matchesSearch(e)
-      )
+      const term = (props.globalSearchTerm || '').trim().toLowerCase()
+      let list = events.value || []
+      if (term) list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
+      return applyFilters(list)
     })
 
-    // load
-    const photosLoading = ref(false)
-    const stopPhotosLoading = ref(false)
-
     const loadCategories = async () => {
-      const { data, error: err } = await withRetry(() => getCategories())
-      if (err) throw err
-      categories.value = data ?? []
-      categoryMap.value = (categories.value || []).reduce((acc, c) => {
-        acc[String(c.id)] = c.name
-        return acc
-      }, {})
+      const { data, error: e } = await withRetry(() => getCategories())
+      if (e) throw e
+      categories.value = data || []
+
+      const map = {}
+      for (const c of categories.value) {
+        if (!c) continue
+        map[String(c.id)] = c.name
+        map[String(c.name)] = c.name
+      }
+      categoryMap.value = map
     }
 
-    const loadEventsProgressive = async () => {
-      error.value = null
-      stopPhotosLoading.value = true
-      photosLoading.value = false
-      stopProgressive()
+    const loadEvents = async () => {
+      const { data, error: e } = await withRetry(() => getEvents())
+      if (e) throw e
+      events.value = data || []
+    }
 
+    const loadPhotos = async () => {
+      photosLoading.value = true
       try {
-        const { data: eventsData, error: eventsErr } = await withRetry(() => getEvents())
-        if (eventsErr) throw eventsErr
-
-        allEvents.value = eventsData ?? []
-        initialLoaded.value = true
-        startProgressive(allEvents.value)
-
-        photos.value = {}
-        stopPhotosLoading.value = false
-
-        const ids = allEvents.value.map((e) => e.id).filter(Boolean)
-        if (!ids.length) return
-
-        photosLoading.value = true
-        const batchSize = 5
-        for (let i = 0; i < ids.length; i += batchSize) {
-          if (stopPhotosLoading.value) break
-          const batch = ids.slice(i, i + batchSize)
-
-          const { data: ph, error: phErr } = await withRetry(() => getEventPhotos(batch))
-          if (!phErr) {
-            const next = { ...photos.value }
-            for (const p of ph ?? []) {
-              if (!p?.event_id) continue
-              if (!next[p.event_id]) next[p.event_id] = []
-              next[p.event_id].push(p)
-            }
-            photos.value = next
-          }
-          await sleep(120)
+        const ids = (events.value || []).map((e) => e.id)
+        if (!ids.length) {
+          photos.value = {}
+          return
         }
-      } catch (e) {
-        allEvents.value = []
-        visibleEvents.value = []
-        photos.value = {}
-        initialLoaded.value = true
-        error.value = e?.message ? String(e.message) : 'TypeError: Failed to fetch'
+
+        const { data, error: e } = await withRetry(() => getEventPhotos(ids))
+        if (e) throw e
+
+        const grouped = {}
+        for (const row of data || []) {
+          if (!row?.event_id) continue
+          if (!grouped[row.event_id]) grouped[row.event_id] = []
+          grouped[row.event_id].push(row)
+        }
+        photos.value = grouped
       } finally {
         photosLoading.value = false
       }
     }
 
-    const reload = async () => {
-      await loadEventsProgressive()
+    const loadFavorites = async () => {
+      const { user } = await getUser()
+      userId.value = user?.id || null
+
+      if (!userId.value) {
+        favoriteIds.value = new Set(loadFavLS())
+        return
+      }
+
+      const { data, error: e } = await getFavoriteEventIds()
+      if (e) {
+        favoriteIds.value = new Set(loadFavLS())
+        return
+      }
+      favoriteIds.value = new Set(data || [])
     }
 
-    onMounted(async () => {
-      try {
-        await loadCategories()
-      } catch {
-        categories.value = []
-        categoryMap.value = {}
-      }
-      await loadEventsProgressive()
-    })
+    const onToggleFavorite = async ({ eventId, makeFavorite }) => {
+      const idNum = Number(eventId)
+      if (!Number.isFinite(idNum)) return
 
-    onBeforeUnmount(() => {
-      stopProgressive()
-      stopPhotosLoading.value = true
-      document.documentElement.style.overflow = ''
-      document.body.style.overflow = ''
-    })
+      const next = new Set(favoriteIds.value)
+      if (makeFavorite) next.add(idNum)
+      else next.delete(idNum)
+      favoriteIds.value = next
+
+      if (!userId.value) {
+        saveFavLS(favoriteIds.value)
+        return
+      }
+
+      const { error: e } = await toggleFavorite(idNum, makeFavorite)
+      if (e) {
+        const rollback = new Set(favoriteIds.value)
+        if (makeFavorite) rollback.delete(idNum)
+        else rollback.add(idNum)
+        favoriteIds.value = rollback
+      }
+    }
+
+    const reload = async () => {
+      error.value = ''
+      initialLoaded.value = false
+      try {
+        await loadFavorites()
+        await loadCategories()
+        await loadEvents()
+        await nextTick()
+        await loadPhotos()
+        initialLoaded.value = true
+      } catch (e) {
+        error.value = String(e?.message || e)
+        initialLoaded.value = true
+      }
+    }
+
+    onMounted(reload)
 
     return {
       initialLoaded,
       error,
-
       categories,
       categoryMap,
+      photos,
+      photosLoading,
+      filteredEvents,
+      drawerOpen,
+      photoModalUrl,
 
       selectedCategoryNames,
       onlineOnly,
@@ -457,111 +432,155 @@ export default {
       dateTo,
       datePivot,
 
-      photos,
-      photosLoading,
+      activeTab,
+      favoriteIds,
 
-      filteredEvents,
-
-      drawerOpen,
       openDrawer,
       closeDrawer,
-
+      openPhoto,
       resetAllFilters,
       reload,
-
-      photoModalUrl,
-      openPhoto
+      onToggleFavorite
     }
   }
 }
 </script>
 
 <style scoped>
-.page { padding: 16px 0 40px; }
-.container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+.page { padding: 12px 0; }
+.container { max-width: 1100px; margin: 0 auto; padding: 0 12px; }
 
-.topbar { display: flex; align-items: center; margin-bottom: 12px; }
+.topbar{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* ✅ filter icon only + left */
 .filter-btn {
-  margin-left: auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  background: #fff;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+}
+.filter-btn:hover { background:#fafafa; }
+.filter-icon { width: 18px; height: 18px; }
+
+.fav-tab{
+  display:inline-flex;
+  align-items:center;
   gap: 8px;
   border: 1px solid #efefef;
   background: #fff;
   border-radius: 14px;
   padding: 10px 12px;
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  font-weight: 900;
 }
-.filter-btn:hover { background: #fafafa; }
-.filter-icon { width: 18px; height: 18px; opacity: .9; }
-.filter-btn-text { font-size: 13px; font-weight: 800; }
+.fav-tab .ico{ font-size: 16px; }
+.fav-tab .txt{ font-size: 13px; }
+.fav-tab .count{
+  margin-left: 2px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(138,117,227,.12);
+  border: 1px solid rgba(138,117,227,.22);
+}
+.fav-tab.active{
+  background: #8a75e3;
+  border-color: #8a75e3;
+  color: #fff;
+}
 
-.state { display: grid; place-items: center; gap: 10px; padding: 40px 0; opacity: .75; text-align: center; }
-.state.error { opacity: 1; color: #d9534f; }
-.error-title { font-weight: 800; }
-.error-sub { font-size: 12px; opacity: .8; max-width: 680px; }
-.retry { margin-top: 8px; border: none; border-radius: 12px; padding: 10px 14px; cursor: pointer; background: #efefef; }
+@media (max-width: 520px){
+  .fav-tab .txt{ display:none; }
+}
 
-.spinner {
-  width: 26px; height: 26px; border-radius: 50%;
-  border: 3px solid #eee; border-top-color: #8a75e3;
-  animation: spin .8s linear infinite;
+.state{
+  padding: 18px;
+  border: 1px solid #efefef;
+  border-radius: 18px;
+  background: #fff;
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  font-weight: 800;
+}
+.state.error{ color:#d9534f; display:block; }
+.error-title{ font-weight: 900; margin-bottom: 6px; }
+.error-sub{ opacity:.85; margin-bottom: 10px; }
+.retry{
+  border: 1px solid #efefef;
+  background: #fafafa;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.spinner{
+  width: 18px; height: 18px; border-radius: 999px;
+  border: 2px solid #eaeaea; border-top-color: #8a75e3;
+  animation: spin 1s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.events-shell {
-  background: #fff;
-  border: 1px solid #efefef;
-  border-radius: 18px;
-  padding: 14px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
-}
-.events-list { display: flex; flex-direction: column; gap: 12px; }
+.events-shell { margin-top: 10px; }
+.events-list { display: grid; gap: 12px; }
 
-.list-enter-active, .list-leave-active { transition: opacity 240ms ease, transform 240ms ease; }
-.list-enter-from, .list-leave-to { opacity: 0; transform: translateY(8px); }
-
-/* FILTER DRAWER */
-.drawer-root { position: fixed; inset: 0; z-index: 9998; }
-.overlay { position: absolute; inset: 0; background: rgba(0,0,0,.35); backdrop-filter: blur(2px); }
-
+/* drawer */
+.drawer-root { position: fixed; inset: 0; z-index: 10000; }
+.overlay { position: absolute; inset: 0; background: rgba(0,0,0,.38); backdrop-filter: blur(2px); }
 .drawer {
-  position: absolute; top: 0; right: 0; height: 100%;
+  position: absolute;
+  right: 0; top: 0;
+  height: 100%;
   width: min(420px, 92vw);
   background: #fff;
   border-left: 1px solid #efefef;
-  box-shadow: -10px 0 30px rgba(0,0,0,0.12);
-  display: flex; flex-direction: column;
-  animation: slideIn 180ms ease;
+  box-shadow: -10px 0 50px rgba(0,0,0,.12);
+  display: flex;
+  flex-direction: column;
 }
-@keyframes slideIn { from { transform: translateX(18px); opacity: .7; } to { transform: translateX(0); opacity: 1; } }
-
-.drawer-head {
-  display: flex; align-items: center; gap: 10px;
+.drawer-head{
   padding: 14px;
   border-bottom: 1px solid #f2f2f2;
+  display:flex;
+  align-items:center;
+  gap: 12px;
 }
-.drawer-title { font-weight: 900; font-size: 16px; }
-.close-btn {
-  margin-left: auto;
+.drawer-title{ font-weight: 900; }
+.close-btn{
+  margin-left:auto;
   border: 1px solid #efefef;
   background: #fafafa;
   border-radius: 12px;
   padding: 8px 10px;
   cursor: pointer;
 }
-
-.drawer-body { padding: 14px; overflow: auto; }
-.drawer-foot { padding: 14px; border-top: 1px solid #f2f2f2; display: flex; justify-content: flex-end; }
-
-.apply-btn {
-  border: none;
-  background: #8a75e3;
-  color: #fff;
+.drawer-body{ padding: 14px; overflow:auto; }
+.drawer-foot{
+  padding: 14px;
+  border-top: 1px solid #f2f2f2;
+}
+.apply-btn{
+  width:100%;
+  border:none;
   border-radius: 14px;
   padding: 12px 16px;
   font-weight: 900;
   cursor: pointer;
+  background: #8a75e3;
+  color: #fff;
 }
+
+.list-enter-active, .list-leave-active { transition: all .18s ease; }
+.list-enter-from, .list-leave-to { opacity: 0; transform: translateY(6px); }
 </style>

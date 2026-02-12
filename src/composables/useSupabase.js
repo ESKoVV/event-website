@@ -1,57 +1,74 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+export function useSupabase() {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
-
-/**
- * Делает URL из Storage "public", если он вдруг пришёл без /public/.
- * (оставляю, т.к. используется и для аватаров/старых ссылок)
- */
-const normalizeStoragePublicUrl = (url) => {
-  if (!url || typeof url !== 'string') return ''
-  const u = url.trim()
-  if (!u) return ''
-  if (u.includes('/storage/v1/object/public/')) return u
-  if (u.includes('/storage/v1/object/')) return u.replace('/storage/v1/object/', '/storage/v1/object/public/')
-  return u
-}
-
-const compact = (obj) => {
-  const out = {}
-  for (const [k, v] of Object.entries(obj || {})) {
-    if (v !== undefined) out[k] = v
-  }
-  return out
-}
-
-const getFileExt = (file) => {
-  const name = String(file?.name || '')
-  const ext = name.includes('.') ? name.split('.').pop() : ''
-  const clean = String(ext || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-  return clean || 'png'
-}
-
-/**
- * ✅ File -> data:image/... base64
- * Это то, что ты хочешь сохранять в event_photos.photo_url
- */
-const readFileAsDataUrl = (file) =>
-  new Promise((resolve, reject) => {
-    try {
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result || ''))
-      reader.onerror = () => reject(reader.error || new Error('FileReader error'))
-      reader.readAsDataURL(file)
-    } catch (e) {
-      reject(e)
-    }
-  })
-
-export const useSupabase = () => {
   // ---------------------------
-  // EVENTS (ONLY PUBLISHED)
+  // AUTH
+  // ---------------------------
+  const getSession = async () => {
+    const { data, error } = await supabase.auth.getSession()
+    return { session: data?.session ?? null, error }
+  }
+
+  const getUser = async () => {
+    const { data, error } = await supabase.auth.getUser()
+    return { user: data?.user ?? null, error }
+  }
+
+  const signInWithGoogle = async ({ redirectTo }) => {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo }
+    })
+    return { data, error }
+  }
+
+  const signOut = async () => {
+    const { error } = await supabase.auth.signOut()
+    return { error }
+  }
+
+  // ---------------------------
+  // PUBLIC USERS
+  // ---------------------------
+  const ensurePublicUserRow = async (user) => {
+    if (!user?.id) return { data: null, error: null }
+
+    const { data: exists, error: e1 } = await supabase.from('users').select('id').eq('id', user.id).maybeSingle()
+    if (e1) return { data: null, error: e1 }
+    if (exists?.id) return { data: exists, error: null }
+
+    const displayName =
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.email?.split('@')?.[0] ||
+      'Пользователь'
+
+    const { data, error } = await supabase.from('users').insert({ id: user.id, name: displayName }).select().single()
+    return { data, error }
+  }
+
+  const getMyPublicUser = async () => {
+    const { user } = await getUser()
+    if (!user) return { data: null, error: null }
+
+    const { data, error } = await supabase.from('users').select('*').eq('id', user.id).maybeSingle()
+    return { data: data ?? null, error }
+  }
+
+  const updateMyPublicUser = async (patch) => {
+    const { user } = await getUser()
+    if (!user) return { data: null, error: new Error('Not authenticated') }
+
+    const { data, error } = await supabase.from('users').update(patch).eq('id', user.id).select().maybeSingle()
+    return { data: data ?? null, error }
+  }
+
+  // ---------------------------
+  // EVENTS
   // ---------------------------
   const getEvents = async () => {
     const { data, error } = await supabase
@@ -79,6 +96,65 @@ export const useSupabase = () => {
     return { data, error }
   }
 
+  const searchEvents = async (searchTerm) => {
+    const term = (searchTerm || '').trim()
+    if (!term) return getEvents()
+
+    const { data, error } = await supabase
+      .from('events')
+      .select(
+        `
+        id,
+        title,
+        description,
+        date_time_event,
+        address,
+        organizer,
+        price,
+        is_online,
+        is_free,
+        user_id,
+        selectCategory,
+        is_published,
+        created_at
+      `
+      )
+      .eq('is_published', true)
+      .ilike('title', `%${term}%`)
+      .order('created_at', { ascending: false })
+
+    return { data, error }
+  }
+
+  const getEventById = async (eventId) => {
+    const idNum = Number(eventId)
+    if (!Number.isFinite(idNum)) return { data: null, error: new Error('Некорректный id') }
+
+    const { data, error } = await supabase
+      .from('events')
+      .select(
+        `
+        id,
+        title,
+        description,
+        date_time_event,
+        address,
+        organizer,
+        price,
+        is_online,
+        is_free,
+        user_id,
+        selectCategory,
+        is_published,
+        created_at
+      `
+      )
+      .eq('id', idNum)
+      .maybeSingle()
+
+    return { data: data ?? null, error }
+  }
+
   const getCategories = async () => {
     const { data, error } = await supabase.from('category').select('id, name').order('name', { ascending: true })
     return { data, error }
@@ -97,176 +173,136 @@ export const useSupabase = () => {
   }
 
   // ---------------------------
-  // AUTH
+  // FAVORITES ✅
   // ---------------------------
-  const getSession = async () => {
-    const { data, error } = await supabase.auth.getSession()
-    return { session: data?.session ?? null, error }
+  const getFavoriteEventIds = async () => {
+    const { user } = await getUser()
+    if (!user) return { data: [], error: null }
+
+    const { data, error } = await supabase
+      .from('favorites')
+      .select('event_id')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+
+    return { data: (data ?? []).map((x) => x.event_id), error }
   }
 
-  const getUser = async () => {
-    const { data, error } = await supabase.auth.getUser()
-    return { user: data?.user ?? null, error }
-  }
+  const addFavorite = async (eventId) => {
+    const { user } = await getUser()
+    if (!user) return { data: null, error: new Error('Not authenticated') }
 
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
-    return { error }
-  }
+    const idNum = Number(eventId)
+    if (!Number.isFinite(idNum)) return { data: null, error: new Error('Некорректный id') }
 
-  const signInWithGoogle = async ({ redirectTo }) => {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo }
-    })
-    return { data, error }
-  }
-
-  // ---------------------------
-  // PROFILE (public.users)
-  // ---------------------------
-  const ensurePublicUserRow = async (authUser) => {
-    if (!authUser?.id) return { data: null, error: null }
-
-    const meta = authUser.user_metadata || {}
-
-    const { data: existing, error: exErr } = await supabase
-      .from('users')
-      .select('id, email, first_name, last_name')
-      .eq('id', authUser.id)
+    // upsert по PK (user_id, event_id)
+    const { data, error } = await supabase
+      .from('favorites')
+      .upsert({ user_id: user.id, event_id: idNum })
+      .select()
       .maybeSingle()
 
-    if (exErr) return { data: null, error: exErr }
-
-    const firstFromMeta = meta.given_name ?? meta.first_name
-    const lastFromMeta = meta.family_name ?? meta.last_name
-
-    const payload = compact({
-      id: authUser.id,
-      email: existing?.email ?? authUser.email ?? null,
-      first_name: existing?.first_name ? undefined : firstFromMeta ?? undefined,
-      last_name: existing?.last_name ? undefined : lastFromMeta ?? undefined
-    })
-
-    const { data, error } = await supabase.from('users').upsert(payload, { onConflict: 'id' }).select().single()
-    return { data, error }
+    return { data: data ?? null, error }
   }
 
-  const getMyPublicUser = async () => {
+  const removeFavorite = async (eventId) => {
     const { user } = await getUser()
-    if (!user) return { data: null, error: null }
+    if (!user) return { data: null, error: new Error('Not authenticated') }
 
-    const { data, error } = await supabase.from('users').select('*').eq('id', user.id).single()
-    if (data?.image_path) data.image_path = normalizeStoragePublicUrl(data.image_path)
-    return { data, error }
+    const idNum = Number(eventId)
+    if (!Number.isFinite(idNum)) return { data: null, error: new Error('Некорректный id') }
+
+    const { error } = await supabase.from('favorites').delete().eq('user_id', user.id).eq('event_id', idNum)
+    return { data: null, error }
   }
 
-  const updateMyPublicUser = async (patch) => {
-    const { user } = await getUser()
-    if (!user) return { data: null, error: new Error('No auth user') }
-
-    const safePatch = { ...patch }
-    // запрещаем менять бизнес-флаг из клиента
-    delete safePatch.It_business
-
-    for (const k of Object.keys(safePatch)) {
-      if (safePatch[k] === '') safePatch[k] = null
-    }
-    if (safePatch.image_path) safePatch.image_path = normalizeStoragePublicUrl(safePatch.image_path)
-
-    const { data, error } = await supabase.from('users').update(safePatch).eq('id', user.id).select().single()
-    if (data?.image_path) data.image_path = normalizeStoragePublicUrl(data.image_path)
-    return { data, error }
+  const toggleFavorite = async (eventId, makeFavorite) => {
+    return makeFavorite ? addFavorite(eventId) : removeFavorite(eventId)
   }
 
   // ---------------------------
-  // AVATAR UPLOAD (Storage -> users.image_path)
-  // ---------------------------
-  const uploadAvatar = async (file) => {
-    const { user } = await getUser()
-    if (!user) return { publicUrl: null, error: new Error('No auth user') }
-    if (!file) return { publicUrl: null, error: new Error('No file') }
-
-    const envBucket = (import.meta.env.VITE_SUPABASE_AVATAR_BUCKET || '').trim()
-    const buckets = [...new Set([envBucket, 'avatars', 'Biom', 'biom'].filter(Boolean))]
-
-    const ext = getFileExt(file)
-    const path = `ProfileImage/${user.id}/${Date.now()}.${ext}`
-
-    let lastErr = null
-
-    for (const bucket of buckets) {
-      const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
-      if (upErr) {
-        lastErr = upErr
-        if (String(upErr?.message || '').toLowerCase().includes('bucket not found')) continue
-        return { publicUrl: null, error: upErr }
-      }
-
-      const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-      const publicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
-      return { publicUrl, error: null }
-    }
-
-    return {
-      publicUrl: null,
-      error:
-        lastErr ||
-        new Error('Bucket not found. Создай bucket в Storage (например "avatars") и укажи VITE_SUPABASE_AVATAR_BUCKET.')
-    }
-  }
-
-  // ---------------------------
-  // BUSINESS EVENTS: create draft + photo saved to public.event_photos.photo_url as data:image...
+  // BUSINESS: CREATE EVENT + MULTI PHOTOS
   // ---------------------------
   const createBusinessEvent = async (payload) => {
-    const { user, error: userErr } = await getUser()
-    if (userErr) return { data: null, error: userErr }
-    if (!user) return { data: null, error: new Error('Нет авторизации') }
+    const { user } = await getUser()
+    if (!user) return { data: null, error: new Error('Not authenticated') }
 
-    const price = Number(payload?.price ?? 0)
-    const is_free = payload?.is_free === true || (Number.isFinite(price) && price <= 0)
-
-    const eventInsert = {
-      title: payload?.title ?? null,
-      description: payload?.description ?? null,
-      date_time_event: payload?.date_time_event ?? null,
-      address: payload?.address ?? null,
-      organizer: payload?.organizer ?? null,
-      price: Number.isFinite(price) ? price : 0,
-      is_online: !!payload?.is_online,
+    const {
+      title,
+      description,
+      date_time_event,
+      address,
+      organizer,
+      price,
+      is_online,
       is_free,
-      user_id: user.id,
-      selectCategory: Array.isArray(payload?.selectCategory) ? payload.selectCategory : [],
-      is_published: false
-    }
+      selectCategory,
+      photo_files
+    } = payload || {}
 
-    // 1) создаём event
-    const { data: eventRow, error: insErr } = await supabase.from('events').insert(eventInsert).select().single()
-    if (insErr) return { data: null, error: insErr }
-
-    // 2) ✅ фото сохраняем В ТАБЛИЦУ public.event_photos, в photo_url кладём data:image...
-    const file = payload?.photo_file || null
-    if (file) {
-      // подстраховка на тип
-      const mime = String(file?.type || '')
-      if (!mime.startsWith('image/')) {
-        return { data: eventRow, error: new Error('Файл не является изображением') }
-      }
-
-      const dataUrl = await readFileAsDataUrl(file)
-      if (!dataUrl || !dataUrl.startsWith('data:image/')) {
-        return { data: eventRow, error: new Error('Не удалось получить data:image url') }
-      }
-
-      const { error: phErr } = await supabase.from('event_photos').insert({
-        event_id: eventRow.id,
-        photo_url: dataUrl
+    const { data: inserted, error: e1 } = await supabase
+      .from('events')
+      .insert({
+        title,
+        description,
+        date_time_event,
+        address,
+        organizer,
+        price,
+        is_online,
+        is_free,
+        selectCategory,
+        user_id: user.id,
+        is_published: false
       })
-      if (phErr) return { data: eventRow, error: phErr }
+      .select()
+      .single()
+
+    if (e1) return { data: null, error: e1 }
+    const eventId = inserted.id
+
+    if (Array.isArray(photo_files) && photo_files.length) {
+      const rows = []
+      for (const file of photo_files) {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const r = new FileReader()
+          r.onload = () => resolve(String(r.result || ''))
+          r.onerror = reject
+          r.readAsDataURL(file)
+        })
+        if (dataUrl) rows.push({ event_id: eventId, photo_url: dataUrl })
+      }
+      if (rows.length) {
+        const { error: e2 } = await supabase.from('event_photos').insert(rows)
+        if (e2) console.warn('event_photos insert error:', e2)
+      }
     }
 
-    return { data: eventRow, error: null }
+    return { data: inserted, error: null }
+  }
+
+  // ---------------------------
+  // AVATAR
+  // ---------------------------
+  const uploadAvatar = async (file) => {
+    const bucket = import.meta.env.VITE_SUPABASE_AVATAR_BUCKET || 'avatars'
+    const { user } = await getUser()
+    if (!user) return { publicUrl: null, error: new Error('Not authenticated') }
+
+    const ext = (file?.name || 'png').split('.').pop() || 'png'
+    const path = `${user.id}/${Date.now()}.${ext}`
+
+    const { error: e1 } = await supabase.storage.from(bucket).upload(path, file, {
+      cacheControl: '3600',
+      upsert: true
+    })
+    if (e1) return { publicUrl: null, error: e1 }
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+    const publicUrl = data?.publicUrl || null
+    if (!publicUrl) return { publicUrl: null, error: new Error('No public url') }
+
+    return { publicUrl, error: null }
   }
 
   // ---------------------------
@@ -288,9 +324,17 @@ export const useSupabase = () => {
   return {
     // events
     getEvents,
+    searchEvents,
+    getEventById,
     getCategories,
     getEventPhotos,
     createBusinessEvent,
+
+    // favorites ✅
+    getFavoriteEventIds,
+    addFavorite,
+    removeFavorite,
+    toggleFavorite,
 
     // auth
     getSession,

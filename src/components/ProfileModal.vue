@@ -13,20 +13,36 @@
         Telegram не привязан (вход → Telegram)
       </div>
 
+      <!-- ✅ BUSINESS SECTION -->
+      <div class="biz">
+        <div class="biz-top">
+          <div class="biz-title">Business аккаунт</div>
+          <span v-if="isBusiness" class="biz-badge">Активен</span>
+          <span v-else class="biz-badge off">Не активен</span>
+        </div>
+
+        <div class="biz-actions">
+          <button class="biz-btn secondary" @click="showBizInfo = true">
+            Узнать о бизнес аккаунте
+          </button>
+
+          <button v-if="isBusiness" class="biz-btn" @click="$emit('open-create-event')">
+            ➕ Добавить мероприятие
+          </button>
+        </div>
+      </div>
+
       <!-- Аватар: кликаем -> выбираем файл -->
       <div class="avatar-row">
         <button class="avatar" @click="triggerPick" aria-label="Изменить аватар">
-          <!-- 1) локальный превью после кропа -->
           <img v-if="showLocalAvatar" :src="localAvatarUrl" />
 
-          <!-- 2) аватар из БД (если есть и не упал по ошибке) -->
           <img
             v-else-if="showProfileAvatar"
             :src="profileAvatarUrl"
             @error="onProfileImgError"
           />
 
-          <!-- 3) fallback: буква + стильный фон -->
           <div v-else class="avatar-fallback" :style="{ background: avatarGradient }">
             {{ avatarLetter }}
           </div>
@@ -86,9 +102,36 @@
         </button>
         <button class="btn danger" @click="$emit('logout')">Выйти из аккаунта</button>
       </div>
-
-      <div class="note">It_business не отображается и не редактируется с клиента.</div>
     </div>
+
+    <!-- ✅ Business info modal -->
+    <teleport to="body">
+      <div v-if="showBizInfo" class="biz-root" @keydown.esc="showBizInfo = false" tabindex="-1">
+        <div class="biz-overlay" @click="showBizInfo = false"></div>
+        <div class="biz-modal" role="dialog" aria-modal="true" aria-label="О бизнес аккаунте">
+          <div class="biz-head">
+            <div class="biz-h-title">О Business аккаунте</div>
+            <button class="biz-close" @click="showBizInfo = false">✕</button>
+          </div>
+
+          <div class="biz-body">
+            <p>
+              <b>Business аккаунт</b> позволяет публиковать мероприятия.
+            </p>
+            <p>
+              Стоимость — <b>200 рублей в месяц</b>.
+            </p>
+            <p>
+              Для приобретения — напиши администратору.
+            </p>
+          </div>
+
+          <div class="biz-foot">
+            <button class="biz-ok" @click="showBizInfo = false">Понятно</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
 
     <!-- Кроп модалка -->
     <AvatarCropModal
@@ -107,7 +150,7 @@ import AvatarCropModal from './AvatarCropModal.vue'
 export default {
   name: 'ProfileModal',
   components: { AvatarCropModal },
-  emits: ['close', 'save', 'pick-avatar', 'logout'],
+  emits: ['close', 'save', 'pick-avatar', 'logout', 'open-create-event'],
   props: {
     profile: { type: Object, default: null },
     telegramLink: { type: Object, default: null },
@@ -117,124 +160,90 @@ export default {
     const form = reactive({
       first_name: '',
       last_name: '',
-      birth_day: '', // yyyy-mm-dd
+      birth_day: '',
       phone: '',
       email: '',
       gender: ''
     })
 
-    const fileInput = ref(null)
+    const showBizInfo = ref(false)
 
-    const cropFile = ref(null) // выбранный файл для обрезки
-    const localAvatarUrl = ref('') // превью после кропа (локально)
-
-    // если профильная картинка сломалась (404/403/invalid), переключаемся на fallback
-    const profileImgBroken = ref(false)
-
-    const fill = () => {
-      form.first_name = props.profile?.first_name ?? ''
-      form.last_name = props.profile?.last_name ?? ''
-      form.birth_day = props.profile?.birth_day ?? ''
-      form.phone = props.profile?.phone ?? ''
-      form.email = props.profile?.email ?? ''
-      form.gender = props.profile?.gender ?? ''
-      // при смене профиля сбрасываем флаг ошибки картинки
-      profileImgBroken.value = false
-    }
+    const isBusiness = computed(() => props.profile?.It_business === true)
 
     watch(
       () => props.profile,
-      () => fill(),
+      (p) => {
+        form.first_name = p?.first_name || ''
+        form.last_name = p?.last_name || ''
+        form.birth_day = p?.birth_day || ''
+        form.phone = p?.phone || ''
+        form.email = p?.email || ''
+        form.gender = p?.gender || ''
+      },
       { immediate: true }
     )
 
-    // если локальный аватар меняется — тоже сбрасываем флаг битой картинки
-    watch(localAvatarUrl, () => {
-      profileImgBroken.value = false
-    })
+    // avatar
+    const fileInput = ref(null)
+    const cropFile = ref(null)
+    const localAvatarUrl = ref('')
+    const localErrored = ref(false)
+    const profileErrored = ref(false)
 
-    const triggerPick = () => {
-      fileInput.value?.click()
-    }
+    const triggerPick = () => fileInput.value?.click()
 
     const onPick = (e) => {
-      const file = e.target.files?.[0]
+      const file = e?.target?.files?.[0]
       if (!file) return
       cropFile.value = file
       e.target.value = ''
     }
 
-    const onCropped = (file) => {
-      emit('pick-avatar', file)
+    const onCropped = ({ file, url }) => {
+      localAvatarUrl.value = url
+      localErrored.value = false
       cropFile.value = null
-      localAvatarUrl.value = URL.createObjectURL(file)
+      emit('pick-avatar', file)
     }
 
-    // -------------------------
-    // ✅ AVATAR DISPLAY LOGIC
-    // -------------------------
+    const profileAvatarUrl = computed(() => (props.profile?.avatar_url || '').trim())
 
-    const showLocalAvatar = computed(() => {
-      return typeof localAvatarUrl.value === 'string' && localAvatarUrl.value.trim().length > 0
-    })
-
-    const profileAvatarUrl = computed(() => {
-      const src = props.profile?.image_path
-      return typeof src === 'string' ? src.trim() : ''
-    })
-
-    const hasProfileAvatarUrl = computed(() => {
-      return profileAvatarUrl.value.length > 0
-    })
-
-    const showProfileAvatar = computed(() => {
-      // показываем фото из профиля ТОЛЬКО если есть url и оно не "сломалось"
-      return hasProfileAvatarUrl.value && !profileImgBroken.value
-    })
+    const showLocalAvatar = computed(() => !!localAvatarUrl.value && !localErrored.value)
+    const showProfileAvatar = computed(() => !!profileAvatarUrl.value && !profileErrored.value && !showLocalAvatar.value)
 
     const onProfileImgError = () => {
-      // 🔥 ключевой фикс: если img не загрузился — показываем fallback
-      profileImgBroken.value = true
+      profileErrored.value = true
     }
 
     const avatarLetter = computed(() => {
-      const first = (props.profile?.first_name || '').trim()
-      const email = (props.profile?.email || '').trim()
-      const src = first || email
-      return src ? src.charAt(0).toUpperCase() : '?'
+      const n = (form.first_name || form.email || 'П')[0] || 'П'
+      return String(n).toUpperCase()
     })
 
     const avatarGradient = computed(() => {
-      const key = props.profile?.id || props.profile?.email || 'default'
-      const hash = [...String(key)].reduce((acc, ch) => acc + ch.charCodeAt(0), 0)
-
-      const gradients = [
-        ['#ff7a18', '#ffb347'],
-        ['#6a11cb', '#2575fc'],
-        ['#11998e', '#38ef7d'],
-        ['#ee0979', '#ff6a00'],
-        ['#8360c3', '#2ebf91'],
-        ['#fc5c7d', '#6a82fb'],
-        ['#0f2027', '#2c5364']
-      ]
-
-      const g = gradients[hash % gradients.length]
-      return `linear-gradient(135deg, ${g[0]}, ${g[1]})`
+      // стильный фон
+      const a = '#8a75e3'
+      const b = '#2e2a4a'
+      return `linear-gradient(135deg, ${a}, ${b})`
     })
 
     return {
       form,
-      fileInput,
-      triggerPick,
-      onPick,
-      cropFile,
-      onCropped,
-      localAvatarUrl,
+
+      // business
+      isBusiness,
+      showBizInfo,
 
       // avatar
+      fileInput,
+      cropFile,
+      localAvatarUrl,
+      triggerPick,
+      onPick,
+      onCropped,
+      profileAvatarUrl,
       showLocalAvatar,
       showProfileAvatar,
-      profileAvatarUrl,
       onProfileImgError,
       avatarLetter,
       avatarGradient
@@ -247,142 +256,208 @@ export default {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
-.modal {
-  width: 620px;
-  max-width: calc(100vw - 40px);
-  background: #fff;
-  border-radius: 16px;
-  padding: 18px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-}
-
-.top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.title {
-  margin: 0;
-}
-.x {
-  border: none;
-  background: transparent;
-  font-size: 18px;
-  cursor: pointer;
-  opacity: 0.7;
-}
-
-.muted {
-  opacity: 0.7;
-  margin: 8px 0 14px;
-}
-
-.avatar-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 14px;
-}
-
-.avatar {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: none;
-  background: #f5f5f5;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-
-.avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-/* ✅ fallback-аватар */
-.avatar-fallback {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26px;
-  font-weight: 800;
-  color: #fff;
-  letter-spacing: 0.5px;
-  user-select: none;
-}
-
-.avatar-hint {
-  opacity: 0.7;
-  font-size: 13px;
-}
-
-.hidden {
-  display: none;
-}
-
-.grid {
+  background: rgba(0,0,0,.35);
+  backdrop-filter: blur(2px);
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  place-items: center;
+  z-index: 10000;
+}
+
+.modal{
+  width: min(720px, 92vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #efefef;
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.18);
+  padding: 14px;
+}
+
+.top{
+  display:flex;
+  align-items:center;
   gap: 12px;
+  border-bottom: 1px solid #f2f2f2;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+.title{ margin: 0; font-weight: 900; }
+.x{
+  margin-left:auto;
+  border: 1px solid #efefef;
+  background: #fafafa;
+  border-radius: 12px;
+  padding: 8px 10px;
+  cursor:pointer;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.muted{
+  font-size: 13px;
+  opacity: .8;
+  margin-bottom: 12px;
 }
-.field span {
+
+/* ✅ business block */
+.biz{
+  border: 1px solid rgba(138,117,227,.18);
+  background: #fcfcff;
+  border-radius: 16px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.biz-top{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+}
+.biz-title{ font-weight: 900; }
+.biz-badge{
+  margin-left: auto;
   font-size: 12px;
-  opacity: 0.7;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(46,125,50,.12);
+  border: 1px solid rgba(46,125,50,.22);
+  color: #2e7d32;
+  font-weight: 900;
 }
+.biz-badge.off{
+  background: rgba(217,83,79,.10);
+  border-color: rgba(217,83,79,.22);
+  color: #d9534f;
+}
+.biz-actions{
+  display:flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.biz-btn{
+  border: none;
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 900;
+  cursor:pointer;
+  background: #8a75e3;
+  color:#fff;
+}
+.biz-btn.secondary{
+  background: #fff;
+  color:#14181b;
+  border: 1px solid #efefef;
+}
+.biz-btn.secondary:hover{ background:#fafafa; }
 
-input,
-select {
+.avatar-row{
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.avatar{
+  width: 74px;
+  height: 74px;
+  border-radius: 999px;
+  border: 1px solid #efefef;
+  overflow:hidden;
+  background:#fff;
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+}
+.avatar img{ width: 100%; height: 100%; object-fit: cover; display:block; }
+.avatar-fallback{
+  width: 100%; height: 100%;
+  display:grid; place-items:center;
+  font-weight: 900;
+  color:#fff;
+  font-size: 22px;
+}
+.avatar-hint{ font-size: 13px; opacity: .8; }
+.hidden{ display:none; }
+
+.grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 720px){
+  .grid{ grid-template-columns: 1fr; }
+}
+.field{ display:grid; gap: 6px; }
+.field span{ font-size: 12px; opacity: .75; font-weight: 900; }
+.field input, .field select{
   border: 1px solid #efefef;
   border-radius: 12px;
-  padding: 10px 12px;
-  outline: none;
+  padding: 10px;
+  outline:none;
 }
-
-.btns {
-  display: flex;
+.btns{
+  margin-top: 14px;
+  display:flex;
   gap: 10px;
-  margin-top: 16px;
+  flex-wrap: wrap;
 }
+.btn{
+  border:none;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-weight: 900;
+  cursor:pointer;
+  background:#8a75e3;
+  color:#fff;
+}
+.btn:disabled{ opacity:.6; cursor:not-allowed; }
+.btn.danger{ background:#d9534f; }
 
-.btn {
-  flex: 1;
-  border: none;
-  border-radius: 12px;
+/* ✅ business info modal */
+.biz-root{ position: fixed; inset: 0; z-index: 11000; }
+.biz-overlay{ position:absolute; inset:0; background: rgba(0,0,0,.38); backdrop-filter: blur(2px); }
+.biz-modal{
+  position:absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, 92vw);
+  background:#fff;
+  border: 1px solid #efefef;
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.18);
+  overflow:hidden;
+}
+.biz-head{
   padding: 12px 14px;
-  cursor: pointer;
-  background: #8a75e3;
-  color: #fff;
-  font-weight: 700;
+  border-bottom: 1px solid #f2f2f2;
+  display:flex;
+  align-items:center;
+  gap: 10px;
 }
-
-.btn.danger {
-  background: #d9534f;
+.biz-h-title{ font-weight: 900; }
+.biz-close{
+  margin-left:auto;
+  border: 1px solid #efefef;
+  background:#fafafa;
+  border-radius: 12px;
+  padding: 8px 10px;
+  cursor:pointer;
 }
-
-.note {
-  margin-top: 12px;
-  font-size: 12px;
-  opacity: 0.7;
+.biz-body{ padding: 14px; display:grid; gap: 10px; }
+.biz-body p{ margin:0; line-height: 1.35; opacity: .92; }
+.biz-foot{
+  padding: 14px;
+  border-top: 1px solid #f2f2f2;
+  display:flex;
+  justify-content:flex-end;
+}
+.biz-ok{
+  border:none;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-weight: 900;
+  cursor:pointer;
+  background:#8a75e3;
+  color:#fff;
 }
 </style>

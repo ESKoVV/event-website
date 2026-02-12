@@ -1,12 +1,21 @@
 <template>
-  <div class="card">
+  <div
+    class="card"
+    role="button"
+    tabindex="0"
+    @click="openEvent"
+    @keydown.enter="openEvent"
+    @keydown.space.prevent="openEvent"
+  >
     <!-- LEFT: PHOTO -->
-    <button ref="photoBtn" class="photo" @click="handleOpenPhoto" aria-label="Открыть фото">
-      <div
-        v-if="!inView || !imageUrl || !imgLoaded"
-        class="photo-skeleton"
-        :class="{ shimmer: photosLoading }"
-      ></div>
+    <button
+      ref="photoBtn"
+      class="photo"
+      type="button"
+      @click.stop="handleOpenPhoto"
+      aria-label="Открыть фото"
+    >
+      <div v-if="!inView || !imageUrl || !imgLoaded" class="photo-skeleton" :class="{ shimmer: photosLoading }"></div>
 
       <img
         v-if="inView && imageUrl"
@@ -18,25 +27,40 @@
         @load="onImgLoad"
         @error="onImgError"
       />
+
+      <!-- ✅ ONLINE OVERLAY -->
+      <div v-if="event.is_online" class="photo-badge" aria-label="Онлайн">
+        🟢 Онлайн
+      </div>
+
+      <!-- ❤️ like поверх фото -->
+      <button
+        class="like"
+        type="button"
+        @click.stop="toggleLike"
+        :aria-label="isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'"
+      >
+        <span :class="{ on: isFavorite }">{{ isFavorite ? '❤️' : '🤍' }}</span>
+      </button>
     </button>
 
     <!-- RIGHT: INFO -->
     <div class="info">
       <div class="top-row">
-        <div class="title">{{ event.title }}</div>
+        <div class="title-row">
+          <div class="title">{{ event.title }}</div>
+
+          <div class="right-actions">
+            <button class="share" type="button" @click.stop="shareEvent" aria-label="Поделиться">🔗</button>
+          </div>
+        </div>
 
         <div class="badges">
-          <span v-if="event.is_online" class="badge">🟢 Онлайн</span>
           <span v-if="event.is_free" class="badge">🆓 Бесплатно</span>
-
-          <!-- ✅ категории только по ИМЕНАМ -->
-          <span v-for="c in categoryNames" :key="c" class="badge">
-            {{ c }}
-          </span>
+          <span v-for="c in categoryNames" :key="c" class="badge">{{ c }}</span>
         </div>
       </div>
 
-      <!-- Описание: с абзаца -->
       <p v-if="event.description" class="desc">
         {{ event.description }}
       </p>
@@ -68,18 +92,20 @@
           v-for="p in morePhotos"
           :key="p.id"
           class="thumb"
-          @click="emitOpenPhoto(p.photo_url)"
+          type="button"
+          @click.stop="emitOpenPhoto(p.photo_url)"
           aria-label="Открыть фото"
         >
           <img :src="p.photo_url" alt="thumb" loading="lazy" decoding="async" />
         </button>
       </div>
+
+      <div v-if="copied" class="copied">Ссылка скопирована ✅</div>
     </div>
   </div>
 </template>
 
 <script>
-// тот же “нормализатор”: селектКатегори -> имена
 const normalizeCategoryNames = (raw, categoryMap) => {
   const map = categoryMap || {}
 
@@ -94,15 +120,11 @@ const normalizeCategoryNames = (raw, categoryMap) => {
   }
 
   if (!raw) return []
-
-  if (Array.isArray(raw)) {
-    return Array.from(new Set(raw.map(toName).filter(Boolean)))
-  }
+  if (Array.isArray(raw)) return Array.from(new Set(raw.map(toName).filter(Boolean)))
 
   if (typeof raw === 'string') {
-    const s = raw.trim()
-    if (!s) return []
-    const parts = s
+    const parts = raw
+      .trim()
       .split(/[,;|]+/g)
       .map((x) => x.trim())
       .filter(Boolean)
@@ -115,24 +137,54 @@ const normalizeCategoryNames = (raw, categoryMap) => {
   return one ? [one] : []
 }
 
+const buildEventUrl = (id) => {
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '/')
+  return `${window.location.origin}${base}event/${id}`
+}
+
+const copyText = async (text) => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {}
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', 'true')
+    ta.style.position = 'fixed'
+    ta.style.left = '-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
+
 export default {
   name: 'EventCard',
-  emits: ['open-photo'],
+  emits: ['open-photo', 'toggle-favorite'],
   props: {
     event: { type: Object, required: true },
     photos: { type: Array, default: () => [] },
     photosLoading: { type: Boolean, default: false },
-    // если вдруг selectCategory когда-нибудь станет id — мапа спасёт
-    categoryMap: { type: Object, default: () => ({}) }
+    categoryMap: { type: Object, default: () => ({}) },
+    isFavorite: { type: Boolean, default: false }
   },
   computed: {
+    cleanPhotos() {
+      return (Array.isArray(this.photos) ? this.photos : []).filter((p) => p?.photo_url)
+    },
     imageUrl() {
-      const first = Array.isArray(this.photos) ? this.photos[0] : null
+      const first = this.cleanPhotos[0]
       return (first?.photo_url || '').trim()
     },
     morePhotos() {
-      if (!Array.isArray(this.photos)) return []
-      return this.photos.slice(1, 6).filter((p) => p?.photo_url)
+      return this.cleanPhotos.slice(1, 6)
     },
     categoryNames() {
       return normalizeCategoryNames(this.event?.selectCategory, this.categoryMap)
@@ -159,7 +211,9 @@ export default {
     return {
       inView: false,
       imgLoaded: false,
-      io: null
+      io: null,
+      copied: false,
+      copiedTimer: null
     }
   },
   watch: {
@@ -200,8 +254,19 @@ export default {
       this.io.disconnect()
       this.io = null
     }
+    if (this.copiedTimer) clearTimeout(this.copiedTimer)
   },
   methods: {
+    openEvent() {
+      const id = this.event?.id
+      if (id === null || id === undefined) return
+      this.$router.push({ name: 'event', params: { id: String(id) } })
+    },
+    toggleLike() {
+      const id = this.event?.id
+      if (id === null || id === undefined) return
+      this.$emit('toggle-favorite', { eventId: id, makeFavorite: !this.isFavorite })
+    },
     onImgLoad() {
       this.imgLoaded = true
     },
@@ -215,6 +280,29 @@ export default {
     handleOpenPhoto() {
       if (!this.imageUrl) return
       this.emitOpenPhoto(this.imageUrl)
+    },
+    async shareEvent() {
+      const id = this.event?.id
+      if (id === null || id === undefined) return
+
+      const url = buildEventUrl(id)
+      const title = this.event?.title || 'Мероприятие'
+
+      try {
+        if (navigator.share) {
+          await navigator.share({ title, url })
+          return
+        }
+      } catch {}
+
+      const ok = await copyText(url)
+      if (ok) {
+        this.copied = true
+        if (this.copiedTimer) clearTimeout(this.copiedTimer)
+        this.copiedTimer = setTimeout(() => (this.copied = false), 1800)
+      } else {
+        window.prompt('Скопируй ссылку:', url)
+      }
     }
   }
 }
@@ -241,6 +329,7 @@ export default {
   background: #fff;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
   overflow: hidden;
+  cursor: pointer;
 }
 
 .photo {
@@ -264,7 +353,6 @@ export default {
   transform: scale(1.01);
   transition: opacity 260ms ease, transform 260ms ease;
 }
-
 .photo img.loaded {
   opacity: 1;
   transform: scale(1);
@@ -275,6 +363,39 @@ export default {
   height: 100%;
   background: #f0f0f0;
 }
+
+/* ✅ ONLINE BADGE OVER PHOTO */
+.photo-badge{
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #fff;
+  background: rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.25);
+  backdrop-filter: blur(6px);
+}
+
+.like{
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.55);
+  background: rgba(0,0,0,.25);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.like span{ font-size: 18px; }
+.like span.on{ transform: scale(1.02); }
 
 .shimmer {
   position: relative;
@@ -294,36 +415,34 @@ export default {
   }
 }
 
-.info {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow: hidden;
-}
+.info { display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.top-row { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
 
-.top-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow: hidden;
-}
-
+.title-row { display: flex; align-items: flex-start; gap: 10px; }
 .title {
+  flex: 1 1 auto;
   font-size: 18px;
   font-weight: 900;
-  white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
   line-height: 1.2;
 }
 
-.badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  overflow: hidden;
-}
+.right-actions{ display:flex; gap: 8px; }
 
+.share {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  background: #fafafa;
+  cursor: pointer;
+  font-size: 16px;
+}
+.share:hover { background: #f0f0f0; }
+
+.badges { display: flex; flex-wrap: wrap; gap: 8px; overflow: hidden; }
 .badge {
   font-size: 12px;
   font-weight: 700;
@@ -331,7 +450,6 @@ export default {
   border-radius: 999px;
   background: rgba(138, 117, 227, 0.12);
   border: 1px solid rgba(138, 117, 227, 0.22);
-  white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
   max-width: 100%;
@@ -354,66 +472,23 @@ export default {
   gap: 8px 14px;
   overflow: hidden;
 }
+.meta-item { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; overflow: hidden; }
+.k { width: 18px; flex: 0 0 18px; }
+.v { overflow-wrap: anywhere; word-break: break-word; opacity: .9; }
+.price { font-weight: 900; }
 
-.meta-item {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  font-size: 14px;
-  overflow: hidden;
-}
-
-.k {
-  width: 18px;
-  opacity: 0.9;
-  flex: 0 0 18px;
-}
-
-.v {
-  opacity: 0.9;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.price {
-  font-weight: 900;
-}
-
-.thumbs {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-  flex-wrap: wrap;
-}
-
+.thumbs { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .thumb {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid #efefef;
-  background: #fff;
-  padding: 0;
-  cursor: pointer;
+  width: 48px; height: 48px; border-radius: 12px; overflow: hidden;
+  border: 1px solid #efefef; background: #fff; padding: 0; cursor: pointer;
 }
-.thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.copied { margin-top: 4px; font-size: 12px; font-weight: 900; color: #2e7d32; }
 
 @media (max-width: 760px) {
-  .card {
-    grid-template-columns: 1fr;
-  }
-  .photo {
-    width: 100%;
-    height: 200px;
-  }
-  .meta {
-    grid-template-columns: 1fr;
-  }
+  .card { grid-template-columns: 1fr; }
+  .photo { width: 100%; height: 200px; }
+  .meta { grid-template-columns: 1fr; }
 }
 </style>
