@@ -2,46 +2,33 @@
   <div class="page">
     <div class="container">
       <div class="topbar">
-        <!-- ✅ Фильтр слева, только иконка -->
+        <!-- Фильтр -->
         <button class="filter-btn" @click="openDrawer" aria-label="Открыть фильтры">
           <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
             <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
           </svg>
         </button>
 
-        <!-- ✅ Моя лента -->
-        <button
-          class="tab"
-          :class="{ active: activeTab === 'feed' }"
-          type="button"
-          @click="activeTab = 'feed'"
-          aria-label="Моя лента"
-        >
+        <!-- Моя лента -->
+        <button class="tab" :class="{ active: activeTab === 'feed' }" type="button" @click="activeTab = 'feed'">
           <span class="ico">📰</span>
           <span class="txt">Моя лента</span>
         </button>
 
-        <!-- ✅ Избранное -->
-        <button
-          class="tab"
-          :class="{ active: activeTab === 'favorites' }"
-          type="button"
-          @click="activeTab = 'favorites'"
-          aria-label="Избранное"
-        >
+        <!-- Избранное -->
+        <button class="tab" :class="{ active: activeTab === 'favorites' }" type="button" @click="activeTab = 'favorites'">
           <span class="ico">❤️</span>
           <span class="txt">Избранное</span>
           <span v-if="favoriteIds.size" class="count">{{ favoriteIds.size }}</span>
         </button>
 
-        <!-- ✅ Справа от избранного: Мои мероприятия ИЛИ реклама бизнес аккаунта -->
+        <!-- Справа: Мои мероприятия (для бизнес) или реклама -->
         <button
           v-if="isBusiness"
           class="tab"
           :class="{ active: activeTab === 'mine' }"
           type="button"
           @click="activeTab = 'mine'"
-          aria-label="Мои мероприятия"
         >
           <span class="ico">📌</span>
           <span class="txt">Мои мероприятия</span>
@@ -53,31 +40,22 @@
           :class="{ active: activeTab === 'biz' }"
           type="button"
           @click="activeTab = 'biz'"
-          aria-label="Бизнес аккаунт"
         >
           <span class="ico">💼</span>
           <span class="txt">Бизнес</span>
         </button>
       </div>
 
-      <!-- подсказка про интересы (только в Моей ленте) -->
-      <div v-if="activeTab === 'feed' && initialLoaded && !myInterests.length" class="hint">
-        Выбери интересные категории в профиле — и «Моя лента» станет персональной
-      </div>
-
-      <!-- ✅ РЕКЛАМА БИЗНЕС (для обычных) -->
+      <!-- Реклама бизнес-аккаунта -->
       <div v-if="activeTab === 'biz' && !isBusiness" class="biz-ad">
         <div class="biz-ad-title">💼 Business аккаунт</div>
         <div class="biz-ad-text">
-          С бизнес-аккаунтом ты можешь публиковать мероприятия. Сначала они попадают в предложку,
-          потом админ подтверждает публикацию.
+          С бизнес-аккаунтом ты можешь добавлять мероприятия. Сначала они попадают в предложку, затем админ подтверждает.
         </div>
-        <button class="biz-ad-btn" type="button" @click="goToProfile">
-          Узнать / подключить
-        </button>
+        <button class="biz-ad-btn" type="button" @click="goToProfile">Узнать</button>
       </div>
 
-      <!-- LOADING / ERROR -->
+      <!-- Loading / Error -->
       <div v-if="!initialLoaded" class="state">
         <div class="spinner"></div>
         <div>Загрузка мероприятий…</div>
@@ -89,57 +67,31 @@
         <button class="retry" @click="reload">Повторить</button>
       </div>
 
-      <!-- ✅ СПИСОК: общая лента/избранное/мои мероприятия -->
+      <!-- Списки (все через EventCard) -->
       <template v-else>
-        <!-- Мои мероприятия -->
-        <div v-if="activeTab === 'mine' && isBusiness" class="mine-wrap">
-          <div v-if="myEventsLoading" class="state">
-            <div class="spinner"></div>
-            <div>Загрузка ваших мероприятий…</div>
-          </div>
-
-          <div v-else-if="myEventsError" class="state error">
-            <div class="error-title">Не удалось загрузить ваши мероприятия</div>
-            <div class="error-sub">{{ myEventsError }}</div>
-            <button class="retry" @click="loadMyEvents">Повторить</button>
-          </div>
-
-          <div v-else-if="myEvents.length === 0" class="state">
+        <div v-if="activeTab === 'mine' && isBusiness">
+          <div v-if="myEventsForCards.length === 0" class="state">
             У вас пока нет мероприятий
           </div>
 
           <div v-else class="events-shell">
-            <div class="mine-hint">
-              Здесь показаны ваши мероприятия: <b>опубликованные</b> и <b>в обработке</b>.
-            </div>
-
-            <div class="events-list">
-              <div
-                v-for="e in myEventsSorted"
-                :key="e.id"
-                class="mine-row"
-                @click="$router.push({ name: 'event', params: { id: String(e.id) } })"
-              >
-                <div class="mine-left">
-                  <div class="mine-title">{{ e.title }}</div>
-                  <div class="mine-sub">
-                    <span v-if="e.is_published" class="pill ok">Опубликовано</span>
-                    <span v-else class="pill warn">В обработке</span>
-                    <span v-if="e.is_online" class="pill">Онлайн</span>
-                    <span v-if="e.is_free" class="pill">Бесплатно</span>
-                  </div>
-                </div>
-                <div class="mine-right">
-                  <div class="mine-date">{{ formatDate(e.date_time_event) }}</div>
-                  <div class="go">→</div>
-                </div>
-              </div>
-            </div>
+            <TransitionGroup name="list" tag="div" class="events-list">
+              <EventCard
+                v-for="event in myEventsForCards"
+                :key="event.id"
+                :event="event"
+                :photos="photos[event.id] || []"
+                :photos-loading="photosLoading"
+                :category-map="categoryMap"
+                :is-favorite="favoriteIds.has(event.id)"
+                @open-photo="openPhoto"
+                @toggle-favorite="onToggleFavorite"
+              />
+            </TransitionGroup>
           </div>
         </div>
 
-        <!-- Общая лента / Избранное -->
-        <template v-else>
+        <template v-else-if="activeTab === 'feed' || activeTab === 'favorites'">
           <div v-if="filteredEvents.length === 0" class="state">
             <template v-if="activeTab === 'favorites'">В избранном пока пусто</template>
             <template v-else>Мероприятия не найдены</template>
@@ -204,11 +156,12 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import EventCard from '../../components/EventCard.vue'
 import EventPhotoModal from '../../components/EventPhotoModal.vue'
 import FiltersPanel from '../../components/FiltersPanel.vue'
 import { useSupabase } from '../../composables/useSupabase'
+import { setEventsCache } from '../../composables/eventsCache'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -284,7 +237,6 @@ const normalizeCategoryNames = (raw, categoryMap) => {
 }
 
 const makeFavKey = (userId) => (userId ? `fav_event_ids_v1_${userId}` : 'fav_event_ids_v1_guest')
-
 const loadFavLS = (key) => {
   try {
     const raw = localStorage.getItem(key)
@@ -295,7 +247,6 @@ const loadFavLS = (key) => {
     return []
   }
 }
-
 const saveFavLS = (key, idsSet) => {
   try {
     localStorage.setItem(key, JSON.stringify(Array.from(idsSet)))
@@ -306,79 +257,86 @@ export default {
   name: 'HomeView',
   components: { EventCard, EventPhotoModal, FiltersPanel },
   props: { globalSearchTerm: { type: String, default: '' } },
-  setup(props, { expose }) {
-    const api = useSupabase()
-    const { getEvents, getCategories, getEventPhotos, getUser, getMyPublicUser } = api
-
-    // optional: may not exist in your current useSupabase.js
-    const getMyEvents = api.getMyEvents
+  setup(props) {
+    const { getEvents, getCategories, getEventPhotos, getUser, getMyPublicUser } = useSupabase()
 
     const initialLoaded = ref(false)
     const error = ref('')
-    const events = ref([])
+
+    // data
+    const allEvents = ref([])
     const categories = ref([])
     const categoryMap = ref({})
     const photos = ref({})
     const photosLoading = ref(false)
 
-    const drawerOpen = ref(false)
-    const photoModalUrl = ref('')
-
-    // ✅ tabs
-    const activeTab = ref('feed') // 'feed' | 'favorites' | 'mine' | 'biz'
-
-    // ✅ profile interests + business
-    const myInterests = ref([]) // text[]
-    const userId = ref(null)
+    // tabs
+    const activeTab = ref('feed') // feed | favorites | mine | biz
     const isBusiness = ref(false)
+    const userId = ref(null)
 
-    // ✅ favorites (localStorage)
+    // favorites
     const favoriteIds = ref(new Set())
     const favKey = ref(makeFavKey(null))
-
-    // ✅ my events (business)
-    const myEvents = ref([])
-    const myEventsLoading = ref(false)
-    const myEventsError = ref('')
 
     // filters
     const selectedCategoryNames = ref([])
     const onlineOnly = ref(false)
-    const priceMode = ref('any')
+
+    const priceMode = ref('all') // all | free | paid | custom
     const customPriceMin = ref('')
     const customPriceMax = ref('')
-    const dateMode = ref('any')
+
+    const dateMode = ref('all') // all | today | tomorrow | on | range
     const dateOn = ref('')
     const dateFrom = ref('')
     const dateTo = ref('')
     const datePivot = ref('')
 
-    const openDrawer = () => (drawerOpen.value = true)
-    const closeDrawer = () => (drawerOpen.value = false)
+    // ui
+    const drawerOpen = ref(false)
+    const photoModalUrl = ref('')
 
-    const openPhoto = (url) => {
-      photoModalUrl.value = url || ''
+    const openDrawer = async () => {
+      drawerOpen.value = true
+      await nextTick()
+      document.documentElement.style.overflow = 'hidden'
+      document.body.style.overflow = 'hidden'
     }
+    const closeDrawer = () => {
+      drawerOpen.value = false
+      document.documentElement.style.overflow = ''
+      document.body.style.overflow = ''
+    }
+    const openPhoto = (url) => (photoModalUrl.value = url || '')
 
     const resetAllFilters = () => {
       selectedCategoryNames.value = []
       onlineOnly.value = false
-      priceMode.value = 'any'
+      priceMode.value = 'all'
       customPriceMin.value = ''
       customPriceMax.value = ''
-      dateMode.value = 'any'
+      dateMode.value = 'all'
       dateOn.value = ''
       dateFrom.value = ''
       dateTo.value = ''
       datePivot.value = ''
     }
 
-    const formatDate = (v) => {
-      if (!v) return '—'
-      const d = new Date(v)
-      if (Number.isNaN(d.getTime())) return String(v)
-      return d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+    const goToProfile = () => {
+      // если у тебя другой путь — поменяй
+      const base = import.meta.env.BASE_URL || '/'
+      window.location.href = `${base}profile`
     }
+
+    // ✅ ВАЖНО: лента показывает только опубликованные
+    const basePublishedFeed = computed(() => (allEvents.value || []).filter((e) => e?.is_published !== false))
+
+    // ✅ Мои мероприятия: те же EventCard, берём из уже загруженных allEvents
+    const myEventsForCards = computed(() => {
+      if (!userId.value) return []
+      return (allEvents.value || []).filter((e) => String(e?.user_id || '') === String(userId.value))
+    })
 
     const applyFilters = (list) => {
       const catsSel = selectedCategoryNames.value
@@ -405,7 +363,6 @@ export default {
       return (list || []).filter((e) => {
         if (!e) return false
 
-        // ✅ вкладка избранного
         if (activeTab.value === 'favorites' && !favoriteIds.value.has(e.id)) return false
 
         if (online && !e.is_online) return false
@@ -436,46 +393,53 @@ export default {
       })
     }
 
-    // ✅ Лента: интересы НЕ фильтруют, а поднимают вверх
     const filteredEvents = computed(() => {
       const term = (props.globalSearchTerm || '').trim().toLowerCase()
-      let list = events.value || []
-      if (term) list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
+      let list = basePublishedFeed.value
 
-      const base = applyFilters(list)
-
-      if (activeTab.value === 'feed' && Array.isArray(myInterests.value) && myInterests.value.length) {
-        const interests = myInterests.value.map((x) => String(x))
-        const map = categoryMap.value || {}
-
-        const score = (e) => {
-          const evCats = normalizeCategoryNames(e.selectCategory, map)
-          let s = 0
-          for (const i of interests) if (evCats.includes(i)) s += 1
-          return s
-        }
-
-        return [...base].sort((a, b) => {
-          const sa = score(a)
-          const sb = score(b)
-          if (sb !== sa) return sb - sa
-          const da = parseEventDate(a?.date_time_event)?.getTime() ?? Number.MAX_SAFE_INTEGER
-          const db = parseEventDate(b?.date_time_event)?.getTime() ?? Number.MAX_SAFE_INTEGER
-          return da - db
-        })
+      if (term) {
+        list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
       }
 
-      return base
+      return applyFilters(list)
     })
+
+    const onToggleFavorite = ({ eventId, makeFavorite }) => {
+      const idNum = Number(eventId)
+      if (!Number.isFinite(idNum)) return
+
+      const next = new Set(favoriteIds.value)
+      if (makeFavorite) next.add(idNum)
+      else next.delete(idNum)
+      favoriteIds.value = next
+      saveFavLS(favKey.value, favoriteIds.value)
+    }
+
+    const loadUser = async () => {
+      const { user } = await getUser()
+      userId.value = user?.id || null
+      favKey.value = makeFavKey(userId.value)
+      favoriteIds.value = new Set(loadFavLS(favKey.value))
+
+      if (!userId.value) {
+        isBusiness.value = false
+        return
+      }
+
+      try {
+        const { data: p } = await getMyPublicUser()
+        isBusiness.value = p?.It_business === true
+      } catch {
+        isBusiness.value = false
+      }
+    }
 
     const loadCategories = async () => {
       const { data, error: e } = await withRetry(() => getCategories())
       if (e) throw e
       categories.value = data || []
-
       const map = {}
       for (const c of categories.value) {
-        if (!c) continue
         map[String(c.id)] = c.name
         map[String(c.name)] = c.name
       }
@@ -485,13 +449,13 @@ export default {
     const loadEvents = async () => {
       const { data, error: e } = await withRetry(() => getEvents())
       if (e) throw e
-      events.value = data || []
+      allEvents.value = data || []
     }
 
     const loadPhotos = async () => {
       photosLoading.value = true
       try {
-        const ids = (events.value || []).map((e) => e.id)
+        const ids = (allEvents.value || []).map((e) => e.id)
         if (!ids.length) {
           photos.value = {}
           return
@@ -512,141 +476,61 @@ export default {
       }
     }
 
-    const loadUserAndInterests = async () => {
-      const { user } = await getUser()
-      userId.value = user?.id || null
-      favKey.value = makeFavKey(userId.value)
-
-      // favorites from LS
-      favoriteIds.value = new Set(loadFavLS(favKey.value))
-
-      // interests + business from profile
-      if (!userId.value) {
-        myInterests.value = []
-        isBusiness.value = false
-        return
-      }
-
-      try {
-        const { data: p, error: e } = await getMyPublicUser()
-        if (e) throw e
-        myInterests.value = Array.isArray(p?.interests) ? p.interests : []
-        isBusiness.value = p?.It_business === true
-      } catch {
-        myInterests.value = []
-        isBusiness.value = false
-      }
-    }
-
-    const onToggleFavorite = ({ eventId, makeFavorite }) => {
-      const idNum = Number(eventId)
-      if (!Number.isFinite(idNum)) return
-
-      const next = new Set(favoriteIds.value)
-      if (makeFavorite) next.add(idNum)
-      else next.delete(idNum)
-
-      favoriteIds.value = next
-      saveFavLS(favKey.value, favoriteIds.value)
-    }
-
-    // ✅ Business: load my events
-    const loadMyEvents = async () => {
-      if (!isBusiness.value) return
-      myEventsLoading.value = true
-      myEventsError.value = ''
-      try {
-        // Если в useSupabase.js есть getMyEvents — используем его (правильно: покажет и в обработке)
-        if (typeof getMyEvents === 'function') {
-          const { data, error: e } = await getMyEvents(true)
-          if (e) throw e
-          myEvents.value = data || []
-          return
-        }
-
-        // fallback: если метода нет — хотя бы покажем из уже загруженных (может быть только опубликованные)
-        if (userId.value) {
-          myEvents.value = (events.value || []).filter((x) => String(x?.user_id || '') === String(userId.value))
-        } else {
-          myEvents.value = []
-        }
-      } catch (e) {
-        myEventsError.value = String(e?.message || e)
-      } finally {
-        myEventsLoading.value = false
-      }
-    }
-
-    const myEventsSorted = computed(() => {
-      const list = myEvents.value || []
-      // сначала "в обработке", потом опубликованные; внутри — по created_at/дате
-      return [...list].sort((a, b) => {
-        const ap = a?.is_published === true ? 1 : 0
-        const bp = b?.is_published === true ? 1 : 0
-        if (ap !== bp) return ap - bp // 0 (в обработке) выше 1 (опубликовано)
-        const da = parseEventDate(a?.created_at || a?.date_time_event)?.getTime() ?? 0
-        const db = parseEventDate(b?.created_at || b?.date_time_event)?.getTime() ?? 0
-        return db - da
-      })
-    })
-
     const reload = async () => {
-      error.value = ''
       initialLoaded.value = false
+      error.value = ''
       try {
-        await loadUserAndInterests()
+        await loadUser()
         await loadCategories()
         await loadEvents()
         await nextTick()
         await loadPhotos()
-        initialLoaded.value = true
 
-        // если бизнес — сразу подготовим "мои мероприятия" (чтобы вкладка открывалась мгновенно)
-        if (isBusiness.value) {
-          await loadMyEvents()
-        }
+        // ✅ кладём в кэш, чтобы EventView мог использовать без Supabase
+        setEventsCache({
+          events: allEvents.value,
+          photosByEventId: photos.value,
+          categoryMap: categoryMap.value
+        })
+
+        initialLoaded.value = true
       } catch (e) {
         error.value = String(e?.message || e)
         initialLoaded.value = true
       }
     }
 
-    const goToProfile = () => {
-      // у тебя в проекте есть ProfileView.vue — обычно это /profile
-      // если у тебя другой путь — поменяй тут
-      try {
-        window.location.href = `${import.meta.env.BASE_URL || '/'}profile`
-      } catch {
-        // no-op
-      }
-    }
-
     onMounted(reload)
 
-    // если пользователь переключился на "мои мероприятия" — подгрузим при необходимости
-    watch(
-      () => activeTab.value,
-      (tab) => {
-        if (tab === 'mine' && isBusiness.value && !myEvents.value.length && !myEventsLoading.value) {
-          loadMyEvents()
-        }
-      }
-    )
-
-    expose({ reload })
-
     return {
+      // state
       initialLoaded,
       error,
       categories,
       categoryMap,
       photos,
       photosLoading,
-      filteredEvents,
 
+      // tabs
+      activeTab,
+      isBusiness,
+
+      // lists
+      filteredEvents,
+      myEventsForCards,
+
+      // favorites
+      favoriteIds,
+      onToggleFavorite,
+
+      // ui
       drawerOpen,
+      openDrawer,
+      closeDrawer,
+      openPhoto,
       photoModalUrl,
 
+      // filters
       selectedCategoryNames,
       onlineOnly,
       priceMode,
@@ -657,27 +541,9 @@ export default {
       dateFrom,
       dateTo,
       datePivot,
-
-      // tabs + interests + favorites + business
-      activeTab,
-      myInterests,
-      favoriteIds,
-      isBusiness,
-
-      // my events
-      myEvents,
-      myEventsLoading,
-      myEventsError,
-      myEventsSorted,
-      loadMyEvents,
-      formatDate,
-
-      openDrawer,
-      closeDrawer,
-      openPhoto,
       resetAllFilters,
+
       reload,
-      onToggleFavorite,
       goToProfile
     }
   }
@@ -696,7 +562,6 @@ export default {
   flex-wrap: wrap;
 }
 
-/* filter icon only */
 .filter-btn {
   width: 40px;
   height: 40px;
@@ -738,23 +603,8 @@ export default {
   border-color: #8a75e3;
   color: #fff;
 }
+@media (max-width: 520px){ .tab .txt{ display:none; } }
 
-@media (max-width: 520px){
-  .tab .txt{ display:none; }
-}
-
-.hint{
-  margin-bottom: 10px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  border: 1px solid #efefef;
-  background: #fff;
-  font-weight: 800;
-  font-size: 13px;
-  opacity: .9;
-}
-
-/* ✅ Business ad */
 .biz-ad{
   margin-bottom: 10px;
   padding: 14px;
@@ -777,7 +627,6 @@ export default {
   color: #fff;
 }
 
-/* states */
 .state{
   padding: 18px;
   border: 1px solid #efefef;
@@ -810,46 +659,6 @@ export default {
 .events-shell { margin-top: 10px; }
 .events-list { display: grid; gap: 12px; }
 
-/* ✅ My events list */
-.mine-hint{
-  margin-bottom: 10px;
-  padding: 12px 14px;
-  border-radius: 18px;
-  border: 1px solid #efefef;
-  background: #fff;
-  font-weight: 800;
-  font-size: 13px;
-  opacity: .9;
-}
-.mine-row{
-  border: 1px solid #efefef;
-  background:#fff;
-  border-radius: 18px;
-  padding: 14px;
-  display:flex;
-  align-items:center;
-  gap: 12px;
-  cursor: pointer;
-}
-.mine-row:hover{ background:#fafafa; }
-.mine-left{ flex: 1 1 auto; min-width:0; }
-.mine-title{ font-weight: 900; font-size: 16px; overflow-wrap:anywhere; }
-.mine-sub{ margin-top: 6px; display:flex; gap: 8px; flex-wrap: wrap; }
-.pill{
-  font-size: 12px;
-  font-weight: 900;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(0,0,0,.06);
-  border: 1px solid rgba(0,0,0,.06);
-}
-.pill.ok{ background: rgba(46,125,50,.10); border-color: rgba(46,125,50,.22); color:#2e7d32; }
-.pill.warn{ background: rgba(217,83,79,.10); border-color: rgba(217,83,79,.22); color:#d9534f; }
-.mine-right{ display:flex; align-items:center; gap: 10px; flex: 0 0 auto; }
-.mine-date{ font-size: 12px; opacity: .8; font-weight: 800; }
-.go{ font-weight: 900; opacity: .6; }
-
-/* drawer */
 .drawer-root { position: fixed; inset: 0; z-index: 10000; }
 .overlay { position: absolute; inset: 0; background: rgba(0,0,0,.38); backdrop-filter: blur(2px); }
 .drawer {
@@ -880,10 +689,7 @@ export default {
   cursor: pointer;
 }
 .drawer-body{ padding: 14px; overflow:auto; }
-.drawer-foot{
-  padding: 14px;
-  border-top: 1px solid #f2f2f2;
-}
+.drawer-foot{ padding: 14px; border-top: 1px solid #f2f2f2; }
 .apply-btn{
   width:100%;
   border:none;
