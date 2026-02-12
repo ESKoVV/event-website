@@ -84,7 +84,7 @@
             <div class="meta">
               <div class="m"><span>📅</span>{{ formatDate(event?.date_time_event) }}</div>
               <div class="m"><span>📍</span>{{ event?.address || '—' }}</div>
-              <div class="m"><span>👤</span>{{ event?.organizer || '—' }}</div>
+              <div class="m"><span>👤</span>{{ orgName }}</div>
               <div class="m"><span>💰</span>{{ priceText }}</div>
             </div>
 
@@ -275,7 +275,7 @@ export default {
       const fn = (p?.first_name || '').trim()
       const ln = (p?.last_name || '').trim()
       const full = `${fn} ${ln}`.trim()
-      return full || (p?.email || event.value?.organizer || 'Организатор')
+      return full || (p?.email || 'Пользователь')
     })
     const orgLetter = computed(() => (orgName.value || 'О')[0].toUpperCase())
 
