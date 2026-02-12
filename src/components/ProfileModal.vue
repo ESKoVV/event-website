@@ -206,7 +206,12 @@ export default {
       emit('pick-avatar', file)
     }
 
-    const profileAvatarUrl = computed(() => (props.profile?.avatar_url || '').trim())
+    const profileAvatarUrl = computed(() => {
+      const a = (props.profile?.avatar_url || '').trim()
+      const b = (props.profile?.image_path || '').trim()
+      return a || b
+    })
+
 
     const showLocalAvatar = computed(() => !!localAvatarUrl.value && !localErrored.value)
     const showProfileAvatar = computed(() => !!profileAvatarUrl.value && !profileErrored.value && !showLocalAvatar.value)

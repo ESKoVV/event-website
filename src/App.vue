@@ -145,7 +145,12 @@ export default {
 
     const isBusiness = computed(() => profile.value?.It_business === true)
 
-    const headerAvatarUrl = computed(() => normalizeStoragePublicUrl(profile.value?.avatar_url || ''))
+    const headerAvatarUrl = computed(() => {
+      const a = (profile.value?.avatar_url || '').trim()
+      const b = (profile.value?.image_path || '').trim()
+      return normalizeStoragePublicUrl(a || b)
+    })
+
     const headerAvatarErrored = ref(false)
 
     const showHeaderAvatar = computed(() => {
@@ -228,7 +233,15 @@ export default {
         // avatar upload (если выбрали)
         if (pickedAvatarFile.value) {
           const { publicUrl } = await uploadAvatar(pickedAvatarFile.value)
-          if (publicUrl) patch.avatar_url = publicUrl
+
+          if (publicUrl) {
+            // ✅ твой столбец в БД
+            patch.image_path = publicUrl
+
+            // (опционально) оставим и это, если вдруг где-то ещё используется
+            patch.avatar_url = publicUrl
+          }
+
           pickedAvatarFile.value = null
           headerAvatarErrored.value = false
         }
@@ -240,6 +253,7 @@ export default {
         saving.value = false
       }
     }
+
 
     const onPickedAvatar = (file) => {
       pickedAvatarFile.value = file || null
