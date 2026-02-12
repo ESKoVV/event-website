@@ -601,7 +601,20 @@ export default {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .events-shell { margin-top: 10px; }
-.events-list { display: grid; gap: 14px; }
+.events-list{
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(280px, 520px);
+  justify-content: center;
+}
+
+/* мобилка — на всю ширину */
+@media (max-width: 760px){
+  .events-list{
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+}
 
 .drawer-root { position: fixed; inset: 0; z-index: 10000; }
 .overlay { position: absolute; inset: 0; background: rgba(0,0,0,.38); backdrop-filter: blur(2px); }

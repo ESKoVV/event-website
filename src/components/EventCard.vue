@@ -263,31 +263,25 @@ export default {
   cursor: pointer;
 }
 
-.photo {
-  /* ✅ теперь фото на всю ширину */
+/* ПК: высокая карточка, фото целиком */
+.photo{
   width: 100%;
-
-  /* ✅ больше фото на ПК */
-  height: 280px;
-
+  height: 420px;        /* 🔥 можно 400–500, подбирай */
   border-radius: 16px;
   overflow: hidden;
-  border: none;
-  padding: 0;
-  background: #f5f5f5;
-  cursor: pointer;
+  background: linear-gradient(180deg,#111,#1a1a1a);
+
   position: relative;
 }
 
-.photo img {
+.photo img{
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;   /* ❗ ВАЖНО — не режет */
+  object-position: center;
   display: block;
-  opacity: 0;
-  transform: scale(1.01);
-  transition: opacity 260ms ease, transform 260ms ease;
 }
+
 .photo img.loaded {
   opacity: 1;
   transform: scale(1);
@@ -423,7 +417,7 @@ export default {
 
 @media (max-width: 760px) {
   .card { grid-template-columns: 1fr; }
-  .photo { width: 100%; height: 220px; }
+  .photo{ height: 260px; }
   .meta { grid-template-columns: 1fr; }
 }
 </style>

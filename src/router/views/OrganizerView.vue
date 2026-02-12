@@ -246,7 +246,20 @@ export default {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .events-shell { margin-top: 10px; }
-.events-list { display: grid; gap: 14px; }
+.events-list{
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(280px, 520px);
+  justify-content: center;
+}
+
+/* мобилка — на всю ширину */
+@media (max-width: 760px){
+  .events-list{
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+}
 
 .list-enter-active, .list-leave-active { transition: all .18s ease; }
 .list-enter-from, .list-leave-to { opacity: 0; transform: translateY(6px); }
