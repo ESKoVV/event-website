@@ -78,13 +78,17 @@
               </div>
             </div>
 
-            <!-- небольшая подсказка после copy -->
             <div v-if="copied" class="copied">✅ Ссылка скопирована</div>
 
             <div class="meta">
               <div class="m"><span>📅</span>{{ formatDate(event?.date_time_event) }}</div>
               <div class="m"><span>📍</span>{{ event?.address || '—' }}</div>
-              <div class="m"><span>👤</span>{{ orgName }}</div>
+
+              <!-- Важно:
+                   - тут можно оставить event.organizer как "название организатора/бренда" для конкретного события.
+                   - а "Профиль организатора" ниже берётся из users по user_id -->
+              <div class="m"><span>👤</span>{{ event?.organizer || '—' }}</div>
+
               <div class="m"><span>💰</span>{{ priceText }}</div>
             </div>
 
@@ -120,12 +124,8 @@
                 </div>
               </div>
 
-              <button
-                class="go-org"
-                type="button"
-                @click="goOrganizer"
-                :disabled="!event?.user_id"
-              >
+              <!-- ✅ Переход БЕЗ перезагрузки (router.push), чтобы не умирал eventsCache -->
+              <button class="go-org" type="button" @click="goOrganizer" :disabled="!event?.user_id">
                 Перейти →
               </button>
             </div>
@@ -165,7 +165,7 @@
 
 <script>
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import EventPhotoModal from '@/components/EventPhotoModal.vue'
 import EventCard from '@/components/EventCard.vue'
 import { useSupabase } from '@/composables/useSupabase'
@@ -225,7 +225,12 @@ export default {
   components: { EventPhotoModal, EventCard },
   setup() {
     const route = useRoute()
-    const { getEventById, getEventPhotos, getPublicUserById, getUser, getOrganizerEvents } = useSupabase()
+    const router = useRouter()
+
+    const api = useSupabase()
+    const { getEventById, getEventPhotos, getPublicUserById, getUser } = api
+    // optional fallback when cache is empty
+    const getOrganizerEvents = api.getOrganizerEvents
 
     const loading = ref(true)
     const error = ref('')
@@ -270,6 +275,7 @@ export default {
       return `${p} ₽`
     })
 
+    // ✅ ИМЯ ОРГАНИЗАТОРА ТОЛЬКО ИЗ users (НЕ из events.organizer)
     const orgName = computed(() => {
       const p = organizerProfile.value
       const fn = (p?.first_name || '').trim()
@@ -277,7 +283,7 @@ export default {
       const full = `${fn} ${ln}`.trim()
       return full || (p?.email || 'Пользователь')
     })
-    const orgLetter = computed(() => (orgName.value || 'О')[0].toUpperCase())
+    const orgLetter = computed(() => (orgName.value || 'П')[0].toUpperCase())
 
     const formatDate = (v) => {
       if (!v) return '—'
@@ -366,10 +372,8 @@ export default {
 
     const goOrganizer = () => {
       if (!event.value?.user_id) return
-      // если у тебя нет /organizer/:id — просто убери кнопку
-      try {
-        window.location.href = `${import.meta.env.BASE_URL || '/'}organizer/${event.value.user_id}`
-      } catch {}
+      // ✅ SPA-переход, без перезагрузки (иначе кеш пропадёт)
+      router.push({ path: `/organizer/${event.value.user_id}` })
     }
 
     const loadFromCache = () => {
@@ -404,6 +408,7 @@ export default {
       // если кэша нет (прямой заход по ссылке) — один раз догружаем other через supabase
       if (Array.isArray(cachedAllEvents.value) && cachedAllEvents.value.length) return
       if (!event.value?.user_id) return
+      if (typeof getOrganizerEvents !== 'function') return
 
       otherLoading.value = true
       try {
@@ -412,7 +417,7 @@ export default {
           excludeEventId: event.value.id
         })
         cachedAllEvents.value = Array.isArray(data) ? data : []
-        // фото для этих событий не догружаем специально (как ты просил), иначе будут лишние запросы
+        // фото специально не догружаем (как договаривались), чтобы не плодить запросы
       } finally {
         otherLoading.value = false
       }
@@ -442,7 +447,6 @@ export default {
 
         if (fromCache) {
           event.value = fromCache
-          // фото для текущего события — тоже из кэша, если есть
           const ph = cachedPhotosByEventId.value && cachedPhotosByEventId.value[id]
           eventPhotos.value = Array.isArray(ph) ? ph.filter((x) => x?.photo_url) : []
         } else {
