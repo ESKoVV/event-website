@@ -9,7 +9,7 @@
           </svg>
         </button>
 
-        <!-- ✅ Моя лента (между фильтром и избранным) -->
+        <!-- ✅ Моя лента -->
         <button
           class="tab"
           :class="{ active: activeTab === 'feed' }"
@@ -33,6 +33,31 @@
           <span class="txt">Избранное</span>
           <span v-if="favoriteIds.size" class="count">{{ favoriteIds.size }}</span>
         </button>
+
+        <!-- ✅ Справа от избранного: Мои мероприятия ИЛИ реклама бизнес аккаунта -->
+        <button
+          v-if="isBusiness"
+          class="tab"
+          :class="{ active: activeTab === 'mine' }"
+          type="button"
+          @click="activeTab = 'mine'"
+          aria-label="Мои мероприятия"
+        >
+          <span class="ico">📌</span>
+          <span class="txt">Мои мероприятия</span>
+        </button>
+
+        <button
+          v-else
+          class="tab"
+          :class="{ active: activeTab === 'biz' }"
+          type="button"
+          @click="activeTab = 'biz'"
+          aria-label="Бизнес аккаунт"
+        >
+          <span class="ico">💼</span>
+          <span class="txt">Бизнес</span>
+        </button>
       </div>
 
       <!-- подсказка про интересы (только в Моей ленте) -->
@@ -40,6 +65,19 @@
         Выбери интересные категории в профиле — и «Моя лента» станет персональной
       </div>
 
+      <!-- ✅ РЕКЛАМА БИЗНЕС (для обычных) -->
+      <div v-if="activeTab === 'biz' && !isBusiness" class="biz-ad">
+        <div class="biz-ad-title">💼 Business аккаунт</div>
+        <div class="biz-ad-text">
+          С бизнес-аккаунтом ты можешь публиковать мероприятия. Сначала они попадают в предложку,
+          потом админ подтверждает публикацию.
+        </div>
+        <button class="biz-ad-btn" type="button" @click="goToProfile">
+          Узнать / подключить
+        </button>
+      </div>
+
+      <!-- LOADING / ERROR -->
       <div v-if="!initialLoaded" class="state">
         <div class="spinner"></div>
         <div>Загрузка мероприятий…</div>
@@ -51,30 +89,79 @@
         <button class="retry" @click="reload">Повторить</button>
       </div>
 
-      <div v-else-if="filteredEvents.length === 0" class="state">
-        <template v-if="activeTab === 'favorites'">
-          В избранном пока пусто
-        </template>
-        <template v-else>
-          Мероприятия не найдены
-        </template>
-      </div>
+      <!-- ✅ СПИСОК: общая лента/избранное/мои мероприятия -->
+      <template v-else>
+        <!-- Мои мероприятия -->
+        <div v-if="activeTab === 'mine' && isBusiness" class="mine-wrap">
+          <div v-if="myEventsLoading" class="state">
+            <div class="spinner"></div>
+            <div>Загрузка ваших мероприятий…</div>
+          </div>
 
-      <div v-else class="events-shell">
-        <TransitionGroup name="list" tag="div" class="events-list">
-          <EventCard
-            v-for="event in filteredEvents"
-            :key="event.id"
-            :event="event"
-            :photos="photos[event.id] || []"
-            :photos-loading="photosLoading"
-            :category-map="categoryMap"
-            :is-favorite="favoriteIds.has(event.id)"
-            @open-photo="openPhoto"
-            @toggle-favorite="onToggleFavorite"
-          />
-        </TransitionGroup>
-      </div>
+          <div v-else-if="myEventsError" class="state error">
+            <div class="error-title">Не удалось загрузить ваши мероприятия</div>
+            <div class="error-sub">{{ myEventsError }}</div>
+            <button class="retry" @click="loadMyEvents">Повторить</button>
+          </div>
+
+          <div v-else-if="myEvents.length === 0" class="state">
+            У вас пока нет мероприятий
+          </div>
+
+          <div v-else class="events-shell">
+            <div class="mine-hint">
+              Здесь показаны ваши мероприятия: <b>опубликованные</b> и <b>в обработке</b>.
+            </div>
+
+            <div class="events-list">
+              <div
+                v-for="e in myEventsSorted"
+                :key="e.id"
+                class="mine-row"
+                @click="$router.push({ name: 'event', params: { id: String(e.id) } })"
+              >
+                <div class="mine-left">
+                  <div class="mine-title">{{ e.title }}</div>
+                  <div class="mine-sub">
+                    <span v-if="e.is_published" class="pill ok">Опубликовано</span>
+                    <span v-else class="pill warn">В обработке</span>
+                    <span v-if="e.is_online" class="pill">Онлайн</span>
+                    <span v-if="e.is_free" class="pill">Бесплатно</span>
+                  </div>
+                </div>
+                <div class="mine-right">
+                  <div class="mine-date">{{ formatDate(e.date_time_event) }}</div>
+                  <div class="go">→</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Общая лента / Избранное -->
+        <template v-else>
+          <div v-if="filteredEvents.length === 0" class="state">
+            <template v-if="activeTab === 'favorites'">В избранном пока пусто</template>
+            <template v-else>Мероприятия не найдены</template>
+          </div>
+
+          <div v-else class="events-shell">
+            <TransitionGroup name="list" tag="div" class="events-list">
+              <EventCard
+                v-for="event in filteredEvents"
+                :key="event.id"
+                :event="event"
+                :photos="photos[event.id] || []"
+                :photos-loading="photosLoading"
+                :category-map="categoryMap"
+                :is-favorite="favoriteIds.has(event.id)"
+                @open-photo="openPhoto"
+                @toggle-favorite="onToggleFavorite"
+              />
+            </TransitionGroup>
+          </div>
+        </template>
+      </template>
     </div>
 
     <!-- FILTER DRAWER -->
@@ -117,7 +204,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import EventCard from '../../components/EventCard.vue'
 import EventPhotoModal from '../../components/EventPhotoModal.vue'
 import FiltersPanel from '../../components/FiltersPanel.vue'
@@ -219,8 +306,12 @@ export default {
   name: 'HomeView',
   components: { EventCard, EventPhotoModal, FiltersPanel },
   props: { globalSearchTerm: { type: String, default: '' } },
-  setup(props) {
-    const { getEvents, getCategories, getEventPhotos, getUser, getMyPublicUser } = useSupabase()
+  setup(props, { expose }) {
+    const api = useSupabase()
+    const { getEvents, getCategories, getEventPhotos, getUser, getMyPublicUser } = api
+
+    // optional: may not exist in your current useSupabase.js
+    const getMyEvents = api.getMyEvents
 
     const initialLoaded = ref(false)
     const error = ref('')
@@ -234,15 +325,21 @@ export default {
     const photoModalUrl = ref('')
 
     // ✅ tabs
-    const activeTab = ref('feed') // 'feed' | 'favorites'
+    const activeTab = ref('feed') // 'feed' | 'favorites' | 'mine' | 'biz'
 
-    // ✅ profile interests
+    // ✅ profile interests + business
     const myInterests = ref([]) // text[]
     const userId = ref(null)
+    const isBusiness = ref(false)
 
     // ✅ favorites (localStorage)
     const favoriteIds = ref(new Set())
     const favKey = ref(makeFavKey(null))
+
+    // ✅ my events (business)
+    const myEvents = ref([])
+    const myEventsLoading = ref(false)
+    const myEventsError = ref('')
 
     // filters
     const selectedCategoryNames = ref([])
@@ -276,6 +373,13 @@ export default {
       datePivot.value = ''
     }
 
+    const formatDate = (v) => {
+      if (!v) return '—'
+      const d = new Date(v)
+      if (Number.isNaN(d.getTime())) return String(v)
+      return d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+    }
+
     const applyFilters = (list) => {
       const catsSel = selectedCategoryNames.value
       const online = onlineOnly.value
@@ -297,15 +401,12 @@ export default {
       const tomorrowEnd = endOfDay(tomorrow)
 
       const map = categoryMap.value || {}
-      const interests = Array.isArray(myInterests.value) ? myInterests.value : []
 
       return (list || []).filter((e) => {
         if (!e) return false
 
         // ✅ вкладка избранного
         if (activeTab.value === 'favorites' && !favoriteIds.value.has(e.id)) return false
-
-        
 
         if (online && !e.is_online) return false
 
@@ -335,18 +436,14 @@ export default {
       })
     }
 
+    // ✅ Лента: интересы НЕ фильтруют, а поднимают вверх
     const filteredEvents = computed(() => {
       const term = (props.globalSearchTerm || '').trim().toLowerCase()
       let list = events.value || []
+      if (term) list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
 
-      if (term) {
-        list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
-      }
-
-      // сначала применяем обычные фильтры (онлайн/категории/цена/даты + избранное)
       const base = applyFilters(list)
 
-      // ✅ "Моя лента": НЕ фильтруем по интересам, а поднимаем релевантные вверх
       if (activeTab.value === 'feed' && Array.isArray(myInterests.value) && myInterests.value.length) {
         const interests = myInterests.value.map((x) => String(x))
         const map = categoryMap.value || {}
@@ -354,28 +451,22 @@ export default {
         const score = (e) => {
           const evCats = normalizeCategoryNames(e.selectCategory, map)
           let s = 0
-          for (const i of interests) {
-            if (evCats.includes(i)) s += 1
-          }
-          return s // сколько совпадений по интересам
+          for (const i of interests) if (evCats.includes(i)) s += 1
+          return s
         }
 
-        // сортируем: больше совпадений выше; при равенстве — по дате (ближе раньше)
         return [...base].sort((a, b) => {
           const sa = score(a)
           const sb = score(b)
           if (sb !== sa) return sb - sa
-
           const da = parseEventDate(a?.date_time_event)?.getTime() ?? Number.MAX_SAFE_INTEGER
           const db = parseEventDate(b?.date_time_event)?.getTime() ?? Number.MAX_SAFE_INTEGER
           return da - db
         })
       }
 
-      // если интересов нет — возвращаем как есть
       return base
     })
-
 
     const loadCategories = async () => {
       const { data, error: e } = await withRetry(() => getCategories())
@@ -429,9 +520,10 @@ export default {
       // favorites from LS
       favoriteIds.value = new Set(loadFavLS(favKey.value))
 
-      // interests from profile
+      // interests + business from profile
       if (!userId.value) {
         myInterests.value = []
+        isBusiness.value = false
         return
       }
 
@@ -439,8 +531,10 @@ export default {
         const { data: p, error: e } = await getMyPublicUser()
         if (e) throw e
         myInterests.value = Array.isArray(p?.interests) ? p.interests : []
+        isBusiness.value = p?.It_business === true
       } catch {
         myInterests.value = []
+        isBusiness.value = false
       }
     }
 
@@ -456,6 +550,46 @@ export default {
       saveFavLS(favKey.value, favoriteIds.value)
     }
 
+    // ✅ Business: load my events
+    const loadMyEvents = async () => {
+      if (!isBusiness.value) return
+      myEventsLoading.value = true
+      myEventsError.value = ''
+      try {
+        // Если в useSupabase.js есть getMyEvents — используем его (правильно: покажет и в обработке)
+        if (typeof getMyEvents === 'function') {
+          const { data, error: e } = await getMyEvents(true)
+          if (e) throw e
+          myEvents.value = data || []
+          return
+        }
+
+        // fallback: если метода нет — хотя бы покажем из уже загруженных (может быть только опубликованные)
+        if (userId.value) {
+          myEvents.value = (events.value || []).filter((x) => String(x?.user_id || '') === String(userId.value))
+        } else {
+          myEvents.value = []
+        }
+      } catch (e) {
+        myEventsError.value = String(e?.message || e)
+      } finally {
+        myEventsLoading.value = false
+      }
+    }
+
+    const myEventsSorted = computed(() => {
+      const list = myEvents.value || []
+      // сначала "в обработке", потом опубликованные; внутри — по created_at/дате
+      return [...list].sort((a, b) => {
+        const ap = a?.is_published === true ? 1 : 0
+        const bp = b?.is_published === true ? 1 : 0
+        if (ap !== bp) return ap - bp // 0 (в обработке) выше 1 (опубликовано)
+        const da = parseEventDate(a?.created_at || a?.date_time_event)?.getTime() ?? 0
+        const db = parseEventDate(b?.created_at || b?.date_time_event)?.getTime() ?? 0
+        return db - da
+      })
+    })
+
     const reload = async () => {
       error.value = ''
       initialLoaded.value = false
@@ -466,13 +600,40 @@ export default {
         await nextTick()
         await loadPhotos()
         initialLoaded.value = true
+
+        // если бизнес — сразу подготовим "мои мероприятия" (чтобы вкладка открывалась мгновенно)
+        if (isBusiness.value) {
+          await loadMyEvents()
+        }
       } catch (e) {
         error.value = String(e?.message || e)
         initialLoaded.value = true
       }
     }
 
+    const goToProfile = () => {
+      // у тебя в проекте есть ProfileView.vue — обычно это /profile
+      // если у тебя другой путь — поменяй тут
+      try {
+        window.location.href = `${import.meta.env.BASE_URL || '/'}profile`
+      } catch {
+        // no-op
+      }
+    }
+
     onMounted(reload)
+
+    // если пользователь переключился на "мои мероприятия" — подгрузим при необходимости
+    watch(
+      () => activeTab.value,
+      (tab) => {
+        if (tab === 'mine' && isBusiness.value && !myEvents.value.length && !myEventsLoading.value) {
+          loadMyEvents()
+        }
+      }
+    )
+
+    expose({ reload })
 
     return {
       initialLoaded,
@@ -497,17 +658,27 @@ export default {
       dateTo,
       datePivot,
 
-      // tabs + interests + favorites
+      // tabs + interests + favorites + business
       activeTab,
       myInterests,
       favoriteIds,
+      isBusiness,
+
+      // my events
+      myEvents,
+      myEventsLoading,
+      myEventsError,
+      myEventsSorted,
+      loadMyEvents,
+      formatDate,
 
       openDrawer,
       closeDrawer,
       openPhoto,
       resetAllFilters,
       reload,
-      onToggleFavorite
+      onToggleFavorite,
+      goToProfile
     }
   }
 }
@@ -522,6 +693,7 @@ export default {
   align-items:center;
   gap: 10px;
   margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 
 /* filter icon only */
@@ -582,6 +754,30 @@ export default {
   opacity: .9;
 }
 
+/* ✅ Business ad */
+.biz-ad{
+  margin-bottom: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(138,117,227,.22);
+  background: #fcfcff;
+  display: grid;
+  gap: 10px;
+}
+.biz-ad-title{ font-weight: 900; font-size: 16px; }
+.biz-ad-text{ font-weight: 800; opacity: .85; line-height: 1.3; }
+.biz-ad-btn{
+  width: fit-content;
+  border: none;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-weight: 900;
+  cursor: pointer;
+  background: #8a75e3;
+  color: #fff;
+}
+
+/* states */
 .state{
   padding: 18px;
   border: 1px solid #efefef;
@@ -613,6 +809,45 @@ export default {
 
 .events-shell { margin-top: 10px; }
 .events-list { display: grid; gap: 12px; }
+
+/* ✅ My events list */
+.mine-hint{
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid #efefef;
+  background: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  opacity: .9;
+}
+.mine-row{
+  border: 1px solid #efefef;
+  background:#fff;
+  border-radius: 18px;
+  padding: 14px;
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  cursor: pointer;
+}
+.mine-row:hover{ background:#fafafa; }
+.mine-left{ flex: 1 1 auto; min-width:0; }
+.mine-title{ font-weight: 900; font-size: 16px; overflow-wrap:anywhere; }
+.mine-sub{ margin-top: 6px; display:flex; gap: 8px; flex-wrap: wrap; }
+.pill{
+  font-size: 12px;
+  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.06);
+  border: 1px solid rgba(0,0,0,.06);
+}
+.pill.ok{ background: rgba(46,125,50,.10); border-color: rgba(46,125,50,.22); color:#2e7d32; }
+.pill.warn{ background: rgba(217,83,79,.10); border-color: rgba(217,83,79,.22); color:#d9534f; }
+.mine-right{ display:flex; align-items:center; gap: 10px; flex: 0 0 auto; }
+.mine-date{ font-size: 12px; opacity: .8; font-weight: 800; }
+.go{ font-weight: 900; opacity: .6; }
 
 /* drawer */
 .drawer-root { position: fixed; inset: 0; z-index: 10000; }
