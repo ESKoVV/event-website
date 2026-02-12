@@ -305,12 +305,7 @@ export default {
         // ✅ вкладка избранного
         if (activeTab.value === 'favorites' && !favoriteIds.value.has(e.id)) return false
 
-        // ✅ Моя лента: фильтр по интересам (если интересы выбраны)
-        if (activeTab.value === 'feed' && interests.length) {
-          const evCats = normalizeCategoryNames(e.selectCategory, map)
-          const ok = interests.some((c) => evCats.includes(String(c)))
-          if (!ok) return false
-        }
+        
 
         if (online && !e.is_online) return false
 
@@ -343,9 +338,44 @@ export default {
     const filteredEvents = computed(() => {
       const term = (props.globalSearchTerm || '').trim().toLowerCase()
       let list = events.value || []
-      if (term) list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
-      return applyFilters(list)
+
+      if (term) {
+        list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
+      }
+
+      // сначала применяем обычные фильтры (онлайн/категории/цена/даты + избранное)
+      const base = applyFilters(list)
+
+      // ✅ "Моя лента": НЕ фильтруем по интересам, а поднимаем релевантные вверх
+      if (activeTab.value === 'feed' && Array.isArray(myInterests.value) && myInterests.value.length) {
+        const interests = myInterests.value.map((x) => String(x))
+        const map = categoryMap.value || {}
+
+        const score = (e) => {
+          const evCats = normalizeCategoryNames(e.selectCategory, map)
+          let s = 0
+          for (const i of interests) {
+            if (evCats.includes(i)) s += 1
+          }
+          return s // сколько совпадений по интересам
+        }
+
+        // сортируем: больше совпадений выше; при равенстве — по дате (ближе раньше)
+        return [...base].sort((a, b) => {
+          const sa = score(a)
+          const sb = score(b)
+          if (sb !== sa) return sb - sa
+
+          const da = parseEventDate(a?.date_time_event)?.getTime() ?? Number.MAX_SAFE_INTEGER
+          const db = parseEventDate(b?.date_time_event)?.getTime() ?? Number.MAX_SAFE_INTEGER
+          return da - db
+        })
+      }
+
+      // если интересов нет — возвращаем как есть
+      return base
     })
+
 
     const loadCategories = async () => {
       const { data, error: e } = await withRetry(() => getCategories())
