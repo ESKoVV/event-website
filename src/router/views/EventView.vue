@@ -74,7 +74,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSupabase } from '../../composables/useSupabase.js'
-import EventPhotoModal from '../components/EventPhotoModal.vue'
+import EventPhotoModal from '../../components/EventPhotoModal.vue'
 
 const route = useRoute()
 const router = useRouter()
