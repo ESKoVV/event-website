@@ -35,6 +35,20 @@ const readFileAsDataUrl = (file) =>
     }
   })
 
+const safeUsername = (raw) => {
+  const s = String(raw || '').trim()
+  if (!s) return ''
+  // только латиница/цифры/_
+  const cleaned = s.replace(/[^a-zA-Z0-9_]/g, '')
+  return cleaned.slice(0, 20)
+}
+
+const deriveUsernameFromEmail = (email) => {
+  const left = String(email || '').split('@')[0] || ''
+  const base = safeUsername(left.toLowerCase())
+  return base || `user${Math.floor(Math.random() * 900000 + 100000)}`
+}
+
 export const useSupabase = () => {
   // =======================
   // Events
@@ -79,13 +93,11 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
-  // ✅ single event by id
   const getEventById = async (id) => {
     const { data, error } = await supabase.from('events').select('*').eq('id', id).maybeSingle()
     return { data: data ?? null, error }
   }
 
-  // ✅ organizer events (public page: only published; for owner: include unpublished)
   const getOrganizerEvents = async (userId, opts = {}) => {
     const { publishedOnly = true, excludeEventId = null } = opts || {}
 
@@ -98,7 +110,6 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
-  // ✅ for business: my events (published + in review)
   const getMyEvents = async (includeUnpublished = true) => {
     const { user } = await getUser()
     if (!user?.id) return { data: [], error: new Error('Not authorized') }
@@ -110,7 +121,6 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
-  // business event create (goes to moderation => is_published false)
   const createBusinessEvent = async (payload) => {
     const { user } = await getUser()
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
@@ -128,7 +138,6 @@ export const useSupabase = () => {
       photo_file
     } = payload || {}
 
-    // 1) create event first
     const { data: created, error: e1 } = await supabase
       .from('events')
       .insert([
@@ -143,7 +152,7 @@ export const useSupabase = () => {
           is_free,
           user_id: user.id,
           selectCategory,
-          is_published: false // ✅ предложка
+          is_published: false
         })
       ])
       .select('*')
@@ -152,15 +161,9 @@ export const useSupabase = () => {
     if (e1) return { data: null, error: e1 }
     if (!created?.id) return { data: null, error: new Error('Event not created') }
 
-    // 2) upload photo if exists
     if (photo_file) {
-      // current project used dataUrl previously to make it work reliably (no storage permissions issues)
-      // We'll keep it simple: store as dataUrl in event_photos.photo_url
       const dataUrl = await readFileAsDataUrl(photo_file)
-      const { error: e2 } = await supabase
-        .from('event_photos')
-        .insert([{ event_id: created.id, photo_url: dataUrl }])
-
+      const { error: e2 } = await supabase.from('event_photos').insert([{ event_id: created.id, photo_url: dataUrl }])
       if (e2) return { data: created, error: e2 }
     }
 
@@ -199,14 +202,13 @@ export const useSupabase = () => {
   const ensurePublicUserRow = async (authUser) => {
     if (!authUser?.id) return { data: null, error: new Error('No auth user') }
 
-    const { data: existing, error: e1 } = await supabase.from('users').select('*').eq('id', authUser.id).maybeSingle()
-    if (e1 && e1.code !== 'PGRST116') {
-      // PGRST116 = no rows (maybeSingle), ignore
-    }
+    const { data: existing } = await supabase.from('users').select('*').eq('id', authUser.id).maybeSingle()
     if (existing) return { data: existing, error: null }
 
     const email = authUser.email || ''
     const name = (authUser.user_metadata?.full_name || authUser.user_metadata?.name || '').trim()
+
+    const username = deriveUsernameFromEmail(email)
 
     const { data, error } = await supabase
       .from('users')
@@ -216,6 +218,7 @@ export const useSupabase = () => {
           email,
           first_name: name ? name.split(' ')[0] : '',
           last_name: name ? name.split(' ').slice(1).join(' ') : '',
+          username, // ✅ новый юз
           It_business: false,
           interests: []
         }
@@ -238,16 +241,50 @@ export const useSupabase = () => {
     const { user } = await getUser()
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
 
-    const { data, error } = await supabase.from('users').update(compact(patch)).eq('id', user.id).select('*').maybeSingle()
+    // username чистим на клиенте
+    const next = { ...patch }
+    if (Object.prototype.hasOwnProperty.call(next, 'username')) {
+      next.username = safeUsername(next.username)
+      if (!next.username) next.username = null
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .update(compact(next))
+      .eq('id', user.id)
+      .select('*')
+      .maybeSingle()
+
     return { data: data ?? null, error }
   }
 
-  // ✅ public organizer profile by id
   const getPublicUserById = async (userId) => {
     const { data, error } = await supabase.from('users').select('*').eq('id', userId).maybeSingle()
     return { data: data ?? null, error }
   }
 
+  // ✅ поиск пользователей по username / имени / фамилии
+  const searchUsers = async (query, limit = 20) => {
+    const q = String(query || '').trim()
+    if (!q) return { data: [], error: null }
+
+    // Ищем: username, first_name, last_name, email
+    // Supabase OR синтаксис: col.ilike.%q%,col2.ilike.%q%
+    const like = `%${q}%`
+    const { data, error } = await supabase
+      .from('users')
+      .select('id,username,first_name,last_name,email,image_path,created_at')
+      .or(
+        `username.ilike.${like},first_name.ilike.${like},last_name.ilike.${like},email.ilike.${like}`
+      )
+      .limit(limit)
+
+    return { data: data ?? [], error }
+  }
+
+  // =======================
+  // Avatar
+  // =======================
   const uploadAvatar = async (file) => {
     const { user } = await getUser()
     if (!user?.id) return { publicUrl: '', error: new Error('Not authorized') }
@@ -271,11 +308,9 @@ export const useSupabase = () => {
   // Telegram
   // =======================
   const linkTelegramViaEdgeFunction = async (telegramAuthData) => {
-    // your existing logic may differ; keep as-is if you already had it
     const { user } = await getUser()
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
 
-    // placeholder: assumes you have Edge Function "telegram-link"
     const { data, error } = await supabase.functions.invoke('telegram-link', {
       body: { telegramAuthData }
     })
@@ -288,6 +323,145 @@ export const useSupabase = () => {
 
     const { data, error } = await supabase.from('user_telegram').select('*').eq('user_id', user.id).maybeSingle()
     return { data: data ?? null, error }
+  }
+
+  // =======================
+  // Friends
+  // =======================
+  const sendFriendRequest = async (toUserId) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+    if (!toUserId) return { data: null, error: new Error('No user') }
+
+    // не даём дубль/встречную принять на клиенте — просто пробуем вставить
+    const { data, error } = await supabase
+      .from('friendships')
+      .insert([{ requester_id: user.id, addressee_id: toUserId, status: 'pending' }])
+      .select('*')
+      .maybeSingle()
+
+    return { data: data ?? null, error }
+  }
+
+  const acceptFriendRequest = async (fromUserId) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+    if (!fromUserId) return { data: null, error: new Error('No user') }
+
+    const { data, error } = await supabase
+      .from('friendships')
+      .update({ status: 'accepted' })
+      .eq('requester_id', fromUserId)
+      .eq('addressee_id', user.id)
+      .select('*')
+      .maybeSingle()
+
+    return { data: data ?? null, error }
+  }
+
+  const removeFriendOrRequest = async (otherUserId) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+    if (!otherUserId) return { data: null, error: new Error('No user') }
+
+    // удаляем оба направления (если вдруг было создано по-разному)
+    const { error } = await supabase
+      .from('friendships')
+      .delete()
+      .or(
+        `and(requester_id.eq.${user.id},addressee_id.eq.${otherUserId}),and(requester_id.eq.${otherUserId},addressee_id.eq.${user.id})`
+      )
+
+    return { data: true, error }
+  }
+
+  const getFriendships = async () => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: [], error: new Error('Not authorized') }
+
+    const { data, error } = await supabase
+      .from('friendships')
+      .select('*')
+      .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
+      .order('updated_at', { ascending: false })
+
+    return { data: data ?? [], error }
+  }
+
+  // =======================
+  // Messages
+  // =======================
+  const sendMessage = async (toUserId, body) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+    const text = String(body || '').trim()
+    if (!toUserId) return { data: null, error: new Error('No receiver') }
+    if (!text) return { data: null, error: new Error('Empty message') }
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert([{ sender_id: user.id, receiver_id: toUserId, body: text }])
+      .select('*')
+      .maybeSingle()
+
+    return { data: data ?? null, error }
+  }
+
+  const getConversation = async (otherUserId, limit = 100) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: [], error: new Error('Not authorized') }
+    if (!otherUserId) return { data: [], error: new Error('No user') }
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .or(
+        `and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`
+      )
+      .order('created_at', { ascending: true })
+      .limit(limit)
+
+    return { data: data ?? [], error }
+  }
+
+  const markConversationRead = async (otherUserId) => {
+    const { user } = await getUser()
+    if (!user?.id) return { ok: false, error: new Error('Not authorized') }
+    if (!otherUserId) return { ok: false, error: new Error('No user') }
+
+    // помечаем прочитанными все входящие от otherUserId
+    const { error } = await supabase
+      .from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('receiver_id', user.id)
+      .eq('sender_id', otherUserId)
+      .is('read_at', null)
+
+    return { ok: !error, error }
+  }
+
+  // список “тредов”: последние сообщения, сгруппированные по собеседнику (делаем на клиенте)
+  const getInboxThreads = async (limit = 200) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: [], error: new Error('Not authorized') }
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    if (error) return { data: [], error }
+
+    const rows = data ?? []
+    const map = new Map() // otherId -> lastMessage
+    for (const m of rows) {
+      const otherId = m.sender_id === user.id ? m.receiver_id : m.sender_id
+      if (!map.has(otherId)) map.set(otherId, m)
+    }
+
+    return { data: Array.from(map.entries()).map(([otherUserId, lastMessage]) => ({ otherUserId, lastMessage })), error: null }
   }
 
   return {
@@ -313,9 +487,22 @@ export const useSupabase = () => {
     getPublicUserById,
     updateMyPublicUser,
     uploadAvatar,
+    searchUsers,
 
     // telegram
     linkTelegramViaEdgeFunction,
-    getMyTelegramLink
+    getMyTelegramLink,
+
+    // friends
+    sendFriendRequest,
+    acceptFriendRequest,
+    removeFriendOrRequest,
+    getFriendships,
+
+    // messages
+    sendMessage,
+    getConversation,
+    markConversationRead,
+    getInboxThreads
   }
 }

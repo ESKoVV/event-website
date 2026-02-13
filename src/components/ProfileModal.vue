@@ -8,7 +8,6 @@
 
       <div class="muted" v-if="telegramLink">
         Telegram привязан: <b>@{{ telegramLink.username || 'без username' }}</b>
- hookup
       </div>
       <div class="muted" v-else>
         Telegram не привязан (вход → Telegram)
@@ -87,6 +86,17 @@
       </div>
 
       <div class="grid">
+        <!-- ✅ username -->
+        <label class="field">
+          <span>Username</span>
+          <input
+            v-model="form.username"
+            type="text"
+            placeholder="например: koksaralya"
+          />
+          <small class="help">Только латиница/цифры/_ (3–20 символов)</small>
+        </label>
+
         <label class="field">
           <span>Имя</span>
           <input v-model="form.first_name" type="text" />
@@ -153,223 +163,176 @@
         </div>
       </div>
     </teleport>
-
-    <AvatarCropModal
-      v-if="cropFile"
-      :file="cropFile"
-      @close="cropFile = null"
-      @done="onCropped"
-    />
   </div>
 </template>
 
 <script>
 import { reactive, watch, ref, computed } from 'vue'
-import AvatarCropModal from './AvatarCropModal.vue'
 
 export default {
   name: 'ProfileModal',
-  components: { AvatarCropModal },
   emits: ['close', 'save', 'pick-avatar', 'logout', 'open-create-event'],
   props: {
     profile: { type: Object, default: null },
     telegramLink: { type: Object, default: null },
     saving: { type: Boolean, default: false },
-    categories: { type: Array, default: () => [] } // ✅
+    categories: { type: Array, default: () => [] }
   },
   setup(props, { emit }) {
+    const showBizInfo = ref(false)
+
     const form = reactive({
+      username: '',
       first_name: '',
       last_name: '',
       birth_day: '',
       phone: '',
       email: '',
       gender: '',
-      interests: [] // ✅ text[]
+      interests: []
     })
-
-    const showBizInfo = ref(false)
-    const isBusiness = computed(() => props.profile?.It_business === true)
 
     watch(
       () => props.profile,
       (p) => {
+        form.username = p?.username || ''
         form.first_name = p?.first_name || ''
         form.last_name = p?.last_name || ''
         form.birth_day = p?.birth_day || ''
         form.phone = p?.phone || ''
         form.email = p?.email || ''
         form.gender = p?.gender || ''
-        form.interests = Array.isArray(p?.interests) ? [...p.interests] : [] // ✅
+        form.interests = Array.isArray(p?.interests) ? [...p.interests] : []
       },
       { immediate: true }
     )
 
-    // ✅ interests helpers
-    const norm = (s) => String(s || '').trim()
-    const isInterestSelected = (name) => {
-      const n = norm(name)
-      return form.interests.includes(n)
+    const isBusiness = computed(() => props.profile?.It_business === true)
+
+    // avatar logic (оставлено как было по смыслу)
+    const fileInput = ref(null)
+    const cropFile = ref(null)
+
+    const localAvatarUrl = ref('')
+    const showLocalAvatar = computed(() => !!localAvatarUrl.value)
+
+    const profileImgErrored = ref(false)
+    const profileAvatarUrl = computed(() => props.profile?.image_path || '')
+    const showProfileAvatar = computed(() => !!profileAvatarUrl.value && !profileImgErrored.value && !showLocalAvatar.value)
+
+    const onProfileImgError = () => (profileImgErrored.value = true)
+
+    const avatarLetter = computed(() => {
+      const name = `${form.first_name} ${form.last_name}`.trim() || form.email || 'П'
+      return (name[0] || 'П').toUpperCase()
+    })
+
+    const avatarGradient = computed(() => 'linear-gradient(135deg, rgba(138,117,227,.95), rgba(33,33,33,.9))')
+
+    const triggerPick = () => {
+      fileInput.value?.click()
     }
+
+    const onPick = (e) => {
+      const f = e?.target?.files?.[0]
+      if (!f) return
+      emit('pick-avatar', f)
+      localAvatarUrl.value = URL.createObjectURL(f)
+    }
+
+    const isInterestSelected = (name) => (form.interests || []).includes(name)
+
     const toggleInterest = (name) => {
-      const n = norm(name)
-      if (!n) return
-      const set = new Set(form.interests)
-      if (set.has(n)) set.delete(n)
-      else set.add(n)
+      const set = new Set(form.interests || [])
+      if (set.has(name)) set.delete(name)
+      else set.add(name)
       form.interests = Array.from(set)
     }
 
-    // avatar
-    const fileInput = ref(null)
-    const cropFile = ref(null)
-    const localAvatarUrl = ref('')
-    const localErrored = ref(false)
-    const profileErrored = ref(false)
-
-    const triggerPick = () => fileInput.value?.click()
-
-    const onPick = (e) => {
-      const file = e?.target?.files?.[0]
-      if (!file) return
-      cropFile.value = file
-      e.target.value = ''
-    }
-
-    const onCropped = ({ file, url }) => {
-      localAvatarUrl.value = url
-      localErrored.value = false
-      cropFile.value = null
-      emit('pick-avatar', file)
-    }
-
-    // ✅ аватар: avatar_url или image_path
-    const profileAvatarUrl = computed(() => {
-      const a = (props.profile?.avatar_url || '').trim()
-      const b = (props.profile?.image_path || '').trim()
-      return a || b
-    })
-
-    const showLocalAvatar = computed(() => !!localAvatarUrl.value && !localErrored.value)
-    const showProfileAvatar = computed(() => !!profileAvatarUrl.value && !profileErrored.value && !showLocalAvatar.value)
-
-    const onProfileImgError = () => {
-      profileErrored.value = true
-    }
-
-    const avatarLetter = computed(() => {
-      const n = (form.first_name || form.email || 'П')[0] || 'П'
-      return String(n).toUpperCase()
-    })
-
-    const avatarGradient = computed(() => {
-      const a = '#8a75e3'
-      const b = '#2e2a4a'
-      return `linear-gradient(135deg, ${a}, ${b})`
-    })
-
     return {
-      form,
-
-      isBusiness,
       showBizInfo,
+      isBusiness,
 
-      // interests
-      isInterestSelected,
-      toggleInterest,
+      form,
 
       // avatar
       fileInput,
       cropFile,
       localAvatarUrl,
-      triggerPick,
-      onPick,
-      onCropped,
-      profileAvatarUrl,
       showLocalAvatar,
+      profileAvatarUrl,
       showProfileAvatar,
       onProfileImgError,
       avatarLetter,
-      avatarGradient
+      avatarGradient,
+      triggerPick,
+      onPick,
+
+      // interests
+      isInterestSelected,
+      toggleInterest
     }
   }
 }
 </script>
 
 <style scoped>
-/* (оставил твои стили, добавил только новые блоки interests) */
+.overlay{ position: fixed; inset:0; background: rgba(0,0,0,.35); display:grid; place-items:center; z-index: 9999; padding: 12px; }
+.modal{ width: min(640px, 96vw); background:#fff; border-radius: 18px; border:1px solid #efefef; box-shadow: 0 20px 60px rgba(0,0,0,.22); padding: 14px; }
+.top{ display:flex; align-items:center; gap:10px; margin-bottom: 10px; }
+.title{ font-size: 18px; font-weight: 900; }
+.x{ margin-left:auto; border:1px solid #efefef; background:#fafafa; border-radius: 12px; padding: 8px 10px; cursor:pointer; }
 
-.overlay{ position:fixed; inset:0; background:rgba(0,0,0,.35); backdrop-filter:blur(2px); display:grid; place-items:center; z-index:10000; }
-.modal{ width:min(720px,92vw); max-height:90vh; overflow:auto; background:#fff; border:1px solid #efefef; border-radius:18px; box-shadow:0 18px 60px rgba(0,0,0,.18); padding:14px; }
+.muted{ font-size: 13px; opacity:.85; margin-bottom: 10px; }
 
-.top{ display:flex; align-items:center; gap:12px; border-bottom:1px solid #f2f2f2; padding-bottom:10px; margin-bottom:10px; }
-.title{ margin:0; font-weight:900; }
-.x{ margin-left:auto; border:1px solid #efefef; background:#fafafa; border-radius:12px; padding:8px 10px; cursor:pointer; }
+.grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+@media (max-width: 520px){ .grid{ grid-template-columns: 1fr; } }
 
-.muted{ font-size:13px; opacity:.8; margin-bottom:12px; }
-
-.biz{ border:1px solid rgba(138,117,227,.18); background:#fcfcff; border-radius:16px; padding:12px; display:grid; gap:10px; margin-bottom:12px; }
-.biz-top{ display:flex; align-items:center; gap:10px; }
-.biz-title{ font-weight:900; }
-.biz-badge{ margin-left:auto; font-size:12px; padding:6px 10px; border-radius:999px; background:rgba(46,125,50,.12); border:1px solid rgba(46,125,50,.22); color:#2e7d32; font-weight:900; }
-.biz-badge.off{ background:rgba(217,83,79,.10); border-color:rgba(217,83,79,.22); color:#d9534f; }
-.biz-actions{ display:flex; gap:10px; flex-wrap:wrap; }
-.biz-btn{ border:none; border-radius:14px; padding:10px 12px; font-weight:900; cursor:pointer; background:#8a75e3; color:#fff; }
-.biz-btn.secondary{ background:#fff; color:#14181b; border:1px solid #efefef; }
-
-.interests{
-  border: 1px solid #efefef;
-  background: #fff;
-  border-radius: 16px;
-  padding: 12px;
-  display: grid;
-  gap: 10px;
-  margin-bottom: 12px;
+.field{ display:flex; flex-direction:column; gap:6px; }
+.field span{ font-size: 12px; font-weight: 900; opacity:.8; }
+.field input, .field select{
+  border: 1px solid #efefef; border-radius: 14px; padding: 10px 12px; outline: none;
 }
-.interests-title{ font-weight: 900; }
-.interests-sub{ font-size: 12px; opacity: .75; margin-top: 2px; }
-.interests-empty{ font-size: 13px; opacity: .7; }
-.chips{ display:flex; gap: 8px; flex-wrap: wrap; }
-.chip{
-  border: 1px solid #efefef;
-  background: #fafafa;
-  border-radius: 999px;
-  padding: 8px 10px;
-  font-weight: 900;
-  font-size: 12px;
-  cursor: pointer;
+.help{ font-size: 11px; opacity:.65; margin-top: -2px; }
+
+.btns{ display:flex; gap: 10px; margin-top: 14px; }
+.btn{
+  border:none; background:#8a75e3; color:#fff; border-radius: 14px; padding: 12px 14px;
+  font-weight: 900; cursor: pointer; flex: 1 1 auto;
 }
-.chip.on{
-  background: rgba(138,117,227,.14);
-  border-color: rgba(138,117,227,.32);
-}
-
-.avatar-row{ display:flex; align-items:center; gap:12px; margin:12px 0; }
-.avatar{ width:74px; height:74px; border-radius:999px; border:1px solid #efefef; overflow:hidden; background:#fff; cursor:pointer; display:grid; place-items:center; }
-.avatar img{ width:100%; height:100%; object-fit:cover; display:block; }
-.avatar-fallback{ width:100%; height:100%; display:grid; place-items:center; font-weight:900; color:#fff; font-size:22px; }
-.avatar-hint{ font-size:13px; opacity:.8; }
-.hidden{ display:none; }
-
-.grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-@media (max-width:720px){ .grid{ grid-template-columns:1fr; } }
-.field{ display:grid; gap:6px; }
-.field span{ font-size:12px; opacity:.75; font-weight:900; }
-.field input, .field select{ border:1px solid #efefef; border-radius:12px; padding:10px; outline:none; }
-
-.btns{ margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
-.btn{ border:none; border-radius:14px; padding:12px 16px; font-weight:900; cursor:pointer; background:#8a75e3; color:#fff; }
-.btn:disabled{ opacity:.6; cursor:not-allowed; }
 .btn.danger{ background:#d9534f; }
 
-/* biz info modal styles оставляю как у тебя */
-.biz-root{ position:fixed; inset:0; z-index:11000; }
-.biz-overlay{ position:absolute; inset:0; background:rgba(0,0,0,.38); backdrop-filter:blur(2px); }
-.biz-modal{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:min(520px,92vw); background:#fff; border:1px solid #efefef; border-radius:18px; box-shadow:0 18px 60px rgba(0,0,0,.18); overflow:hidden; }
-.biz-head{ padding:12px 14px; border-bottom:1px solid #f2f2f2; display:flex; align-items:center; gap:10px; }
-.biz-h-title{ font-weight:900; }
-.biz-close{ margin-left:auto; border:1px solid #efefef; background:#fafafa; border-radius:12px; padding:8px 10px; cursor:pointer; }
-.biz-body{ padding:14px; display:grid; gap:10px; }
-.biz-foot{ padding:14px; border-top:1px solid #f2f2f2; display:flex; justify-content:flex-end; }
-.biz-ok{ border:none; border-radius:14px; padding:12px 16px; font-weight:900; cursor:pointer; background:#8a75e3; color:#fff; }
+.avatar-row{ display:flex; align-items:center; gap: 12px; margin-top: 10px; }
+.avatar{ width: 56px; height: 56px; border-radius: 999px; border:1px solid #efefef; background:#fff; overflow:hidden; cursor:pointer; display:grid; place-items:center; }
+.avatar img{ width:100%; height:100%; object-fit:cover; display:block; }
+.avatar-fallback{ width:100%; height:100%; display:grid; place-items:center; font-weight: 900; color:#fff; }
+.avatar-hint{ font-size: 12px; opacity: .75; }
+.hidden{ display:none; }
+
+.biz{ border:1px solid #efefef; border-radius: 16px; padding: 12px; margin: 10px 0; background:#fff; }
+.biz-top{ display:flex; align-items:center; gap: 10px; }
+.biz-title{ font-weight: 900; }
+.biz-badge{ margin-left:auto; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: rgba(0,200,120,.12); border:1px solid rgba(0,200,120,.22); font-weight: 900; }
+.biz-badge.off{ background: rgba(200,0,0,.08); border-color: rgba(200,0,0,.12); }
+.biz-actions{ display:flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.biz-btn{ border:none; background:#8a75e3; color:#fff; border-radius: 14px; padding: 10px 12px; font-weight: 900; cursor:pointer; }
+.biz-btn.secondary{ background:#fafafa; color:#14181b; border:1px solid #efefef; }
+
+.interests{ border:1px solid #efefef; border-radius: 16px; padding: 12px; margin: 10px 0; }
+.interests-title{ font-weight: 900; }
+.interests-sub{ font-size: 12px; opacity: .75; margin-top: 2px; }
+.chips{ display:flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip{ border:1px solid #efefef; background:#fff; border-radius: 999px; padding: 8px 10px; cursor: pointer; font-weight: 900; font-size: 12px; }
+.chip.on{ background:#8a75e3; border-color:#8a75e3; color:#fff; }
+
+/* biz info modal */
+.biz-root{ position: fixed; inset: 0; z-index: 10000; }
+.biz-overlay{ position:absolute; inset:0; background: rgba(0,0,0,.35); backdrop-filter: blur(2px); }
+.biz-modal{ position:absolute; left:50%; top:50%; transform: translate(-50%,-50%); width: min(520px, 92vw); background:#fff; border-radius: 18px; border:1px solid #efefef; box-shadow: 0 20px 60px rgba(0,0,0,.22); }
+.biz-head{ display:flex; align-items:center; gap:10px; padding: 14px; border-bottom:1px solid #f2f2f2; }
+.biz-h-title{ font-weight: 900; }
+.biz-close{ margin-left:auto; border:1px solid #efefef; background:#fafafa; border-radius: 12px; padding: 8px 10px; cursor:pointer; }
+.biz-body{ padding: 14px; display:flex; flex-direction:column; gap: 8px; }
+.biz-foot{ padding: 14px; border-top:1px solid #f2f2f2; display:flex; justify-content:flex-end; }
+.biz-ok{ border:none; background:#8a75e3; color:#fff; border-radius: 14px; padding: 10px 12px; font-weight: 900; cursor:pointer; }
 </style>

@@ -7,6 +7,9 @@
             <div class="menu-icon"><span></span><span></span><span></span></div>
           </button>
 
+          <!-- ✅ Сообщения слева сверху -->
+          <button class="msg-button" aria-label="Сообщения" @click="goMessages">💬</button>
+
           <div class="search-container">
             <div class="search-icon">🔍</div>
             <input v-model="searchTerm" type="text" placeholder="Поиск" class="search-input" />
@@ -42,8 +45,8 @@
           </div>
 
           <div class="menu-body">
-            <!-- ✅ УБРАН блок Business аккаунт отсюда -->
             <button class="menu-item" @click="openProfileOrAuth">👤 Профиль / Вход</button>
+            <button class="menu-item" @click="goMessagesFromMenu">💬 Сообщения</button>
           </div>
 
           <div class="menu-foot">
@@ -90,6 +93,7 @@
 
 <script>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import AuthModal from './components/AuthModal.vue'
 import ProfileModal from './components/ProfileModal.vue'
 import CreateEventModal from './components/CreateEventModal.vue'
@@ -108,6 +112,8 @@ export default {
   name: 'App',
   components: { AuthModal, ProfileModal, CreateEventModal },
   setup() {
+    const router = useRouter()
+
     const {
       getSession,
       getUser,
@@ -176,12 +182,20 @@ export default {
       openProfileModal()
     }
 
+    const goMessages = () => {
+      router.push('/messages')
+    }
+
+    const goMessagesFromMenu = () => {
+      closeMenu()
+      router.push('/messages')
+    }
+
     const openCreateEvent = () => {
       if (!session.value) {
         showAuth.value = true
         return
       }
-      // только бизнес
       if (!isBusiness.value) {
         showProfileEdit.value = true
         return
@@ -231,15 +245,11 @@ export default {
       try {
         const patch = { ...form }
 
-        // avatar upload (если выбрали)
         if (pickedAvatarFile.value) {
           const { publicUrl } = await uploadAvatar(pickedAvatarFile.value)
 
           if (publicUrl) {
-            // ✅ твой столбец в БД
             patch.image_path = publicUrl
-
-            // (опционально) оставим и это, если вдруг где-то ещё используется
             patch.avatar_url = publicUrl
           }
 
@@ -255,7 +265,6 @@ export default {
       }
     }
 
-
     const onPickedAvatar = (file) => {
       pickedAvatarFile.value = file || null
     }
@@ -269,12 +278,11 @@ export default {
     }
 
     const onCreatedEvent = async () => {
-      // можно тут что-то обновлять, если надо
       await nextTick()
     }
 
     onMounted(refreshAll)
-    watch(() => session.value, () => {}) // оставлено как было
+    watch(() => session.value, () => {})
 
     return {
       telegramBotUsername,
@@ -302,6 +310,9 @@ export default {
       openProfileModal,
       openProfileOrAuth,
       openCreateEvent,
+
+      goMessages,
+      goMessagesFromMenu,
 
       loginGoogle,
       handleTelegramLogin,
@@ -336,7 +347,6 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
   gap: 12px;
 }
 
-/* ✅ FIX: header-left растягивается, поиск ужимается, профиль не уезжает */
 .header-left {
   display: flex;
   align-items: center;
@@ -353,6 +363,18 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
 }
 .menu-icon { display: flex; flex-direction: column; gap: 3px; }
 .menu-icon span { width: 18px; height: 2px; background: #14181b; border-radius: 1px; }
+
+/* ✅ кнопка сообщений */
+.msg-button{
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid #efefef;
+  background: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.msg-button:hover{ background:#fafafa; }
 
 .search-container {
   position: relative;
@@ -426,7 +448,6 @@ body { font-family: Arial, sans-serif; background: #efefef; color: #14181b; }
   font-weight: 900; cursor: pointer;
 }
 
-/* ✅ extra mobile polish */
 @media (max-width: 520px){
   .header-container{ padding: 12px 12px; }
   .search-input{ max-width: none; }
