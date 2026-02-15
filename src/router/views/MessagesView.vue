@@ -24,7 +24,7 @@
       </div>
 
       <div v-else class="grid">
-        <!-- LEFT: контакты/поиск/друзья -->
+        <!-- LEFT -->
         <aside class="left">
           <div class="block">
             <div class="b-title">Заявки в друзья</div>
@@ -111,7 +111,7 @@
           </div>
         </aside>
 
-        <!-- RIGHT: чат -->
+        <!-- RIGHT -->
         <main class="right">
           <div v-if="!selectedUser" class="empty">
             Выбери друга/чат слева или найди пользователя.
@@ -122,7 +122,10 @@
               <div class="ch-ava">{{ letter(selectedUser) }}</div>
               <div class="ch-meta">
                 <div class="ch-name">{{ displayName(selectedUser) }}</div>
-                <div class="ch-sub">@{{ selectedUser.username || '—' }}</div>
+                <div class="ch-sub">
+                  @{{ selectedUser.username || '—' }}
+                  <span v-if="isTyping" class="typing"> • печатает…</span>
+                </div>
               </div>
 
               <button class="btn small ghost" @click="removeFriend(selectedUser.id)">
@@ -143,6 +146,7 @@
                 class="input"
                 rows="1"
                 placeholder="Написать сообщение…"
+                @input="onDraftInput"
                 @keydown.enter.exact.prevent="send"
               />
               <button class="btn" @click="send" :disabled="sending || !draft.trim()">
@@ -162,7 +166,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { useSupabase } from '@/composables/useSupabase'
 
 const debounce = (fn, ms = 250) => {
@@ -188,7 +192,9 @@ export default {
       getInboxThreads,
       getConversation,
       sendMessage,
-      markConversationRead
+      markConversationRead,
+      subscribeToMyMessages,
+      joinTypingChannel
     } = useSupabase()
 
     const loading = ref(false)
@@ -214,6 +220,14 @@ export default {
     const draft = ref('')
 
     const chatBody = ref(null)
+
+    // typing
+    const isTyping = ref(false)
+    let typingOffTimer = null
+    let typingChannel = null
+
+    // realtime messages channel
+    let messagesChannel = null
 
     const displayName = (u) => {
       const fn = String(u?.first_name || '').trim()
@@ -283,6 +297,25 @@ export default {
 
       await markConversationRead(otherId)
 
+      // typing subscription for this conversation
+      if (typingChannel) {
+        try {
+          typingChannel.unsubscribe?.()
+        } catch {}
+        typingChannel = null
+      }
+      isTyping.value = false
+      const { channel } = await joinTypingChannel({
+        otherId,
+        onTyping: (v) => {
+          isTyping.value = !!v
+          if (typingOffTimer) clearTimeout(typingOffTimer)
+          // если пришло "typing=true" и потом тишина — не висим вечно
+          if (v) typingOffTimer = setTimeout(() => (isTyping.value = false), 2200)
+        }
+      })
+      typingChannel = channel
+
       await nextTick()
       chatBody.value?.scrollTo?.({ top: chatBody.value.scrollHeight, behavior: 'smooth' })
     }
@@ -294,12 +327,17 @@ export default {
 
       sending.value = true
       try {
+        // оптимистично добавлять можно, но оставим “истина = база”:
         await sendMessage(selectedUserId.value, text)
         draft.value = ''
+
+        // переподтянем (обычно уже прилетит realtime, но пусть будет чисто)
         const { data: conv } = await getConversation(selectedUserId.value, 200)
         messages.value = conv || []
+
         await nextTick()
         chatBody.value?.scrollTo?.({ top: chatBody.value.scrollHeight, behavior: 'smooth' })
+
         await loadThreads()
       } catch (e) {
         error.value = String(e?.message || e)
@@ -348,11 +386,79 @@ export default {
         return
       }
       const { data } = await searchUsers(q, 20)
-      // не показываем себя
       searchedUsers.value = (data || []).filter((x) => x.id !== myId.value)
     }
 
     const onUserQueryInput = debounce(doSearchUsers, 250)
+
+    // typing: отправляем “печатает” (только когда открыт чат)
+    const onDraftInput = async () => {
+      if (!selectedUserId.value) return
+      // чтобы не долбить сервер — максимум раз в ~400мс
+      // делаем очень простой throttling таймером
+      if (onDraftInput._t) return
+      onDraftInput._t = setTimeout(() => (onDraftInput._t = null), 400)
+
+      // включаем typing=true, и если пользователь перестал печатать — через 1.2с typing=false
+      try {
+        // typingChannel уже подписан через joinTypingChannel (тот же ключ), отправка будет работать
+        // но sendTyping мы не импортировали — broadcast можно отправить напрямую каналом:
+        typingChannel?.send?.({
+          type: 'broadcast',
+          event: 'typing',
+          payload: { from: myId.value, to: selectedUserId.value, typing: true, ts: Date.now() }
+        })
+      } catch {}
+
+      if (typingOffTimer) clearTimeout(typingOffTimer)
+      typingOffTimer = setTimeout(() => {
+        try {
+          typingChannel?.send?.({
+            type: 'broadcast',
+            event: 'typing',
+            payload: { from: myId.value, to: selectedUserId.value, typing: false, ts: Date.now() }
+          })
+        } catch {}
+      }, 1200)
+    }
+
+    const applyRealtimeMessage = async (m) => {
+      if (!m?.id) return
+
+      // 1) если это текущий чат — обновляем messages мгновенно
+      const isMyChat =
+        selectedUserId.value &&
+        ((m.sender_id === myId.value && m.receiver_id === selectedUserId.value) ||
+          (m.sender_id === selectedUserId.value && m.receiver_id === myId.value))
+
+      if (isMyChat) {
+        // не дублируем
+        if (!messages.value.some((x) => x.id === m.id)) {
+          messages.value = [...messages.value, m]
+          await nextTick()
+          chatBody.value?.scrollTo?.({ top: chatBody.value.scrollHeight, behavior: 'smooth' })
+        }
+        // отмечаем прочитанным входящее
+        if (m.sender_id === selectedUserId.value && m.receiver_id === myId.value) {
+          await markConversationRead(selectedUserId.value)
+        }
+      }
+
+      // 2) всегда обновляем threads, чтобы “последние чаты” реагировали мгновенно
+      await loadThreads()
+    }
+
+    const startRealtime = async () => {
+      // подписка на INSERT в messages для меня (и моих исходящих)
+      const { channel } = await subscribeToMyMessages({
+        onInsert: async (m) => {
+          try {
+            await applyRealtimeMessage(m)
+          } catch {}
+        }
+      })
+      messagesChannel = channel
+    }
 
     const reloadAll = async () => {
       loading.value = true
@@ -367,11 +473,13 @@ export default {
         needAuth.value = false
         myId.value = user.id
 
-        // подстрахуемся: если строки профиля нет — getMyPublicUser может быть null, но у тебя ensurePublicUserRow вызывается в App.vue
         await getMyPublicUser()
 
         await reloadFriendships()
         await loadThreads()
+
+        // старт realtime только один раз
+        if (!messagesChannel) await startRealtime()
       } catch (e) {
         error.value = String(e?.message || e)
       } finally {
@@ -380,6 +488,21 @@ export default {
     }
 
     onMounted(reloadAll)
+
+    onBeforeUnmount(() => {
+      try {
+        messagesChannel?.unsubscribe?.()
+      } catch {}
+      messagesChannel = null
+
+      try {
+        typingChannel?.unsubscribe?.()
+      } catch {}
+      typingChannel = null
+
+      if (typingOffTimer) clearTimeout(typingOffTimer)
+      typingOffTimer = null
+    })
 
     return {
       loading,
@@ -414,7 +537,10 @@ export default {
       removeFriend,
 
       reloadAll,
-      chatBody
+      chatBody,
+
+      onDraftInput,
+      isTyping
     }
   }
 }
@@ -482,6 +608,7 @@ export default {
 .meta{ min-width: 0; }
 .name{ font-weight: 900; font-size: 13px; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
 .sub{ font-size: 12px; opacity: .75; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
+.typing{ font-weight: 900; opacity: .85; }
 .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .dot{ margin: 0 6px; opacity:.5; }
 .last{ opacity:.85; }

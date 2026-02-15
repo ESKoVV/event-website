@@ -1,4 +1,3 @@
-<!-- src/router/views/EventView.vue -->
 <template>
   <div class="page">
     <div class="container">
@@ -16,33 +15,59 @@
       </div>
 
       <template v-else>
-        <!-- Основная карточка мероприятия -->
         <div class="card">
           <div class="media">
-            <div v-if="!mainPhoto" class="photo-skel"></div>
+            <div v-if="!photoUrls.length" class="photo-skel"></div>
 
-            <img
+            <!-- ✅ MAIN carousel -->
+            <div
               v-else
-              class="photo"
-              :src="mainPhoto"
-              alt="event"
-              @click="openPhoto(mainPhoto)"
-            />
-
-            <!-- Онлайн поверх фото -->
-            <div v-if="event?.is_online" class="badge-online">🟢 Онлайн</div>
-
-            <!-- мини-галерея -->
-            <div v-if="eventPhotos.length > 1" class="thumbs">
+              ref="mainCarouselEl"
+              class="main-carousel"
+              @scroll.passive="onMainScroll"
+              aria-label="Фотографии мероприятия"
+            >
               <button
-                v-for="p in eventPhotos"
-                :key="p.id"
-                class="thumb"
+                v-for="(url, idx) in photoUrls"
+                :key="url + '_' + idx"
+                class="main-slide"
                 type="button"
-                @click="openPhoto(p.photo_url)"
+                @click="openPhoto(url)"
                 aria-label="Открыть фото"
               >
-                <img :src="p.photo_url" alt="thumb" />
+                <img class="photo" :src="url" alt="event" />
+              </button>
+            </div>
+
+            <!-- ✅ стрелки для ПК -->
+            <div v-if="photoUrls.length > 1" class="main-arrows" aria-hidden="true">
+              <button class="main-arrow left" type="button" @click="prevPhoto" aria-label="Предыдущее фото">‹</button>
+              <button class="main-arrow right" type="button" @click="nextPhoto" aria-label="Следующее фото">›</button>
+            </div>
+
+            <div v-if="event?.is_online" class="badge-online">🟢 Онлайн</div>
+
+            <div v-if="photoUrls.length > 1" class="main-dots" aria-hidden="true">
+              <span
+                v-for="(_, i) in photoUrls"
+                :key="'md_' + i"
+                class="main-dot"
+                :class="{ on: i === activePhotoIndex }"
+              />
+            </div>
+
+            <!-- ✅ thumbnails -->
+            <div v-if="photoUrls.length > 1" class="thumbs">
+              <button
+                v-for="(url, idx) in photoUrls"
+                :key="'th_' + url + '_' + idx"
+                class="thumb"
+                :class="{ active: idx === activePhotoIndex }"
+                type="button"
+                @click="scrollToIndex(idx)"
+                aria-label="Переключить фото"
+              >
+                <img :src="url" alt="thumb" />
               </button>
             </div>
           </div>
@@ -52,7 +77,6 @@
               <div class="title">{{ event?.title }}</div>
 
               <div class="actions">
-                <!-- лайк -->
                 <button
                   class="icon-btn"
                   type="button"
@@ -65,14 +89,7 @@
                   <span v-else>🤍</span>
                 </button>
 
-                <!-- поделиться -->
-                <button
-                  class="icon-btn"
-                  type="button"
-                  @click="shareEvent"
-                  aria-label="Поделиться"
-                  title="Поделиться"
-                >
+                <button class="icon-btn" type="button" @click="shareEvent" aria-label="Поделиться" title="Поделиться">
                   🔗
                 </button>
               </div>
@@ -83,12 +100,7 @@
             <div class="meta">
               <div class="m"><span>📅</span>{{ formatDate(event?.date_time_event) }}</div>
               <div class="m"><span>📍</span>{{ event?.address || '—' }}</div>
-
-              <!-- Важно:
-                   - тут можно оставить event.organizer как "название организатора/бренда" для конкретного события.
-                   - а "Профиль организатора" ниже берётся из users по user_id -->
               <div class="m"><span>👤</span>{{ event?.organizer || '—' }}</div>
-
               <div class="m"><span>💰</span>{{ priceText }}</div>
             </div>
 
@@ -124,7 +136,6 @@
                 </div>
               </div>
 
-              <!-- ✅ Переход БЕЗ перезагрузки (router.push), чтобы не умирал eventsCache -->
               <button class="go-org" type="button" @click="goOrganizer" :disabled="!event?.user_id">
                 Перейти →
               </button>
@@ -134,11 +145,8 @@
           <div class="panel" v-else>
             <div v-if="otherLoading" class="mini-state">Загрузка…</div>
 
-            <div v-else-if="otherEventsForCards.length === 0" class="mini-state">
-              Других мероприятий нет
-            </div>
+            <div v-else-if="otherEventsForCards.length === 0" class="mini-state">Других мероприятий нет</div>
 
-            <!-- ✅ Те же карточки EventCard, без отдельного дизайна -->
             <div v-else class="events-shell">
               <TransitionGroup name="list" tag="div" class="events-list">
                 <EventCard
@@ -229,7 +237,6 @@ export default {
 
     const api = useSupabase()
     const { getEventById, getEventPhotos, getPublicUserById, getUser } = api
-    // optional fallback when cache is empty
     const getOrganizerEvents = api.getOrganizerEvents
 
     const loading = ref(true)
@@ -240,21 +247,21 @@ export default {
 
     const photoModalUrl = ref('')
 
-    // tabs
-    const tab = ref('org') // org | other
+    const mainCarouselEl = ref(null)
+    const activePhotoIndex = ref(0)
+    const _raf = ref(null)
 
-    // organizer
+    const tab = ref('org')
+
     const organizerProfile = ref(null)
     const orgAvatar = ref('')
     const orgLoading = ref(false)
 
-    // other events
     const otherLoading = ref(false)
-    const cachedAllEvents = ref(null) // from eventsCache
+    const cachedAllEvents = ref(null)
     const cachedPhotosByEventId = ref(null)
     const categoryMap = ref({})
 
-    // favorites
     const userId = ref(null)
     const favoriteIds = ref(new Set())
     const favKey = ref(makeFavKey(null))
@@ -262,9 +269,9 @@ export default {
 
     const routeId = computed(() => route.params.id)
 
-    const mainPhoto = computed(() => {
-      const p = eventPhotos.value?.[0]?.photo_url
-      return (p || '').trim()
+    const photoUrls = computed(() => {
+      const list = Array.isArray(eventPhotos.value) ? eventPhotos.value : []
+      return list.map((p) => String(p?.photo_url || '').trim()).filter(Boolean)
     })
 
     const priceText = computed(() => {
@@ -275,7 +282,6 @@ export default {
       return `${p} ₽`
     })
 
-    // ✅ ИМЯ ОРГАНИЗАТОРА ТОЛЬКО ИЗ users (НЕ из events.organizer)
     const orgName = computed(() => {
       const p = organizerProfile.value
       const fn = (p?.first_name || '').trim()
@@ -363,16 +369,14 @@ export default {
       const source = Array.isArray(cachedAllEvents.value) ? cachedAllEvents.value : []
       if (!orgId || !source.length) return []
 
-      // ✅ НЕ грузим заново, если есть кэш: просто фильтруем
       return source
         .filter((e) => String(e?.user_id || '') === orgId)
         .filter((e) => Number(e?.id) !== currentId)
-        .filter((e) => e?.is_published !== false) // обычным пользователям только опубликованные
+        .filter((e) => e?.is_published !== false)
     })
 
     const goOrganizer = () => {
       if (!event.value?.user_id) return
-      // ✅ SPA-переход, без перезагрузки (иначе кеш пропадёт)
       router.push({ path: `/organizer/${event.value.user_id}` })
     }
 
@@ -405,7 +409,6 @@ export default {
     }
 
     const loadOtherFallbackIfNoCache = async () => {
-      // если кэша нет (прямой заход по ссылке) — один раз догружаем other через supabase
       if (Array.isArray(cachedAllEvents.value) && cachedAllEvents.value.length) return
       if (!event.value?.user_id) return
       if (typeof getOrganizerEvents !== 'function') return
@@ -417,10 +420,53 @@ export default {
           excludeEventId: event.value.id
         })
         cachedAllEvents.value = Array.isArray(data) ? data : []
-        // фото специально не догружаем (как договаривались), чтобы не плодить запросы
       } finally {
         otherLoading.value = false
       }
+    }
+
+    const onMainScroll = () => {
+      try {
+        const el = mainCarouselEl.value
+        if (!el) return
+
+        if (_raf.value) cancelAnimationFrame(_raf.value)
+        _raf.value = requestAnimationFrame(() => {
+          const w = el.clientWidth || 1
+          const i = Math.round(el.scrollLeft / w)
+          const clamped = Math.max(0, Math.min(i, photoUrls.value.length - 1))
+          activePhotoIndex.value = clamped
+        })
+      } catch {}
+    }
+
+    const scrollToIndex = (idx) => {
+      try {
+        const el = mainCarouselEl.value
+        if (!el) return
+        const i = Number(idx)
+        if (!Number.isFinite(i)) return
+        const w = el.clientWidth || 1
+        el.scrollTo({ left: w * i, behavior: 'smooth' })
+        activePhotoIndex.value = Math.max(0, Math.min(i, photoUrls.value.length - 1))
+      } catch {}
+    }
+
+    const prevPhoto = () => {
+      const i = Math.max(0, activePhotoIndex.value - 1)
+      scrollToIndex(i)
+    }
+    const nextPhoto = () => {
+      const i = Math.min(photoUrls.value.length - 1, activePhotoIndex.value + 1)
+      scrollToIndex(i)
+    }
+
+    const resetGallery = () => {
+      activePhotoIndex.value = 0
+      try {
+        const el = mainCarouselEl.value
+        if (el) el.scrollLeft = 0
+      } catch {}
     }
 
     const load = async (idRaw) => {
@@ -431,6 +477,7 @@ export default {
       organizerProfile.value = null
       orgAvatar.value = ''
       tab.value = 'org'
+      resetGallery()
 
       try {
         const id = Number(idRaw)
@@ -439,7 +486,6 @@ export default {
         loadFromCache()
         await loadUserFavs()
 
-        // 1) пытаемся найти событие в кэше (без supabase)
         const fromCache =
           Array.isArray(cachedAllEvents.value) && cachedAllEvents.value.length
             ? cachedAllEvents.value.find((e) => Number(e?.id) === id)
@@ -450,13 +496,11 @@ export default {
           const ph = cachedPhotosByEventId.value && cachedPhotosByEventId.value[id]
           eventPhotos.value = Array.isArray(ph) ? ph.filter((x) => x?.photo_url) : []
         } else {
-          // 2) иначе — грузим только текущее событие
           const { data: e, error: e1 } = await getEventById(id)
           if (e1) throw e1
           if (!e) throw new Error('Мероприятие не найдено')
           event.value = e
 
-          // фото текущего события (один запрос)
           const { data: ph, error: e2 } = await getEventPhotos([id])
           if (e2) throw e2
           eventPhotos.value = (ph || []).filter((x) => x?.photo_url)
@@ -480,18 +524,31 @@ export default {
       }
     )
 
+    watch(
+      () => photoUrls.value.join('|'),
+      () => resetGallery()
+    )
+
     return {
       routeId,
       loading,
       error,
       event,
       eventPhotos,
-      mainPhoto,
-      priceText,
-      formatDate,
+      photoUrls,
 
       photoModalUrl,
       openPhoto,
+
+      mainCarouselEl,
+      activePhotoIndex,
+      onMainScroll,
+      scrollToIndex,
+      prevPhoto,
+      nextPhoto,
+
+      priceText,
+      formatDate,
 
       tab,
       organizerProfile,
@@ -561,9 +618,71 @@ export default {
   .card{ grid-template-columns: 1fr; }
 }
 
-.media{ position: relative; background:#f2f2f2; }
+.media{ position: relative; background:#f2f2f2; padding-bottom: 10px; }
 .photo-skel{ width:100%; height: 280px; background:#f0f0f0; }
-.photo{ width:100%; height: 280px; object-fit: cover; display:block; cursor:pointer; }
+
+.main-carousel{
+  width:100%;
+  height: 280px;
+  display:flex;
+  overflow-x:auto;
+  overflow-y:hidden;
+  scroll-snap-type:x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.main-carousel::-webkit-scrollbar{ display:none; }
+
+.main-slide{
+  flex: 0 0 100%;
+  width: 100%;
+  height: 280px;
+  scroll-snap-align: start;
+  border:none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.photo{
+  width:100%;
+  height: 280px;
+  object-fit: cover;
+  display:block;
+}
+
+/* ✅ arrows for PC */
+.main-arrows{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.main-arrow{
+  pointer-events: auto;
+  position: absolute;
+  top: 140px;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.55);
+  background: rgba(0,0,0,.25);
+  backdrop-filter: blur(6px);
+  color:#fff;
+  font-size: 26px;
+  font-weight: 900;
+  cursor: pointer;
+  display: none;
+  align-items:center;
+  justify-content:center;
+}
+.main-arrow.left{ left: 10px; }
+.main-arrow.right{ right: 10px; }
+@media (min-width: 900px){
+  .media:hover .main-arrow{ display:inline-flex; }
+}
+@media (max-width: 899px){
+  .main-arrow{ display:none !important; }
+}
 
 .badge-online{
   position:absolute; left: 12px; top: 12px;
@@ -574,11 +693,29 @@ export default {
   backdrop-filter: blur(6px);
 }
 
-.thumbs{
+.main-dots{
   position:absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
+  left: 12px;
+  bottom: 86px;
+  display:flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.22);
+  backdrop-filter: blur(6px);
+}
+.main-dot{
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.55);
+}
+.main-dot.on{ background: rgba(255,255,255,1); }
+
+.thumbs{
+  margin-top: 10px;
+  padding: 0 10px;
   display:flex;
   gap: 8px;
   overflow:auto;
@@ -588,14 +725,20 @@ export default {
 .thumbs::-webkit-scrollbar-thumb{ background: rgba(0,0,0,.15); border-radius: 999px; }
 
 .thumb{
-  width: 56px; height: 56px;
+  width: 62px; height: 62px;
   border-radius: 14px;
   overflow:hidden;
-  border: 1px solid rgba(255,255,255,.35);
-  background: rgba(0,0,0,.12);
+  border: 1px solid rgba(0,0,0,.08);
+  background: #fff;
   flex: 0 0 auto;
   padding: 0;
   cursor: pointer;
+  opacity: .85;
+}
+.thumb.active{
+  opacity: 1;
+  border-color: rgba(138,117,227,.45);
+  box-shadow: 0 2px 10px rgba(138,117,227,.12);
 }
 .thumb img{ width:100%; height:100%; object-fit: cover; display:block; }
 
@@ -693,7 +836,6 @@ export default {
   justify-content: center;
 }
 
-/* мобилка — на всю ширину */
 @media (max-width: 760px){
   .events-list{
     grid-template-columns: 1fr;

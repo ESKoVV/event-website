@@ -22,7 +22,7 @@ const compact = (obj) => {
   return out
 }
 
-// ✅ File -> data:image/... base64
+// File -> data:image/... base64
 const readFileAsDataUrl = (file) =>
   new Promise((resolve, reject) => {
     try {
@@ -35,18 +35,11 @@ const readFileAsDataUrl = (file) =>
     }
   })
 
-const safeUsername = (raw) => {
-  const s = String(raw || '').trim()
-  if (!s) return ''
-  // только латиница/цифры/_
-  const cleaned = s.replace(/[^a-zA-Z0-9_]/g, '')
-  return cleaned.slice(0, 20)
-}
-
-const deriveUsernameFromEmail = (email) => {
-  const left = String(email || '').split('@')[0] || ''
-  const base = safeUsername(left.toLowerCase())
-  return base || `user${Math.floor(Math.random() * 900000 + 100000)}`
+// helper: stable conversation channel name
+const convoKey = (a, b) => {
+  const A = String(a || '')
+  const B = String(b || '')
+  return [A, B].sort().join(':')
 }
 
 export const useSupabase = () => {
@@ -54,10 +47,7 @@ export const useSupabase = () => {
   // Events
   // =======================
   const getEvents = async () => {
-    const { data, error } = await supabase
-      .from('events')
-      .select('*')
-      .order('date_time_event', { ascending: true })
+    const { data, error } = await supabase.from('events').select('*').order('date_time_event', { ascending: true })
     return { data, error }
   }
 
@@ -188,7 +178,7 @@ export const useSupabase = () => {
     return { error }
   }
 
-  const signInWithGoogle = async ({ redirectTo }) => {
+  const signInWithGoogle = async ({ redirectTo } = {}) => {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo }
@@ -202,13 +192,14 @@ export const useSupabase = () => {
   const ensurePublicUserRow = async (authUser) => {
     if (!authUser?.id) return { data: null, error: new Error('No auth user') }
 
-    const { data: existing } = await supabase.from('users').select('*').eq('id', authUser.id).maybeSingle()
+    const { data: existing, error: e1 } = await supabase.from('users').select('*').eq('id', authUser.id).maybeSingle()
+    if (e1 && e1.code !== 'PGRST116') {
+      // ignore
+    }
     if (existing) return { data: existing, error: null }
 
     const email = authUser.email || ''
     const name = (authUser.user_metadata?.full_name || authUser.user_metadata?.name || '').trim()
-
-    const username = deriveUsernameFromEmail(email)
 
     const { data, error } = await supabase
       .from('users')
@@ -218,7 +209,6 @@ export const useSupabase = () => {
           email,
           first_name: name ? name.split(' ')[0] : '',
           last_name: name ? name.split(' ').slice(1).join(' ') : '',
-          username, // ✅ новый юз
           It_business: false,
           interests: []
         }
@@ -241,20 +231,7 @@ export const useSupabase = () => {
     const { user } = await getUser()
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
 
-    // username чистим на клиенте
-    const next = { ...patch }
-    if (Object.prototype.hasOwnProperty.call(next, 'username')) {
-      next.username = safeUsername(next.username)
-      if (!next.username) next.username = null
-    }
-
-    const { data, error } = await supabase
-      .from('users')
-      .update(compact(next))
-      .eq('id', user.id)
-      .select('*')
-      .maybeSingle()
-
+    const { data, error } = await supabase.from('users').update(compact(patch)).eq('id', user.id).select('*').maybeSingle()
     return { data: data ?? null, error }
   }
 
@@ -263,28 +240,6 @@ export const useSupabase = () => {
     return { data: data ?? null, error }
   }
 
-  // ✅ поиск пользователей по username / имени / фамилии
-  const searchUsers = async (query, limit = 20) => {
-    const q = String(query || '').trim()
-    if (!q) return { data: [], error: null }
-
-    // Ищем: username, first_name, last_name, email
-    // Supabase OR синтаксис: col.ilike.%q%,col2.ilike.%q%
-    const like = `%${q}%`
-    const { data, error } = await supabase
-      .from('users')
-      .select('id,username,first_name,last_name,email,image_path,created_at')
-      .or(
-        `username.ilike.${like},first_name.ilike.${like},last_name.ilike.${like},email.ilike.${like}`
-      )
-      .limit(limit)
-
-    return { data: data ?? [], error }
-  }
-
-  // =======================
-  // Avatar
-  // =======================
   const uploadAvatar = async (file) => {
     const { user } = await getUser()
     if (!user?.id) return { publicUrl: '', error: new Error('Not authorized') }
@@ -301,7 +256,7 @@ export const useSupabase = () => {
 
     const { data } = supabase.storage.from('public').getPublicUrl(filePath)
     const publicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
-    return { publicUrl, error: null }
+    return { publicUrl, error: null, data: { publicUrl } }
   }
 
   // =======================
@@ -326,55 +281,28 @@ export const useSupabase = () => {
   }
 
   // =======================
-  // Friends
+  // Social: Users search
   // =======================
-  const sendFriendRequest = async (toUserId) => {
-    const { user } = await getUser()
-    if (!user?.id) return { data: null, error: new Error('Not authorized') }
-    if (!toUserId) return { data: null, error: new Error('No user') }
+  const searchUsers = async (query, limit = 20) => {
+    const q = String(query || '').trim()
+    if (!q) return { data: [], error: null }
 
-    // не даём дубль/встречную принять на клиенте — просто пробуем вставить
+    // ищем по username и по ФИО
+    const pattern = `%${q}%`
     const { data, error } = await supabase
-      .from('friendships')
-      .insert([{ requester_id: user.id, addressee_id: toUserId, status: 'pending' }])
-      .select('*')
-      .maybeSingle()
+      .from('users')
+      .select('id,first_name,last_name,email,username,image_path,It_business')
+      .or(`username.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`)
+      .limit(limit)
 
-    return { data: data ?? null, error }
+    return { data: data ?? [], error }
   }
 
-  const acceptFriendRequest = async (fromUserId) => {
-    const { user } = await getUser()
-    if (!user?.id) return { data: null, error: new Error('Not authorized') }
-    if (!fromUserId) return { data: null, error: new Error('No user') }
-
-    const { data, error } = await supabase
-      .from('friendships')
-      .update({ status: 'accepted' })
-      .eq('requester_id', fromUserId)
-      .eq('addressee_id', user.id)
-      .select('*')
-      .maybeSingle()
-
-    return { data: data ?? null, error }
-  }
-
-  const removeFriendOrRequest = async (otherUserId) => {
-    const { user } = await getUser()
-    if (!user?.id) return { data: null, error: new Error('Not authorized') }
-    if (!otherUserId) return { data: null, error: new Error('No user') }
-
-    // удаляем оба направления (если вдруг было создано по-разному)
-    const { error } = await supabase
-      .from('friendships')
-      .delete()
-      .or(
-        `and(requester_id.eq.${user.id},addressee_id.eq.${otherUserId}),and(requester_id.eq.${otherUserId},addressee_id.eq.${user.id})`
-      )
-
-    return { data: true, error }
-  }
-
+  // =======================
+  // Social: Friendships
+  // ОЖИДАЕМАЯ ТАБЛИЦА: friendships
+  // columns: requester_id uuid, addressee_id uuid, status text ('pending'|'accepted'), created_at timestamptz
+  // =======================
   const getFriendships = async () => {
     const { user } = await getUser()
     if (!user?.id) return { data: [], error: new Error('Not authorized') }
@@ -383,40 +311,79 @@ export const useSupabase = () => {
       .from('friendships')
       .select('*')
       .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`)
-      .order('updated_at', { ascending: false })
+      .order('created_at', { ascending: false })
 
     return { data: data ?? [], error }
   }
 
-  // =======================
-  // Messages
-  // =======================
-  const sendMessage = async (toUserId, body) => {
+  const sendFriendRequest = async (otherId) => {
     const { user } = await getUser()
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
-    const text = String(body || '').trim()
-    if (!toUserId) return { data: null, error: new Error('No receiver') }
-    if (!text) return { data: null, error: new Error('Empty message') }
+    if (!otherId) return { data: null, error: new Error('No otherId') }
+    if (otherId === user.id) return { data: null, error: new Error('Cannot add self') }
 
+    // вставляем pending (если уже есть — можно получить конфликт, зависит от constraints; если есть unique — лучше upsert)
     const { data, error } = await supabase
-      .from('messages')
-      .insert([{ sender_id: user.id, receiver_id: toUserId, body: text }])
+      .from('friendships')
+      .upsert(
+        [{ requester_id: user.id, addressee_id: otherId, status: 'pending' }],
+        { onConflict: 'requester_id,addressee_id' }
+      )
       .select('*')
       .maybeSingle()
 
     return { data: data ?? null, error }
   }
 
-  const getConversation = async (otherUserId, limit = 100) => {
+  const acceptFriendRequest = async (otherId) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+    if (!otherId) return { data: null, error: new Error('No otherId') }
+
+    const { data, error } = await supabase
+      .from('friendships')
+      .update({ status: 'accepted' })
+      .eq('requester_id', otherId)
+      .eq('addressee_id', user.id)
+      .eq('status', 'pending')
+      .select('*')
+      .maybeSingle()
+
+    return { data: data ?? null, error }
+  }
+
+  const removeFriendOrRequest = async (otherId) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+    if (!otherId) return { data: null, error: new Error('No otherId') }
+
+    // удаляем в обе стороны
+    const q = supabase
+      .from('friendships')
+      .delete()
+      .or(
+        `and(requester_id.eq.${user.id},addressee_id.eq.${otherId}),and(requester_id.eq.${otherId},addressee_id.eq.${user.id})`
+      )
+
+    const { data, error } = await q.select('*')
+    return { data: data ?? null, error }
+  }
+
+  // =======================
+  // Social: Messages
+  // ОЖИДАЕМАЯ ТАБЛИЦА: messages
+  // columns: id bigserial/uuid, sender_id uuid, receiver_id uuid, body text, created_at timestamptz, read_at timestamptz null
+  // =======================
+  const getConversation = async (otherId, limit = 200) => {
     const { user } = await getUser()
     if (!user?.id) return { data: [], error: new Error('Not authorized') }
-    if (!otherUserId) return { data: [], error: new Error('No user') }
+    if (!otherId) return { data: [], error: new Error('No otherId') }
 
     const { data, error } = await supabase
       .from('messages')
       .select('*')
       .or(
-        `and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`
+        `and(sender_id.eq.${user.id},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${user.id})`
       )
       .order('created_at', { ascending: true })
       .limit(limit)
@@ -424,44 +391,140 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
-  const markConversationRead = async (otherUserId) => {
+  const sendMessage = async (otherId, body) => {
     const { user } = await getUser()
-    if (!user?.id) return { ok: false, error: new Error('Not authorized') }
-    if (!otherUserId) return { ok: false, error: new Error('No user') }
-
-    // помечаем прочитанными все входящие от otherUserId
-    const { error } = await supabase
-      .from('messages')
-      .update({ read_at: new Date().toISOString() })
-      .eq('receiver_id', user.id)
-      .eq('sender_id', otherUserId)
-      .is('read_at', null)
-
-    return { ok: !error, error }
-  }
-
-  // список “тредов”: последние сообщения, сгруппированные по собеседнику (делаем на клиенте)
-  const getInboxThreads = async (limit = 200) => {
-    const { user } = await getUser()
-    if (!user?.id) return { data: [], error: new Error('Not authorized') }
+    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+    const text = String(body || '').trim()
+    if (!text) return { data: null, error: new Error('Empty message') }
 
     const { data, error } = await supabase
       .from('messages')
+      .insert([{ sender_id: user.id, receiver_id: otherId, body: text }])
       .select('*')
+      .maybeSingle()
+
+    return { data: data ?? null, error }
+  }
+
+  const markConversationRead = async (otherId) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+
+    const { data, error } = await supabase
+      .from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('sender_id', otherId)
+      .eq('receiver_id', user.id)
+      .is('read_at', null)
+      .select('*')
+
+    return { data: data ?? [], error }
+  }
+
+  // Threads: быстро и без RPC — вытаскиваем последние сообщения и собираем по собеседнику.
+  const getInboxThreads = async (limit = 250) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: [], error: new Error('Not authorized') }
+
+    // берём больше, чтобы точно хватило на threads
+    const take = Math.max(300, limit * 3)
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id,sender_id,receiver_id,body,created_at,read_at')
       .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
       .order('created_at', { ascending: false })
-      .limit(limit)
+      .limit(take)
 
     if (error) return { data: [], error }
 
     const rows = data ?? []
-    const map = new Map() // otherId -> lastMessage
+    const seen = new Set()
+    const out = []
+
     for (const m of rows) {
-      const otherId = m.sender_id === user.id ? m.receiver_id : m.sender_id
-      if (!map.has(otherId)) map.set(otherId, m)
+      const otherUserId = m.sender_id === user.id ? m.receiver_id : m.sender_id
+      if (!otherUserId) continue
+      if (seen.has(otherUserId)) continue
+      seen.add(otherUserId)
+      out.push({ otherUserId, lastMessage: m })
+      if (out.length >= limit) break
     }
 
-    return { data: Array.from(map.entries()).map(([otherUserId, lastMessage]) => ({ otherUserId, lastMessage })), error: null }
+    return { data: out, error: null }
+  }
+
+  // =======================
+  // Realtime: new messages
+  // =======================
+  const subscribeToMyMessages = async ({ onInsert, onUpdate } = {}) => {
+    const { user } = await getUser()
+    if (!user?.id) return { channel: null, error: new Error('Not authorized') }
+
+    const ch = supabase.channel(`rt:messages:${user.id}`)
+
+    // incoming
+    ch.on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
+      (payload) => onInsert?.(payload.new)
+    )
+
+    // outgoing (чтобы треды обновлялись мгновенно и у отправителя)
+    ch.on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
+      (payload) => onInsert?.(payload.new)
+    )
+
+    // read receipts (если используешь read_at)
+    ch.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
+      (payload) => onUpdate?.(payload.new)
+    )
+
+    const { error } = await ch.subscribe()
+    return { channel: ch, error }
+  }
+
+  // =======================
+  // Realtime: typing indicator (broadcast)
+  // =======================
+  const joinTypingChannel = async ({ otherId, onTyping } = {}) => {
+    const { user } = await getUser()
+    if (!user?.id) return { channel: null, error: new Error('Not authorized') }
+    if (!otherId) return { channel: null, error: new Error('No otherId') }
+
+    const key = convoKey(user.id, otherId)
+    const ch = supabase.channel(`rt:typing:${key}`)
+
+    ch.on('broadcast', { event: 'typing' }, (payload) => {
+      const p = payload?.payload || {}
+      // принимаем только от другого (чтобы не реагировать на свои же)
+      if (p.from === otherId && p.to === user.id) onTyping?.(!!p.typing)
+    })
+
+    const { error } = await ch.subscribe()
+    return { channel: ch, error }
+  }
+
+  const sendTyping = async ({ otherId, typing }) => {
+    const { user } = await getUser()
+    if (!user?.id) return { error: new Error('Not authorized') }
+    if (!otherId) return { error: new Error('No otherId') }
+
+    const key = convoKey(user.id, otherId)
+    const ch = supabase.channel(`rt:typing:${key}`)
+
+    // важно: канал должен быть подписан где-то в UI (MessagesView). Тут просто отправляем.
+    const res = await ch.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { from: user.id, to: otherId, typing: !!typing, ts: Date.now() }
+    })
+    // res = 'ok' | 'timed out' etc. Ошибку не кидаем.
+    return { error: null, result: res }
   }
 
   return {
@@ -487,22 +550,27 @@ export const useSupabase = () => {
     getPublicUserById,
     updateMyPublicUser,
     uploadAvatar,
-    searchUsers,
 
     // telegram
     linkTelegramViaEdgeFunction,
     getMyTelegramLink,
 
-    // friends
+    // social
+    searchUsers,
+
+    getFriendships,
     sendFriendRequest,
     acceptFriendRequest,
     removeFriendOrRequest,
-    getFriendships,
 
-    // messages
-    sendMessage,
+    getInboxThreads,
     getConversation,
+    sendMessage,
     markConversationRead,
-    getInboxThreads
+
+    // realtime
+    subscribeToMyMessages,
+    joinTypingChannel,
+    sendTyping
   }
 }

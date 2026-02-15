@@ -15,48 +15,69 @@
         <div class="error-sub">{{ error }}</div>
       </div>
 
-      <div v-else-if="events.length === 0" class="state">
-        У вас пока нет мероприятий
-      </div>
+      <template v-else>
+        <!-- ✅ вкладки только для Business -->
+        <div v-if="isBusiness" class="tabs">
+          <button class="tab" :class="{ active: activeTab === 'published' }" type="button" @click="activeTab = 'published'">
+            Опубликованные
+            <span class="count">{{ publishedEvents.length }}</span>
+          </button>
 
-      <div v-else class="events">
-        <div
-          v-for="e in events"
-          :key="e.id"
-          class="event-row"
-          @click="$router.push({ name: 'event', params: { id: String(e.id) } })"
-        >
-          <div class="row-left">
-            <div class="row-title">{{ e.title }}</div>
-            <div class="row-sub">
-              <span v-if="e.is_published" class="pill ok">Опубликовано</span>
-              <span v-else class="pill warn">В обработке</span>
-              <span v-if="e.is_online" class="pill">Онлайн</span>
-              <span v-if="e.is_free" class="pill">Бесплатно</span>
+          <button class="tab" :class="{ active: activeTab === 'pending' }" type="button" @click="activeTab = 'pending'">
+            На проверке
+            <span class="count warn">{{ pendingEvents.length }}</span>
+          </button>
+        </div>
+
+        <div v-if="visibleEvents.length === 0" class="state">
+          <span v-if="isBusiness && activeTab === 'published'">У вас пока нет опубликованных мероприятий</span>
+          <span v-else-if="isBusiness && activeTab === 'pending'">Нет мероприятий на проверке</span>
+          <span v-else>У вас пока нет мероприятий</span>
+        </div>
+
+        <div v-else class="events">
+          <div
+            v-for="e in visibleEvents"
+            :key="e.id"
+            class="event-row"
+            @click="$router.push({ name: 'event', params: { id: String(e.id) } })"
+          >
+            <div class="row-left">
+              <div class="row-title">{{ e.title }}</div>
+              <div class="row-sub">
+                <span v-if="e.is_published" class="pill ok">Опубликовано</span>
+                <span v-else class="pill warn">В обработке</span>
+                <span v-if="e.is_online" class="pill">Онлайн</span>
+                <span v-if="e.is_free" class="pill">Бесплатно</span>
+              </div>
+            </div>
+
+            <div class="row-right">
+              <div class="date">{{ formatDate(e.date_time_event) }}</div>
+              <div class="go">→</div>
             </div>
           </div>
-
-          <div class="row-right">
-            <div class="date">{{ formatDate(e.date_time_event) }}</div>
-            <div class="go">→</div>
-          </div>
         </div>
-      </div>
+      </template>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useSupabase } from '@/composables/useSupabase'
 
 export default {
   name: 'MyEventsView',
   setup() {
-    const { getMyEvents } = useSupabase()
+    const { getMyEvents, getMyPublicUser } = useSupabase()
+
     const loading = ref(true)
     const error = ref('')
     const events = ref([])
+
+    const isBusiness = ref(false)
+    const activeTab = ref('published') // published | pending
 
     const formatDate = (v) => {
       if (!v) return '—'
@@ -65,13 +86,32 @@ export default {
       return d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
     }
 
+    const publishedEvents = computed(() => (events.value || []).filter((e) => e?.is_published !== false))
+    const pendingEvents = computed(() => (events.value || []).filter((e) => e?.is_published === false))
+
+    const visibleEvents = computed(() => {
+      if (!isBusiness.value) return events.value || []
+      return activeTab.value === 'pending' ? pendingEvents.value : publishedEvents.value
+    })
+
     const load = async () => {
       loading.value = true
       error.value = ''
       try {
+        // 1) понять, бизнес ли аккаунт
+        const { data: profile, error: pErr } = await getMyPublicUser()
+        if (pErr) throw pErr
+        isBusiness.value = !!profile?.It_business
+
+        // 2) мои мероприятия (для бизнес — включая непубликованные)
         const { data, error: e } = await getMyEvents(true)
         if (e) throw e
         events.value = data || []
+
+        // если бизнес и нет опубликованных, но есть pending — перекинем на pending
+        if (isBusiness.value && publishedEvents.value.length === 0 && pendingEvents.value.length > 0) {
+          activeTab.value = 'pending'
+        }
       } catch (e) {
         error.value = String(e?.message || e)
       } finally {
@@ -80,7 +120,18 @@ export default {
     }
 
     onMounted(load)
-    return { loading, error, events, formatDate }
+
+    return {
+      loading,
+      error,
+      events,
+      isBusiness,
+      activeTab,
+      publishedEvents,
+      pendingEvents,
+      visibleEvents,
+      formatDate
+    }
   }
 }
 </script>
@@ -95,6 +146,41 @@ export default {
   margin-bottom: 10px;
 }
 .title{ font-weight: 900; font-size: 18px; margin: 8px 0 12px; }
+
+.tabs{
+  display:flex;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.tab{
+  display:inline-flex;
+  align-items:center;
+  gap: 10px;
+  border: 1px solid #efefef;
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 900;
+}
+.tab.active{
+  background: rgba(138,117,227,.10);
+  border-color: rgba(138,117,227,.22);
+}
+.count{
+  font-size: 12px;
+  font-weight: 900;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.06);
+  border: 1px solid rgba(0,0,0,.06);
+}
+.count.warn{
+  background: rgba(217,83,79,.10);
+  border-color: rgba(217,83,79,.22);
+  color:#d9534f;
+}
 
 .state{
   padding: 18px; border: 1px solid #efefef; border-radius: 18px; background:#fff;
