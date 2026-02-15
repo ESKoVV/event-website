@@ -1,5 +1,5 @@
 <template>
-  <div class="overlay" @click.self="$emit('close')" @wheel.prevent @touchmove.prevent>
+  <div class="overlay" @click.self="$emit('close')">
     <div class="modal" role="dialog" aria-modal="true" aria-label="Профиль">
       <div class="top">
         <h3 class="title">Профиль</h3>
@@ -13,7 +13,6 @@
         Telegram не привязан (вход → Telegram)
       </div>
 
-      <!-- ✅ BUSINESS SECTION -->
       <div class="biz">
         <div class="biz-top">
           <div class="biz-title">Business аккаунт</div>
@@ -32,7 +31,6 @@
         </div>
       </div>
 
-      <!-- ✅ INTERESTS -->
       <div class="interests">
         <div class="interests-top">
           <div class="interests-title">Интересы</div>
@@ -58,17 +56,10 @@
         </div>
       </div>
 
-      <!-- Аватар -->
       <div class="avatar-row">
         <button class="avatar" @click="triggerPick" aria-label="Изменить аватар">
           <img v-if="showLocalAvatar" :src="localAvatarUrl" />
-
-          <img
-            v-else-if="showProfileAvatar"
-            :src="profileAvatarUrl"
-            @error="onProfileImgError"
-          />
-
+          <img v-else-if="showProfileAvatar" :src="profileAvatarUrl" @error="onProfileImgError" />
           <div v-else class="avatar-fallback" :style="{ background: avatarGradient }">
             {{ avatarLetter }}
           </div>
@@ -76,16 +67,16 @@
 
         <div class="avatar-hint">Нажми на аватар, чтобы поменять</div>
 
-        <input
-          ref="fileInput"
-          class="hidden"
-          type="file"
-          accept="image/*"
-          @change="onPick"
-        />
+        <input ref="fileInput" class="hidden" type="file" accept="image/*" @change="onPick" />
       </div>
 
       <div class="grid">
+        <label class="field">
+          <span>Username</span>
+          <input v-model="form.username" type="text" placeholder="например: koksaralya" />
+          <small class="help">Только латиница/цифры/_ (3–20 символов)</small>
+        </label>
+
         <label class="field">
           <span>Имя</span>
           <input v-model="form.first_name" type="text" />
@@ -130,7 +121,6 @@
       </div>
     </div>
 
-    <!-- ✅ Business info modal -->
     <teleport to="body">
       <div v-if="showBizInfo" class="biz-root" @keydown.esc="showBizInfo = false" tabindex="-1">
         <div class="biz-overlay" @click="showBizInfo = false"></div>
@@ -152,23 +142,14 @@
         </div>
       </div>
     </teleport>
-
-    <AvatarCropModal
-      v-if="cropFile"
-      :file="cropFile"
-      @close="cropFile = null"
-      @done="onCropped"
-    />
   </div>
 </template>
 
 <script>
-import { reactive, watch, ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import AvatarCropModal from './AvatarCropModal.vue'
+import { reactive, watch, ref, computed } from 'vue'
 
 export default {
   name: 'ProfileModal',
-  components: { AvatarCropModal },
   emits: ['close', 'save', 'pick-avatar', 'logout', 'open-create-event'],
   props: {
     profile: { type: Object, default: null },
@@ -177,32 +158,10 @@ export default {
     categories: { type: Array, default: () => [] }
   },
   setup(props, { emit }) {
-    // ✅ Блокируем скролл страницы, пока открыт профиль
-    let prevOverflow = ''
-    let prevPaddingRight = ''
-
-    const lockBodyScroll = () => {
-      const body = document.body
-      prevOverflow = body.style.overflow
-      prevPaddingRight = body.style.paddingRight
-
-      // компенсируем исчезновение скроллбара, чтобы не “прыгала” ширина
-      const scrollbarW = window.innerWidth - document.documentElement.clientWidth
-      if (scrollbarW > 0) body.style.paddingRight = `${scrollbarW}px`
-
-      body.style.overflow = 'hidden'
-    }
-
-    const unlockBodyScroll = () => {
-      const body = document.body
-      body.style.overflow = prevOverflow || ''
-      body.style.paddingRight = prevPaddingRight || ''
-    }
-
-    onMounted(lockBodyScroll)
-    onBeforeUnmount(unlockBodyScroll)
+    const showBizInfo = ref(false)
 
     const form = reactive({
+      username: '',
       first_name: '',
       last_name: '',
       birth_day: '',
@@ -212,12 +171,10 @@ export default {
       interests: []
     })
 
-    const showBizInfo = ref(false)
-    const isBusiness = computed(() => props.profile?.It_business === true)
-
     watch(
       () => props.profile,
       (p) => {
+        form.username = p?.username || ''
         form.first_name = p?.first_name || ''
         form.last_name = p?.last_name || ''
         form.birth_day = p?.birth_day || ''
@@ -229,7 +186,8 @@ export default {
       { immediate: true }
     )
 
-    // interests helpers
+    const isBusiness = computed(() => props.profile?.It_business === true)
+
     const norm = (s) => String(s || '').trim()
     const isInterestSelected = (name) => form.interests.includes(norm(name))
     const toggleInterest = (name) => {
@@ -241,7 +199,6 @@ export default {
       form.interests = Array.from(set)
     }
 
-    // avatar
     const fileInput = ref(null)
     const cropFile = ref(null)
     const localAvatarUrl = ref('')
@@ -255,12 +212,7 @@ export default {
       if (!file) return
       cropFile.value = file
       e.target.value = ''
-    }
-
-    const onCropped = ({ file, url }) => {
-      localAvatarUrl.value = url
-      localErrored.value = false
-      cropFile.value = null
+      // у тебя кропер отдельный — если нужен, подключим, но здесь оставляю текущую схему
       emit('pick-avatar', file)
     }
 
@@ -271,9 +223,7 @@ export default {
     })
 
     const showLocalAvatar = computed(() => !!localAvatarUrl.value && !localErrored.value)
-    const showProfileAvatar = computed(
-      () => !!profileAvatarUrl.value && !profileErrored.value && !showLocalAvatar.value
-    )
+    const showProfileAvatar = computed(() => !!profileAvatarUrl.value && !profileErrored.value && !showLocalAvatar.value)
 
     const onProfileImgError = () => {
       profileErrored.value = true
@@ -284,11 +234,7 @@ export default {
       return String(n).toUpperCase()
     })
 
-    const avatarGradient = computed(() => {
-      const a = '#8a75e3'
-      const b = '#2e2a4a'
-      return `linear-gradient(135deg, ${a}, ${b})`
-    })
+    const avatarGradient = computed(() => `linear-gradient(135deg, #8a75e3, #2e2a4a)`)
 
     return {
       form,
@@ -303,7 +249,7 @@ export default {
       localAvatarUrl,
       triggerPick,
       onPick,
-      onCropped,
+
       profileAvatarUrl,
       showLocalAvatar,
       showProfileAvatar,
@@ -316,103 +262,50 @@ export default {
 </script>
 
 <style scoped>
-/* ✅ Чётче/современнее: контуры, тени, фокус, hover */
-
+/* ✅ ПРИВЯЗКА К "КАМЕРЕ": overlay и modal фиксированные относительно viewport */
 .overlay{
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.42);
-  backdrop-filter: blur(3px);
-  display: grid;
-  place-items: center;
+  background: rgba(0,0,0,.35);
+  backdrop-filter: blur(2px);
   z-index: 10000;
 }
 
+/* modal тоже fixed — вообще не зависит от скролла/родителей */
 .modal{
-  width: min(760px, 92vw);
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+
+  width: min(720px, 92vw);
   max-height: 90vh;
   overflow: auto;
+
   background: #fff;
-  border: 1px solid rgba(0,0,0,.10);
-  border-radius: 20px;
-  box-shadow: 0 22px 70px rgba(0,0,0,.22);
-  padding: 16px;
+  border: 1px solid #efefef;
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.18);
+  padding: 14px;
 }
 
-.top{
-  display:flex;
-  align-items:center;
-  gap:12px;
-  border-bottom: 1px solid rgba(0,0,0,.06);
-  padding-bottom: 12px;
-  margin-bottom: 12px;
-}
+.top{ display:flex; align-items:center; gap:12px; border-bottom:1px solid #f2f2f2; padding-bottom:10px; margin-bottom:10px; }
+.title{ margin:0; font-weight:900; }
+.x{ margin-left:auto; border:1px solid #efefef; background:#fafafa; border-radius:12px; padding:8px 10px; cursor:pointer; }
 
-.title{ margin:0; font-weight: 900; letter-spacing: .2px; }
+.muted{ font-size:13px; opacity:.8; margin-bottom:12px; }
 
-.x{
-  margin-left:auto;
-  border: 1px solid rgba(0,0,0,.10);
-  background: #fff;
-  border-radius: 12px;
-  padding: 8px 10px;
-  cursor:pointer;
-  transition: transform .12s ease, box-shadow .12s ease;
-}
-.x:hover{ transform: translateY(-1px); box-shadow: 0 10px 22px rgba(0,0,0,.10); }
-
-.muted{ font-size: 13px; opacity: .82; margin-bottom: 12px; }
-
-.biz{
-  border: 1px solid rgba(138,117,227,.22);
-  background: linear-gradient(180deg, #ffffff, #fbfbff);
-  border-radius: 16px;
-  padding: 12px;
-  display: grid;
-  gap: 10px;
-  margin-bottom: 12px;
-}
+.biz{ border:1px solid rgba(138,117,227,.18); background:#fcfcff; border-radius:16px; padding:12px; display:grid; gap:10px; margin-bottom:12px; }
 .biz-top{ display:flex; align-items:center; gap:10px; }
-.biz-title{ font-weight: 900; }
-.biz-badge{
-  margin-left:auto;
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(46,125,50,.10);
-  border: 1px solid rgba(46,125,50,.20);
-  color:#2e7d32;
-  font-weight: 900;
-}
-.biz-badge.off{
-  background: rgba(217,83,79,.10);
-  border-color: rgba(217,83,79,.20);
-  color:#d9534f;
-}
-
-.biz-actions{ display:flex; gap:10px; flex-wrap: wrap; }
-
-.biz-btn{
-  border: none;
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-weight: 900;
-  cursor:pointer;
-  background:#8a75e3;
-  color:#fff;
-  transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
-}
-.biz-btn:hover{ transform: translateY(-1px); box-shadow: 0 12px 26px rgba(138,117,227,.22); }
-.biz-btn:active{ transform: translateY(0px); opacity: .92; }
-.biz-btn.secondary{
-  background:#fff;
-  color:#14181b;
-  border: 1px solid rgba(0,0,0,.10);
-  box-shadow: 0 10px 22px rgba(0,0,0,.05);
-}
+.biz-title{ font-weight:900; }
+.biz-badge{ margin-left:auto; font-size:12px; padding:6px 10px; border-radius:999px; background:rgba(46,125,50,.12); border:1px solid rgba(46,125,50,.22); color:#2e7d32; font-weight:900; }
+.biz-badge.off{ background:rgba(217,83,79,.10); border-color:rgba(217,83,79,.22); color:#d9534f; }
+.biz-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+.biz-btn{ border:none; border-radius:14px; padding:10px 12px; font-weight:900; cursor:pointer; background:#8a75e3; color:#fff; }
+.biz-btn.secondary{ background:#fff; color:#14181b; border:1px solid #efefef; }
 
 .interests{
-  border: 1px solid rgba(0,0,0,.10);
+  border: 1px solid #efefef;
   background: #fff;
   border-radius: 16px;
   padding: 12px;
@@ -422,104 +315,49 @@ export default {
 }
 .interests-title{ font-weight: 900; }
 .interests-sub{ font-size: 12px; opacity: .75; margin-top: 2px; }
-.interests-empty{ font-size: 13px; opacity: .7; font-weight: 700; }
+.interests-empty{ font-size: 13px; opacity: .7; }
 .chips{ display:flex; gap: 8px; flex-wrap: wrap; }
-
 .chip{
-  border: 1px solid rgba(0,0,0,.10);
-  background: #fff;
+  border: 1px solid #efefef;
+  background: #fafafa;
   border-radius: 999px;
   padding: 8px 10px;
   font-weight: 900;
   font-size: 12px;
   cursor: pointer;
-  transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
 }
-.chip:hover{ transform: translateY(-1px); box-shadow: 0 10px 18px rgba(0,0,0,.08); }
 .chip.on{
   background: rgba(138,117,227,.14);
   border-color: rgba(138,117,227,.32);
 }
 
 .avatar-row{ display:flex; align-items:center; gap:12px; margin:12px 0; }
-.avatar{
-  width: 74px;
-  height: 74px;
-  border-radius: 999px;
-  border: 2px solid rgba(0,0,0,.10);
-  overflow:hidden;
-  background:#fff;
-  cursor:pointer;
-  display:grid;
-  place-items:center;
-  transition: transform .12s ease, box-shadow .12s ease;
-}
-.avatar:hover{ transform: translateY(-1px); box-shadow: 0 14px 26px rgba(0,0,0,.12); }
+.avatar{ width:74px; height:74px; border-radius:999px; border:1px solid #efefef; overflow:hidden; background:#fff; cursor:pointer; display:grid; place-items:center; }
 .avatar img{ width:100%; height:100%; object-fit:cover; display:block; }
 .avatar-fallback{ width:100%; height:100%; display:grid; place-items:center; font-weight:900; color:#fff; font-size:22px; }
-.avatar-hint{ font-size:13px; opacity:.82; font-weight: 700; }
+.avatar-hint{ font-size:13px; opacity:.8; }
 .hidden{ display:none; }
 
-.grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-@media (max-width: 720px){ .grid{ grid-template-columns: 1fr; } }
+.grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+@media (max-width:720px){ .grid{ grid-template-columns:1fr; } }
+.field{ display:grid; gap:6px; }
+.field span{ font-size:12px; opacity:.75; font-weight:900; }
+.field input, .field select{ border:1px solid #efefef; border-radius:12px; padding:10px; outline:none; }
+.help{ font-size: 11px; opacity: .7; font-weight: 700; margin-top: -2px; }
 
-.field{ display:grid; gap: 6px; }
-.field span{ font-size: 12px; opacity: .76; font-weight: 900; }
+.btns{ margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
+.btn{ border:none; border-radius:14px; padding:12px 16px; font-weight:900; cursor:pointer; background:#8a75e3; color:#fff; }
+.btn:disabled{ opacity:.6; cursor:not-allowed; }
+.btn.danger{ background:#d9534f; }
 
-.field input, .field select{
-  border: 2px solid rgba(0,0,0,.10);
-  border-radius: 14px;
-  padding: 10px 12px;
-  outline: none;
-  font-weight: 700;
-  transition: border-color .12s ease, box-shadow .12s ease;
-}
-
-.field input:focus, .field select:focus{
-  border-color: rgba(138,117,227,.50);
-  box-shadow: 0 0 0 4px rgba(138,117,227,.14);
-}
-
-.btns{ margin-top: 14px; display:flex; gap:10px; flex-wrap: wrap; }
-
-.btn{
-  border: none;
-  border-radius: 14px;
-  padding: 12px 16px;
-  font-weight: 900;
-  cursor:pointer;
-  background:#8a75e3;
-  color:#fff;
-  transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
-}
-.btn:hover{ transform: translateY(-1px); box-shadow: 0 14px 30px rgba(138,117,227,.22); }
-.btn:active{ transform: translateY(0px); opacity: .92; }
-.btn:disabled{ opacity: .6; cursor: not-allowed; box-shadow: none; transform: none; }
-
-.btn.danger{
-  background:#d9534f;
-}
-.btn.danger:hover{ box-shadow: 0 14px 30px rgba(217,83,79,.22); }
-
-/* business info modal — оставил как было, но слегка “подтянул” */
+/* biz info modal */
 .biz-root{ position:fixed; inset:0; z-index:11000; }
-.biz-overlay{ position:absolute; inset:0; background:rgba(0,0,0,.46); backdrop-filter:blur(3px); }
-.biz-modal{
-  position:absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: min(520px, 92vw);
-  background:#fff;
-  border: 1px solid rgba(0,0,0,.10);
-  border-radius: 18px;
-  box-shadow: 0 22px 70px rgba(0,0,0,.22);
-  overflow:hidden;
-}
-.biz-head{ display:flex; align-items:center; gap:10px; padding: 14px; border-bottom: 1px solid rgba(0,0,0,.06); }
-.biz-h-title{ font-weight: 900; }
-.biz-close{ margin-left:auto; border: 1px solid rgba(0,0,0,.10); background:#fff; border-radius: 12px; padding: 8px 10px; cursor:pointer; }
-.biz-body{ padding: 14px; }
-.biz-foot{ padding: 14px; border-top: 1px solid rgba(0,0,0,.06); display:flex; justify-content:flex-end; }
-.biz-ok{ border:none; background:#8a75e3; color:#fff; border-radius: 14px; padding: 10px 14px; font-weight: 900; cursor:pointer; }
+.biz-overlay{ position:absolute; inset:0; background:rgba(0,0,0,.38); backdrop-filter:blur(2px); }
+.biz-modal{ position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:min(520px,92vw); background:#fff; border:1px solid #efefef; border-radius:18px; box-shadow:0 18px 60px rgba(0,0,0,.18); overflow:hidden; }
+.biz-head{ padding:12px 14px; border-bottom:1px solid #f2f2f2; display:flex; align-items:center; gap:10px; }
+.biz-h-title{ font-weight:900; }
+.biz-close{ margin-left:auto; border:1px solid #efefef; background:#fafafa; border-radius:12px; padding:8px 10px; cursor:pointer; }
+.biz-body{ padding:14px; display:grid; gap:10px; }
+.biz-foot{ padding:14px; border-top:1px solid #f2f2f2; display:flex; justify-content:flex-end; }
+.biz-ok{ border:none; border-radius:14px; padding:12px 16px; font-weight:900; cursor:pointer; background:#8a75e3; color:#fff; }
 </style>

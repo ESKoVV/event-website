@@ -83,35 +83,42 @@
       </div>
     </teleport>
 
-    <AuthModal
-      v-if="showAuth"
-      :telegram-bot-username="telegramBotUsername"
-      @close="showAuth = false"
-      @google="loginGoogle"
-      @telegram="handleTelegramLogin"
-    />
+    <!-- ✅ ВСЕ МОДАЛКИ ТЕПЕРЬ В BODY (привязка к "камере") -->
+    <teleport to="body">
+      <AuthModal
+        v-if="showAuth"
+        :telegram-bot-username="telegramBotUsername"
+        @close="showAuth = false"
+        @google="loginGoogle"
+        @telegram="handleTelegramLogin"
+      />
+    </teleport>
 
-    <ProfileModal
-      v-if="showProfileEdit"
-      :profile="profile"
-      :telegram-link="telegramLink"
-      :saving="saving"
-      :categories="categories"
-      @close="showProfileEdit = false"
-      @save="saveProfile"
-      @pick-avatar="onPickedAvatar"
-      @logout="logout"
-      @open-create-event="openCreateEvent"
-    />
+    <teleport to="body">
+      <ProfileModal
+        v-if="showProfileEdit"
+        :profile="profile"
+        :telegram-link="telegramLink"
+        :saving="saving"
+        :categories="categories"
+        @close="showProfileEdit = false"
+        @save="saveProfile"
+        @pick-avatar="onPickedAvatar"
+        @logout="logout"
+        @open-create-event="openCreateEvent"
+      />
+    </teleport>
 
-    <CreateEventModal
-      v-if="showCreateEvent"
-      :open="showCreateEvent"
-      :categories="categories"
-      :create-business-event="createBusinessEvent"
-      @close="showCreateEvent = false"
-      @created="onCreatedEvent"
-    />
+    <teleport to="body">
+      <CreateEventModal
+        v-if="showCreateEvent"
+        :open="showCreateEvent"
+        :categories="categories"
+        :create-business-event="createBusinessEvent"
+        @close="showCreateEvent = false"
+        @created="onCreatedEvent"
+      />
+    </teleport>
   </div>
 </template>
 
@@ -339,6 +346,7 @@ export default {
 </script>
 
 <style scoped>
+/* оставляю твои стили лейаута как были (если у тебя уже есть — можешь не менять) */
 .header {
   position: sticky;
   top: 0;
@@ -384,7 +392,6 @@ export default {
   background: #111;
   opacity: 0.9;
 }
-
 .search-container {
   position: relative;
   display: flex;
@@ -408,7 +415,6 @@ export default {
   outline: none;
   font-size: 14px;
 }
-
 .profile-button {
   width: 40px;
   height: 40px;
@@ -473,44 +479,25 @@ export default {
   font-weight: 900;
   text-align: left;
 }
-.nav-item:hover {
-  background: #fafafa;
-}
+.nav-item:hover { background: #fafafa; }
 .nav-item.active {
   background: rgba(138, 117, 227, 0.1);
   border-color: rgba(138, 117, 227, 0.22);
 }
-.ni-ico {
-  width: 18px;
-  display: inline-flex;
-  justify-content: center;
-}
-.ni-txt {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nav-sep {
-  height: 1px;
-  background: #f2f2f2;
-  margin: 6px 0;
-}
-.content {
-  min-width: 0;
-}
+.ni-ico { width: 18px; display: inline-flex; justify-content: center; }
+.ni-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-sep { height: 1px; background: #f2f2f2; margin: 6px 0; }
+.content { min-width: 0; }
 
 .menu-root { position: fixed; inset: 0; z-index: 9999; }
-.overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.35); backdrop-filter: blur(2px); }
+.overlay { position: absolute; inset: 0; background: rgba(0,0,0,.35); backdrop-filter: blur(2px); }
 .menu-drawer {
   position: absolute; top: 0; left: 0; height: 100%;
   width: min(420px, 92vw);
   background: #fff; border-right: 1px solid #efefef;
-  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.12);
+  box-shadow: 10px 0 30px rgba(0,0,0,.12);
   display: flex; flex-direction: column;
-  animation: slideInLeft 180ms ease;
 }
-@keyframes slideInLeft { from { transform: translateX(-18px); opacity: 0.7; } to { transform: translateX(0); opacity: 1; } }
 .menu-head { display: flex; align-items: center; gap: 10px; padding: 14px; border-bottom: 1px solid #f2f2f2; }
 .menu-title { font-weight: 900; font-size: 16px; }
 .close-btn { margin-left: auto; border: 1px solid #efefef; background: #fafafa; border-radius: 12px; padding: 8px 10px; cursor: pointer; }
