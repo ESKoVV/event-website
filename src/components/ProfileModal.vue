@@ -1,52 +1,47 @@
 <template>
-  <div class="overlay" @click.self="$emit('close')">
-    <div class="modal" role="dialog" aria-modal="true" aria-label="Профиль">
-      <div class="top">
-        <h3 class="title">Профиль</h3>
-        <button class="x" @click="$emit('close')" aria-label="Закрыть">✕</button>
+  <div class="pm-overlay" @click.self="$emit('close')">
+    <div class="pm-modal" role="dialog" aria-modal="true" aria-label="Профиль">
+      <div class="pm-top">
+        <div class="pm-title">Профиль</div>
+        <button class="pm-x" @click="$emit('close')" aria-label="Закрыть">✕</button>
       </div>
 
-      <div class="muted" v-if="telegramLink">
+      <div class="pm-sub" v-if="telegramLink">
         Telegram привязан: <b>@{{ telegramLink.username || 'без username' }}</b>
       </div>
-      <div class="muted" v-else>
+      <div class="pm-sub" v-else>
         Telegram не привязан (вход → Telegram)
       </div>
 
-      <div class="biz">
-        <div class="biz-top">
-          <div class="biz-title">Business аккаунт</div>
-          <span v-if="isBusiness" class="biz-badge">Активен</span>
-          <span v-else class="biz-badge off">Не активен</span>
+      <!-- Business -->
+      <div class="pm-biz">
+        <div class="pm-biz-row">
+          <div class="pm-biz-title">Business аккаунт</div>
+          <span v-if="isBusiness" class="pm-badge on">Активен</span>
+          <span v-else class="pm-badge off">Не активен</span>
         </div>
 
-        <div class="biz-actions">
-          <button class="biz-btn secondary" @click="showBizInfo = true">
-            Узнать о бизнес аккаунте
-          </button>
-
-          <button v-if="isBusiness" class="biz-btn" @click="$emit('open-create-event')">
-            ➕ Добавить мероприятие
-          </button>
+        <div class="pm-biz-actions">
+          <button class="pm-btn ghost" @click="showBizInfo = true">Узнать о бизнес аккаунте</button>
+          <button v-if="isBusiness" class="pm-btn" @click="$emit('open-create-event')">➕ Добавить мероприятие</button>
         </div>
       </div>
 
-      <div class="interests">
-        <div class="interests-top">
-          <div class="interests-title">Интересы</div>
-          <div class="interests-sub">Выбери категории — по ним настроится «Моя лента»</div>
+      <!-- Interests -->
+      <div class="pm-box">
+        <div class="pm-box-top">
+          <div class="pm-box-title">Интересы</div>
+          <div class="pm-box-sub">Выбери категории — по ним настроится «Моя лента»</div>
         </div>
 
-        <div v-if="!categories?.length" class="interests-empty">
-          Категории не загружены
-        </div>
+        <div v-if="!categories?.length" class="pm-muted">Категории не загружены</div>
 
-        <div v-else class="chips">
+        <div v-else class="pm-chips">
           <button
             v-for="c in categories"
             :key="c.id"
             type="button"
-            class="chip"
+            class="pm-chip"
             :class="{ on: isInterestSelected(c.name) }"
             @click="toggleInterest(c.name)"
             :aria-pressed="isInterestSelected(c.name)"
@@ -56,53 +51,53 @@
         </div>
       </div>
 
-      <div class="avatar-row">
-        <button class="avatar" @click="triggerPick" aria-label="Изменить аватар">
-          <img v-if="showLocalAvatar" :src="localAvatarUrl" />
-          <img v-else-if="showProfileAvatar" :src="profileAvatarUrl" @error="onProfileImgError" />
-          <div v-else class="avatar-fallback" :style="{ background: avatarGradient }">
-            {{ avatarLetter }}
-          </div>
+      <!-- Avatar -->
+      <div class="pm-ava-row">
+        <button class="pm-ava" @click="triggerPick" aria-label="Изменить аватар">
+          <img v-if="showLocalAvatar" :src="localAvatarUrl" alt="avatar" />
+          <img v-else-if="showProfileAvatar" :src="profileAvatarUrl" alt="avatar" @error="onProfileImgError" />
+          <div v-else class="pm-ava-fallback" :style="{ background: avatarGradient }">{{ avatarLetter }}</div>
         </button>
 
-        <div class="avatar-hint">Нажми на аватар, чтобы поменять</div>
+        <div class="pm-ava-hint">Нажми на аватар, чтобы поменять</div>
 
-        <input ref="fileInput" class="hidden" type="file" accept="image/*" @change="onPick" />
+        <input ref="fileInput" class="pm-hidden" type="file" accept="image/*" @change="onPick" />
       </div>
 
-      <div class="grid">
-        <label class="field">
+      <!-- Form -->
+      <div class="pm-grid">
+        <label class="pm-field">
           <span>Username</span>
           <input v-model="form.username" type="text" placeholder="например: koksaralya" />
-          <small class="help">Только латиница/цифры/_ (3–20 символов)</small>
+          <small class="pm-help">Только латиница/цифры/_ (3–20 символов)</small>
         </label>
 
-        <label class="field">
+        <label class="pm-field">
           <span>Имя</span>
           <input v-model="form.first_name" type="text" />
         </label>
 
-        <label class="field">
+        <label class="pm-field">
           <span>Фамилия</span>
           <input v-model="form.last_name" type="text" />
         </label>
 
-        <label class="field">
+        <label class="pm-field">
           <span>Дата рождения</span>
           <input v-model="form.birth_day" type="date" />
         </label>
 
-        <label class="field">
+        <label class="pm-field">
           <span>Телефон</span>
           <input v-model="form.phone" type="text" placeholder="+7..." />
         </label>
 
-        <label class="field">
+        <label class="pm-field">
           <span>Email</span>
           <input v-model="form.email" type="email" />
         </label>
 
-        <label class="field">
+        <label class="pm-field">
           <span>Пол</span>
           <select v-model="form.gender">
             <option value="">Не выбран</option>
@@ -113,31 +108,31 @@
         </label>
       </div>
 
-      <div class="btns">
-        <button class="btn" :disabled="saving" @click="$emit('save', form)">
+      <div class="pm-actions">
+        <button class="pm-btn" :disabled="saving" @click="$emit('save', form)">
           {{ saving ? 'Сохранение...' : 'Сохранить' }}
         </button>
-        <button class="btn danger" @click="$emit('logout')">Выйти из аккаунта</button>
+        <button class="pm-btn danger" @click="$emit('logout')">Выйти из аккаунта</button>
       </div>
     </div>
 
+    <!-- Biz info -->
     <teleport to="body">
-      <div v-if="showBizInfo" class="biz-root" @keydown.esc="showBizInfo = false" tabindex="-1">
-        <div class="biz-overlay" @click="showBizInfo = false"></div>
-        <div class="biz-modal" role="dialog" aria-modal="true" aria-label="О бизнес аккаунте">
-          <div class="biz-head">
-            <div class="biz-h-title">О Business аккаунте</div>
-            <button class="biz-close" @click="showBizInfo = false" aria-label="Закрыть">✕</button>
+      <div v-if="showBizInfo" class="pm-biz-root" @click.self="showBizInfo = false">
+        <div class="pm-biz-modal" role="dialog" aria-modal="true" aria-label="О бизнес аккаунте">
+          <div class="pm-top">
+            <div class="pm-title">О Business аккаунте</div>
+            <button class="pm-x" @click="showBizInfo = false" aria-label="Закрыть">✕</button>
           </div>
 
-          <div class="biz-body">
+          <div class="pm-biz-body">
             <p><b>Business аккаунт</b> позволяет публиковать мероприятия.</p>
             <p>Стоимость — <b>200 рублей в месяц</b>.</p>
             <p>Для приобретения — напиши администратору.</p>
           </div>
 
-          <div class="biz-foot">
-            <button class="biz-ok" @click="showBizInfo = false">Понятно</button>
+          <div class="pm-actions">
+            <button class="pm-btn" @click="showBizInfo = false">Понятно</button>
           </div>
         </div>
       </div>
@@ -199,8 +194,8 @@ export default {
       form.interests = Array.from(set)
     }
 
+    // Avatar pick
     const fileInput = ref(null)
-    const cropFile = ref(null)
     const localAvatarUrl = ref('')
     const localErrored = ref(false)
     const profileErrored = ref(false)
@@ -210,15 +205,13 @@ export default {
     const onPick = (e) => {
       const file = e?.target?.files?.[0]
       if (!file) return
-      cropFile.value = file
-      e.target.value = ''
-      // у тебя кропер отдельный — если нужен, подключим, но здесь оставляю текущую схему
       emit('pick-avatar', file)
+      e.target.value = ''
     }
 
     const profileAvatarUrl = computed(() => {
-      const a = (props.profile?.avatar_url || '').trim()
-      const b = (props.profile?.image_path || '').trim()
+      const a = String(props.profile?.avatar_url || '').trim()
+      const b = String(props.profile?.image_path || '').trim()
       return a || b
     })
 
@@ -234,7 +227,7 @@ export default {
       return String(n).toUpperCase()
     })
 
-    const avatarGradient = computed(() => `linear-gradient(135deg, #8a75e3, #2e2a4a)`)
+    const avatarGradient = computed(() => `linear-gradient(135deg,#8a75e3,#2e2a4a)`)
 
     return {
       form,
@@ -245,7 +238,6 @@ export default {
       toggleInterest,
 
       fileInput,
-      cropFile,
       localAvatarUrl,
       triggerPick,
       onPick,
@@ -262,102 +254,172 @@ export default {
 </script>
 
 <style scoped>
-/* ✅ ПРИВЯЗКА К "КАМЕРЕ": overlay и modal фиксированные относительно viewport */
-.overlay{
+/* ✅ overlay всегда в "камере" */
+.pm-overlay{
   position: fixed;
   inset: 0;
+  z-index: 10000;
   background: rgba(0,0,0,.35);
   backdrop-filter: blur(2px);
-  z-index: 10000;
+
+  /* ✅ ключ: даём отступы и держим модалку ВСЕГДА в пределах экрана */
+  padding: 14px;
+
+  display: flex;
+  align-items: flex-start;     /* НЕ центр по Y (чтобы верх не уезжал) */
+  justify-content: center;
+  overflow: hidden;
 }
 
-/* modal тоже fixed — вообще не зависит от скролла/родителей */
-.modal{
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-
-  width: min(720px, 92vw);
-  max-height: 90vh;
+/* ✅ модалка всегда в пределах viewport, внутри — свой скролл */
+.pm-modal{
+  width: min(760px, 100%);
+  max-height: calc(100vh - 28px);  /* учитываем padding overlay */
   overflow: auto;
 
   background: #fff;
-  border: 1px solid #efefef;
+  border: 1px solid rgba(0,0,0,.10);
   border-radius: 18px;
   box-shadow: 0 18px 60px rgba(0,0,0,.18);
   padding: 14px;
 }
 
-.top{ display:flex; align-items:center; gap:12px; border-bottom:1px solid #f2f2f2; padding-bottom:10px; margin-bottom:10px; }
-.title{ margin:0; font-weight:900; }
-.x{ margin-left:auto; border:1px solid #efefef; background:#fafafa; border-radius:12px; padding:8px 10px; cursor:pointer; }
+.pm-top{
+  display:flex; align-items:center; gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0,0,0,.06);
+  margin-bottom: 10px;
+}
+.pm-title{ font-weight: 900; }
+.pm-x{
+  margin-left:auto;
+  border: 1px solid rgba(0,0,0,.10);
+  background:#fff;
+  border-radius: 12px;
+  padding: 8px 10px;
+  cursor:pointer;
+}
 
-.muted{ font-size:13px; opacity:.8; margin-bottom:12px; }
+.pm-sub{ font-size: 13px; opacity: .8; margin-bottom: 12px; }
 
-.biz{ border:1px solid rgba(138,117,227,.18); background:#fcfcff; border-radius:16px; padding:12px; display:grid; gap:10px; margin-bottom:12px; }
-.biz-top{ display:flex; align-items:center; gap:10px; }
-.biz-title{ font-weight:900; }
-.biz-badge{ margin-left:auto; font-size:12px; padding:6px 10px; border-radius:999px; background:rgba(46,125,50,.12); border:1px solid rgba(46,125,50,.22); color:#2e7d32; font-weight:900; }
-.biz-badge.off{ background:rgba(217,83,79,.10); border-color:rgba(217,83,79,.22); color:#d9534f; }
-.biz-actions{ display:flex; gap:10px; flex-wrap:wrap; }
-.biz-btn{ border:none; border-radius:14px; padding:10px 12px; font-weight:900; cursor:pointer; background:#8a75e3; color:#fff; }
-.biz-btn.secondary{ background:#fff; color:#14181b; border:1px solid #efefef; }
-
-.interests{
-  border: 1px solid #efefef;
-  background: #fff;
+.pm-biz{
+  border: 1px solid rgba(138,117,227,.22);
   border-radius: 16px;
+  background: #fcfcff;
   padding: 12px;
-  display: grid;
+  display:grid;
   gap: 10px;
   margin-bottom: 12px;
 }
-.interests-title{ font-weight: 900; }
-.interests-sub{ font-size: 12px; opacity: .75; margin-top: 2px; }
-.interests-empty{ font-size: 13px; opacity: .7; }
-.chips{ display:flex; gap: 8px; flex-wrap: wrap; }
-.chip{
-  border: 1px solid #efefef;
-  background: #fafafa;
+.pm-biz-row{ display:flex; align-items:center; gap:10px; }
+.pm-biz-title{ font-weight: 900; }
+
+.pm-badge{
+  margin-left:auto;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 900;
+  border: 1px solid transparent;
+}
+.pm-badge.on{ background: rgba(46,125,50,.10); border-color: rgba(46,125,50,.20); color:#2e7d32; }
+.pm-badge.off{ background: rgba(217,83,79,.10); border-color: rgba(217,83,79,.20); color:#d9534f; }
+
+.pm-biz-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+
+.pm-box{
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 16px;
+  padding: 12px;
+  display:grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.pm-box-title{ font-weight: 900; }
+.pm-box-sub{ font-size: 12px; opacity: .75; }
+.pm-muted{ font-size: 13px; opacity: .7; font-weight: 700; }
+
+.pm-chips{ display:flex; flex-wrap:wrap; gap: 8px; }
+.pm-chip{
+  border: 1px solid rgba(0,0,0,.10);
+  background:#fff;
   border-radius: 999px;
   padding: 8px 10px;
   font-weight: 900;
   font-size: 12px;
   cursor: pointer;
 }
-.chip.on{
-  background: rgba(138,117,227,.14);
-  border-color: rgba(138,117,227,.32);
+.pm-chip.on{ background: rgba(138,117,227,.14); border-color: rgba(138,117,227,.32); }
+
+.pm-ava-row{ display:flex; align-items:center; gap: 12px; margin: 12px 0; }
+.pm-ava{
+  width: 74px; height: 74px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 2px solid rgba(0,0,0,.10);
+  background:#fff;
+  cursor:pointer;
+  display:grid; place-items:center;
 }
+.pm-ava img{ width:100%; height:100%; object-fit:cover; display:block; }
+.pm-ava-fallback{ width:100%; height:100%; display:grid; place-items:center; color:#fff; font-weight:900; font-size:22px; }
+.pm-ava-hint{ font-size: 13px; opacity: .8; font-weight: 700; }
+.pm-hidden{ display:none; }
 
-.avatar-row{ display:flex; align-items:center; gap:12px; margin:12px 0; }
-.avatar{ width:74px; height:74px; border-radius:999px; border:1px solid #efefef; overflow:hidden; background:#fff; cursor:pointer; display:grid; place-items:center; }
-.avatar img{ width:100%; height:100%; object-fit:cover; display:block; }
-.avatar-fallback{ width:100%; height:100%; display:grid; place-items:center; font-weight:900; color:#fff; font-size:22px; }
-.avatar-hint{ font-size:13px; opacity:.8; }
-.hidden{ display:none; }
+.pm-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 720px){ .pm-grid{ grid-template-columns: 1fr; } }
 
-.grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-@media (max-width:720px){ .grid{ grid-template-columns:1fr; } }
-.field{ display:grid; gap:6px; }
-.field span{ font-size:12px; opacity:.75; font-weight:900; }
-.field input, .field select{ border:1px solid #efefef; border-radius:12px; padding:10px; outline:none; }
-.help{ font-size: 11px; opacity: .7; font-weight: 700; margin-top: -2px; }
+.pm-field{ display:grid; gap: 6px; }
+.pm-field span{ font-size: 12px; opacity: .76; font-weight: 900; }
+.pm-field input, .pm-field select{
+  border: 2px solid rgba(0,0,0,.10);
+  border-radius: 14px;
+  padding: 10px 12px;
+  outline:none;
+  font-weight: 700;
+}
+.pm-help{ font-size: 11px; opacity: .7; font-weight: 700; margin-top: -2px; }
 
-.btns{ margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
-.btn{ border:none; border-radius:14px; padding:12px 16px; font-weight:900; cursor:pointer; background:#8a75e3; color:#fff; }
-.btn:disabled{ opacity:.6; cursor:not-allowed; }
-.btn.danger{ background:#d9534f; }
+.pm-actions{ margin-top: 14px; display:flex; gap: 10px; flex-wrap: wrap; }
 
-/* biz info modal */
-.biz-root{ position:fixed; inset:0; z-index:11000; }
-.biz-overlay{ position:absolute; inset:0; background:rgba(0,0,0,.38); backdrop-filter:blur(2px); }
-.biz-modal{ position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); width:min(520px,92vw); background:#fff; border:1px solid #efefef; border-radius:18px; box-shadow:0 18px 60px rgba(0,0,0,.18); overflow:hidden; }
-.biz-head{ padding:12px 14px; border-bottom:1px solid #f2f2f2; display:flex; align-items:center; gap:10px; }
-.biz-h-title{ font-weight:900; }
-.biz-close{ margin-left:auto; border:1px solid #efefef; background:#fafafa; border-radius:12px; padding:8px 10px; cursor:pointer; }
-.biz-body{ padding:14px; display:grid; gap:10px; }
-.biz-foot{ padding:14px; border-top:1px solid #f2f2f2; display:flex; justify-content:flex-end; }
-.biz-ok{ border:none; border-radius:14px; padding:12px 16px; font-weight:900; cursor:pointer; background:#8a75e3; color:#fff; }
+.pm-btn{
+  border:none;
+  background:#8a75e3;
+  color:#fff;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-weight: 900;
+  cursor:pointer;
+}
+.pm-btn:disabled{ opacity:.6; cursor:not-allowed; }
+.pm-btn.ghost{
+  background:#fff;
+  color:#14181b;
+  border: 1px solid rgba(0,0,0,.10);
+}
+.pm-btn.danger{ background:#d9534f; }
+
+/* Biz info */
+.pm-biz-root{
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(2px);
+  padding: 14px;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+}
+.pm-biz-modal{
+  width: min(520px, 100%);
+  max-height: calc(100vh - 28px);
+  overflow:auto;
+  background:#fff;
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,.18);
+  padding: 14px;
+}
+.pm-biz-body{ display:grid; gap: 10px; }
 </style>
