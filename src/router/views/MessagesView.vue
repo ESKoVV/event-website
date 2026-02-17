@@ -568,6 +568,9 @@ export default {
   display:grid;
   grid-template-columns: 360px 1fr;
   gap: 12px;
+
+  /* ✅ важно: чтобы правый блок мог "сжиматься" и отдавать скролл внутрь */
+  align-items: stretch;
 }
 @media (max-width: 900px){
   .grid{ grid-template-columns: 1fr; }
@@ -628,11 +631,22 @@ export default {
   border:1px solid #efefef;
   border-radius: 16px;
   overflow:hidden;
-  min-height: 520px;
+
+  /* ✅ фиксируем "окно" чата — высота не растёт от сообщений */
+  height: clamp(520px, calc(100vh - 200px), 760px);
+
+  /* ✅ критично для flex-детей со скроллом */
+  min-height: 0;
 }
+
 .empty{ padding: 16px; font-weight: 900; opacity: .7; }
 
-.chat{ display:flex; flex-direction: column; height: 100%; min-height: 520px; }
+.chat{
+  display:flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0; /* ✅ must-have */
+}
 .chat-head{
   display:flex; align-items:center; gap: 10px;
   padding: 12px;
@@ -650,13 +664,15 @@ export default {
 
 .chat-body{
   padding: 12px;
-  overflow:auto;
+  overflow:auto;          /* ✅ скролл ТОЛЬКО тут */
   display:flex;
   flex-direction: column;
   gap: 10px;
-  flex: 1 1 auto;
+  flex: 1 1 auto;         /* ✅ занимает всё оставшееся */
+  min-height: 0;          /* ✅ must-have */
   background: #fafafa;
 }
+
 .msg{ max-width: 76%; }
 .msg.mine{ align-self: flex-end; text-align: right; }
 .bubble{
