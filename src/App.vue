@@ -34,7 +34,10 @@
         </button>
 
         <button class="nav-item" :class="{ active: isActiveRoute('messages') }" type="button" @click="go('messages')">
-          <span class="ni-ico">💬</span>
+          <span class="ni-ico ni-ico-wrap">
+            <span class="ni-ico-inner">💬</span>
+            <span v-if="unreadCount > 0" class="badge" aria-label="Непрочитанные сообщения">{{ badgeText }}</span>
+          </span>
           <span class="ni-txt">Сообщения</span>
         </button>
 
@@ -72,7 +75,12 @@
           <div class="menu-body">
             <button class="menu-item" @click="openProfileOrAuth">👤 Профиль / Вход</button>
             <button class="menu-item" @click="go('home'); closeMenu()">📰 Лента</button>
-            <button class="menu-item" @click="go('messages'); closeMenu()">💬 Сообщения</button>
+
+            <button class="menu-item menu-item-with-badge" @click="go('messages'); closeMenu()">
+              <span class="mib-left">💬 Сообщения</span>
+              <span v-if="unreadCount > 0" class="menu-badge">{{ badgeText }}</span>
+            </button>
+
             <button class="menu-item" @click="go('friends'); closeMenu()">👥 Друзья</button>
           </div>
 
@@ -83,7 +91,7 @@
       </div>
     </teleport>
 
-    <!-- ✅ ВСЕ МОДАЛКИ ТЕПЕРЬ В BODY (привязка к "камере") -->
+    <!-- ✅ ВСЕ МОДАЛКИ ТЕПЕРЬ В BODY -->
     <teleport to="body">
       <AuthModal
         v-if="showAuth"
@@ -129,6 +137,7 @@ import AuthModal from './components/AuthModal.vue'
 import ProfileModal from './components/ProfileModal.vue'
 import CreateEventModal from './components/CreateEventModal.vue'
 import { useSupabase } from './composables/useSupabase.js'
+import { useUnreadMessages } from './composables/unreadMessages.js'
 
 const normalizeStoragePublicUrl = (url) => {
   if (!url || typeof url !== 'string') return ''
@@ -161,6 +170,8 @@ export default {
       createBusinessEvent
     } = useSupabase()
 
+    const { unreadCount } = useUnreadMessages()
+
     const telegramBotUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || ''
 
     const searchTerm = ref('')
@@ -180,6 +191,13 @@ export default {
 
     const headerAvatarUrl = computed(() => normalizeStoragePublicUrl(profile.value?.image_path || ''))
     const showHeaderAvatar = ref(false)
+
+    const badgeText = computed(() => {
+      const n = Number(unreadCount.value || 0)
+      if (n <= 0) return ''
+      if (n > 99) return '99+'
+      return String(n)
+    })
 
     const onHeaderImgError = () => {
       showHeaderAvatar.value = false
@@ -339,14 +357,16 @@ export default {
 
       go,
       isActiveRoute,
-      createBusinessEvent
+      createBusinessEvent,
+
+      unreadCount,
+      badgeText
     }
   }
 }
 </script>
 
 <style scoped>
-/* оставляю твои стили лейаута как были (если у тебя уже есть — можешь не менять) */
 .header {
   position: sticky;
   top: 0;
@@ -400,121 +420,234 @@ export default {
 }
 .search-icon {
   position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  opacity: 0.55;
+  left: 12px;
   font-size: 14px;
+  opacity: 0.6;
 }
 .search-input {
-  width: 520px;
-  max-width: min(520px, 52vw);
-  padding: 10px 12px 10px 36px;
-  border: 2px solid #efefef;
-  border-radius: 20px;
+  height: 42px;
+  width: min(520px, 52vw);
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  padding: 0 14px 0 36px;
   outline: none;
-  font-size: 14px;
+}
+.search-input:focus {
+  border-color: #e2e2e2;
 }
 .profile-button {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #fff;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  flex: 0 0 auto;
-}
-.header-avatar {
-  width: 40px;
-  height: 40px;
-  object-fit: cover;
-  border-radius: 50%;
-  display: block;
-}
-.header-placeholder {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #fafafa;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
   border: 1px solid #efefef;
+  background: #fff;
+  cursor: pointer;
   display: grid;
   place-items: center;
+  overflow: hidden;
+}
+.header-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.header-placeholder {
+  font-size: 18px;
 }
 
 .layout {
   max-width: 1300px;
   margin: 0 auto;
-  padding: 0 18px 18px;
   display: grid;
   grid-template-columns: 220px 1fr;
-  gap: 14px;
+  gap: 18px;
+  padding: 18px;
 }
 .sidebar {
   position: sticky;
   top: 72px;
   align-self: start;
-  height: calc(100vh - 84px);
   border: 1px solid #efefef;
   border-radius: 18px;
   background: #fff;
   padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 .nav-item {
   width: 100%;
-  border: 1px solid #efefef;
-  background: #fff;
-  border-radius: 14px;
-  padding: 12px 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 36px 1fr;
   gap: 10px;
-  font-weight: 900;
+  align-items: center;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
   text-align: left;
 }
-.nav-item:hover { background: #fafafa; }
+.nav-item:hover {
+  background: #f7f7f7;
+}
 .nav-item.active {
-  background: rgba(138, 117, 227, 0.1);
-  border-color: rgba(138, 117, 227, 0.22);
+  background: #111;
+  color: #fff;
 }
-.ni-ico { width: 18px; display: inline-flex; justify-content: center; }
-.ni-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav-sep { height: 1px; background: #f2f2f2; margin: 6px 0; }
-.content { min-width: 0; }
+.ni-ico {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #f3f3f3;
+  font-size: 18px;
+}
+.nav-item.active .ni-ico {
+  background: rgba(255, 255, 255, 0.14);
+}
+.ni-txt {
+  font-weight: 600;
+  font-size: 14px;
+}
+.nav-sep {
+  height: 1px;
+  background: #efefef;
+  margin: 10px 6px;
+}
 
-.menu-root { position: fixed; inset: 0; z-index: 9999; }
-.overlay { position: absolute; inset: 0; background: rgba(0,0,0,.35); backdrop-filter: blur(2px); }
+.ni-ico-wrap {
+  position: relative;
+}
+.ni-ico-inner {
+  display: inline-block;
+  line-height: 1;
+}
+
+.badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ff2f2f;
+  color: #fff;
+  font-weight: 800;
+  font-size: 11px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #fff;
+}
+
+.content {
+  min-width: 0;
+}
+
+/* MENU */
+.menu-root {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+}
 .menu-drawer {
-  position: absolute; top: 0; left: 0; height: 100%;
-  width: min(420px, 92vw);
-  background: #fff; border-right: 1px solid #efefef;
-  box-shadow: 10px 0 30px rgba(0,0,0,.12);
-  display: flex; flex-direction: column;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: min(380px, 86vw);
+  height: 100%;
+  background: #fff;
+  border-right: 1px solid #efefef;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
 }
-.menu-head { display: flex; align-items: center; gap: 10px; padding: 14px; border-bottom: 1px solid #f2f2f2; }
-.menu-title { font-weight: 900; font-size: 16px; }
-.close-btn { margin-left: auto; border: 1px solid #efefef; background: #fafafa; border-radius: 12px; padding: 8px 10px; cursor: pointer; }
-.menu-body { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
-.menu-item { border: 1px solid #efefef; background: #fff; border-radius: 14px; padding: 12px; cursor: pointer; font-weight: 900; text-align: left; }
-.menu-foot { padding: 14px; border-top: 1px solid #f2f2f2; display: flex; justify-content: flex-end; }
-.apply-btn { border: none; background: #8a75e3; color: #fff; border-radius: 14px; padding: 12px 16px; font-weight: 900; cursor: pointer; }
+.menu-head {
+  padding: 14px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #efefef;
+}
+.menu-title {
+  font-weight: 900;
+}
+.close-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  background: #fff;
+  cursor: pointer;
+}
+.menu-body {
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.menu-item {
+  width: 100%;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 700;
+}
+.menu-item:hover {
+  background: #f7f7f7;
+}
+.menu-foot {
+  padding: 14px;
+  border-top: 1px solid #efefef;
+}
+.apply-btn {
+  width: 100%;
+  height: 44px;
+  border-radius: 14px;
+  border: none;
+  background: #111;
+  color: #fff;
+  font-weight: 900;
+  cursor: pointer;
+}
 
-@media (max-width: 860px) {
-  .layout { grid-template-columns: 1fr; padding: 0 12px 18px; }
-  .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; justify-content: center; top: auto; }
-  .nav-item { width: auto; padding: 10px 12px; }
-  .ni-txt { display: none; }
-  .search-input { max-width: none; width: min(520px, 60vw); }
+.menu-item-with-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
-@media (max-width: 520px) {
-  .header-container { padding: 12px 12px; }
-  .search-input { width: min(520px, 54vw); }
+.mib-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.menu-badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #ff2f2f;
+  color: #fff;
+  font-weight: 900;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+}
+
+@media (max-width: 980px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: relative;
+    top: auto;
+    order: 2;
+  }
 }
 </style>

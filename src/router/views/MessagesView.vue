@@ -1,734 +1,946 @@
 <template>
-  <div class="page">
-    <div class="container">
-      <div class="head">
-        <div class="h-title">Сообщения</div>
+  <div class="mv">
+    <div class="mv-left">
+      <div class="mv-head">
+        <div class="mv-title">Сообщения</div>
+        <button class="mv-refresh" type="button" @click="reload" :disabled="loading">⟳</button>
+      </div>
 
-        <div class="h-actions">
-          <input
-            v-model="userQuery"
-            class="user-search"
-            type="text"
-            placeholder="Найти пользователя по username или ФИО"
-            @input="onUserQueryInput"
-          />
-          <button class="btn" @click="reloadAll" :disabled="loading">
-            {{ loading ? '...' : 'Обновить' }}
+      <div v-if="authRequired" class="mv-empty">
+        <div class="mv-empty-title">Нужен вход</div>
+        <div class="mv-empty-text">Авторизуйся, чтобы видеть чаты.</div>
+        <button class="mv-empty-btn" type="button" @click="openProfileLogin">Открыть вход</button>
+      </div>
+
+      <div v-else>
+        <div v-if="loading" class="mv-skel">
+          <div class="skel-row" v-for="i in 6" :key="i"></div>
+        </div>
+
+        <div v-else-if="threads.length === 0" class="mv-empty">
+          <div class="mv-empty-title">Пока пусто</div>
+          <div class="mv-empty-text">Начни переписку — и здесь появятся чаты.</div>
+        </div>
+
+        <div v-else class="mv-list">
+          <button
+            v-for="t in threads"
+            :key="t.otherUserId"
+            type="button"
+            class="thread"
+            :class="{ active: t.otherUserId === selectedOtherId, unread: t.unread }"
+            @click="openThread(t.otherUserId)"
+          >
+            <div class="thread-ava">
+              <img v-if="t.avatar" :src="t.avatar" class="thread-ava-img" alt="avatar" @error="onAvaErr(t)" />
+              <div v-else class="thread-ava-ph">👤</div>
+              <div v-if="t.unread" class="thread-dot" aria-label="Непрочитано"></div>
+            </div>
+
+            <div class="thread-mid">
+              <div class="thread-top">
+                <div class="thread-name">
+                  {{ t.title }}
+                </div>
+                <div class="thread-time">{{ formatTime(t.lastMessage?.created_at) }}</div>
+              </div>
+
+              <div class="thread-sub">
+                <div class="thread-preview">
+                  {{ t.lastMessage?.body || '' }}
+                </div>
+                <div v-if="t.unreadCount > 0" class="thread-pill" aria-label="Непрочитанные">{{ t.unreadCount > 99 ? '99+' : t.unreadCount }}</div>
+              </div>
+            </div>
           </button>
         </div>
       </div>
+    </div>
 
-      <div v-if="needAuth" class="state">
-        <div class="s-title">Нужно войти</div>
-        <div class="s-sub">Открой профиль (👤) и войди через Google/Telegram.</div>
+    <div class="mv-right">
+      <div v-if="authRequired" class="chat-empty">
+        <div class="chat-empty-title">Сообщения</div>
+        <div class="chat-empty-text">Войди, чтобы открыть чат.</div>
       </div>
 
-      <div v-else class="grid">
-        <!-- LEFT -->
-        <aside class="left">
-          <div class="block">
-            <div class="b-title">Заявки в друзья</div>
-            <div v-if="incomingRequests.length === 0" class="muted">Нет заявок</div>
+      <div v-else-if="!selectedOtherId" class="chat-empty">
+        <div class="chat-empty-title">Выбери чат</div>
+        <div class="chat-empty-text">Слева список диалогов.</div>
+      </div>
 
-            <div v-else class="list">
-              <div v-for="r in incomingRequests" :key="r.other.id" class="row">
-                <div class="u">
-                  <div class="ava">{{ letter(r.other) }}</div>
-                  <div class="meta">
-                    <div class="name">{{ displayName(r.other) }}</div>
-                    <div class="sub">@{{ r.other.username || '—' }}</div>
-                  </div>
-                </div>
-                <button class="btn small" @click="accept(r.other.id)">Принять</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="block">
-            <div class="b-title">Друзья</div>
-            <div v-if="friends.length === 0" class="muted">Пока нет друзей</div>
-
-            <div v-else class="list">
-              <button
-                v-for="u in friends"
-                :key="u.id"
-                class="contact"
-                :class="{ active: selectedUserId === u.id }"
-                @click="openChat(u.id)"
-              >
-                <div class="ava">{{ letter(u) }}</div>
-                <div class="meta">
-                  <div class="name">{{ displayName(u) }}</div>
-                  <div class="sub">@{{ u.username || '—' }}</div>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          <div class="block">
-            <div class="b-title">Поиск</div>
-            <div v-if="userQuery.trim() && searchedUsers.length === 0" class="muted">Ничего не найдено</div>
-
-            <div v-if="searchedUsers.length" class="list">
-              <div v-for="u in searchedUsers" :key="u.id" class="row">
-                <div class="u">
-                  <div class="ava">{{ letter(u) }}</div>
-                  <div class="meta">
-                    <div class="name">{{ displayName(u) }}</div>
-                    <div class="sub">@{{ u.username || '—' }}</div>
-                  </div>
-                </div>
-
-                <div class="actions">
-                  <button class="btn small ghost" @click="openChat(u.id)">Написать</button>
-                  <button class="btn small" @click="addFriend(u.id)">В друзья</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="block">
-            <div class="b-title">Последние чаты</div>
-            <div v-if="threads.length === 0" class="muted">Нет сообщений</div>
-
-            <button
-              v-for="t in threads"
-              :key="t.other.id"
-              class="contact"
-              :class="{ active: selectedUserId === t.other.id }"
-              @click="openChat(t.other.id)"
-            >
-              <div class="ava">{{ letter(t.other) }}</div>
-              <div class="meta">
-                <div class="name">{{ displayName(t.other) }}</div>
-                <div class="sub">
-                  <span class="mono">@{{ t.other.username || '—' }}</span>
-                  <span class="dot">•</span>
-                  <span class="last">{{ (t.lastMessage?.body || '').slice(0, 42) }}</span>
-                </div>
-              </div>
-            </button>
-          </div>
-        </aside>
-
-        <!-- RIGHT -->
-        <main class="right">
-          <div v-if="!selectedUser" class="empty">
-            Выбери друга/чат слева или найди пользователя.
-          </div>
-
-          <div v-else class="chat">
-            <div class="chat-head">
-              <div class="ch-ava">{{ letter(selectedUser) }}</div>
-              <div class="ch-meta">
-                <div class="ch-name">{{ displayName(selectedUser) }}</div>
-                <div class="ch-sub">
-                  @{{ selectedUser.username || '—' }}
-                  <span v-if="isTyping" class="typing"> • печатает…</span>
-                </div>
-              </div>
-
-              <button class="btn small ghost" @click="removeFriend(selectedUser.id)">
-                Удалить/Отменить
-              </button>
-            </div>
-
-            <div class="chat-body" ref="chatBody">
-              <div v-for="m in messages" :key="m.id" class="msg" :class="{ mine: m.sender_id === myId }">
-                <div class="bubble">{{ m.body }}</div>
-                <div class="time">{{ fmt(m.created_at) }}</div>
-              </div>
-            </div>
-
-            <div class="chat-foot">
-              <textarea
-                v-model="draft"
-                class="input"
-                rows="1"
-                placeholder="Написать сообщение…"
-                @input="onDraftInput"
-                @keydown.enter.exact.prevent="send"
+      <div v-else class="chat">
+        <div class="chat-head">
+          <div class="chat-peer">
+            <div class="chat-peer-ava">
+              <img
+                v-if="peer?.avatar"
+                :src="peer.avatar"
+                class="chat-peer-ava-img"
+                alt="avatar"
+                @error="onPeerAvaErr"
               />
-              <button class="btn" @click="send" :disabled="sending || !draft.trim()">
-                {{ sending ? '...' : 'Отправить' }}
-              </button>
+              <div v-else class="chat-peer-ava-ph">👤</div>
+            </div>
+            <div class="chat-peer-info">
+              <div class="chat-peer-name">{{ peer?.title || 'Пользователь' }}</div>
+              <div class="chat-peer-sub">{{ peer?.sub || '' }}</div>
             </div>
           </div>
-        </main>
-      </div>
 
-      <div v-if="error" class="state error">
-        <div class="s-title">Ошибка</div>
-        <div class="s-sub">{{ error }}</div>
+          <button class="chat-head-btn" type="button" @click="reloadConversation" :disabled="convLoading">⟳</button>
+        </div>
+
+        <div ref="chatBodyRef" class="chat-body">
+          <div v-if="convLoading" class="chat-skel">
+            <div class="chat-skel-bubble" v-for="i in 8" :key="i"></div>
+          </div>
+
+          <template v-else>
+            <div v-if="messages.length === 0" class="chat-empty-inner">
+              Пока нет сообщений
+            </div>
+
+            <div v-else class="chat-msgs">
+              <div
+                v-for="m in messages"
+                :key="m.id"
+                class="msg"
+                :class="{ mine: m.sender_id === myId, their: m.sender_id !== myId }"
+              >
+                <div class="msg-bubble">
+                  <div class="msg-text">{{ m.body }}</div>
+                  <div class="msg-meta">
+                    <span class="msg-time">{{ formatTime(m.created_at) }}</span>
+                    <span v-if="m.sender_id === myId" class="msg-check">✓</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div class="chat-foot">
+          <input
+            v-model="draft"
+            class="chat-input"
+            type="text"
+            placeholder="Напиши сообщение…"
+            @keydown.enter.prevent="send"
+            :disabled="sending"
+          />
+          <button class="chat-send" type="button" @click="send" :disabled="sending || !draft.trim()">Отправить</button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, nextTick, onBeforeUnmount } from 'vue'
-import { useSupabase } from '@/composables/useSupabase'
+import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useSupabase } from '../composables/useSupabase.js'
+import { useUnreadMessages } from '../composables/unreadMessages.js'
 
-const debounce = (fn, ms = 250) => {
-  let t = null
-  return (...args) => {
-    clearTimeout(t)
-    t = setTimeout(() => fn(...args), ms)
-  }
+const normalizeStoragePublicUrl = (url) => {
+  if (!url || typeof url !== 'string') return ''
+  const u = url.trim()
+  if (!u) return ''
+  if (u.includes('/storage/v1/object/public/')) return u
+  if (u.includes('/storage/v1/object/')) return u.replace('/storage/v1/object/', '/storage/v1/object/public/')
+  return u
 }
 
 export default {
   name: 'MessagesView',
   setup() {
+    const router = useRouter()
+    const route = useRoute()
+
     const {
       getUser,
-      getMyPublicUser,
-      searchUsers,
       getPublicUserById,
-      getFriendships,
-      sendFriendRequest,
-      acceptFriendRequest,
-      removeFriendOrRequest,
       getInboxThreads,
       getConversation,
       sendMessage,
       markConversationRead,
-      subscribeToMyMessages,
-      joinTypingChannel
+      subscribeToMyMessages
     } = useSupabase()
 
-    const loading = ref(false)
-    const sending = ref(false)
-    const error = ref('')
+    const { setUnreadCount } = useUnreadMessages()
 
     const myId = ref('')
-    const needAuth = ref(false)
+    const authRequired = ref(false)
 
-    const userQuery = ref('')
-    const searchedUsers = ref([])
+    const loading = ref(false)
+    const convLoading = ref(false)
+    const sending = ref(false)
 
-    const friendships = ref([])
-    const friends = ref([])
-    const incomingRequests = ref([])
+    const threads = ref([]) // [{ otherUserId, lastMessage, unread, unreadCount, title, avatar }]
+    const selectedOtherId = ref('')
 
-    const threads = ref([])
-
-    const selectedUserId = ref('')
-    const selectedUser = ref(null)
-
+    const peer = ref(null)
     const messages = ref([])
     const draft = ref('')
 
-    const chatBody = ref(null)
+    const chatBodyRef = ref(null)
 
-    // typing
-    const isTyping = ref(false)
-    let typingOffTimer = null
-    let typingChannel = null
+    let rtChannel = null
 
-    // realtime messages channel
-    let messagesChannel = null
+    const calcUnreadTotal = () => {
+      let total = 0
+      for (const t of threads.value) total += Number(t.unreadCount || 0)
+      setUnreadCount(total)
+    }
 
-    const displayName = (u) => {
-      const fn = String(u?.first_name || '').trim()
-      const ln = String(u?.last_name || '').trim()
+    const formatTime = (iso) => {
+      if (!iso) return ''
+      try {
+        const d = new Date(iso)
+        const hh = String(d.getHours()).padStart(2, '0')
+        const mm = String(d.getMinutes()).padStart(2, '0')
+        return `${hh}:${mm}`
+      } catch {
+        return ''
+      }
+    }
+
+    const openProfileLogin = () => {
+      window.dispatchEvent(new Event('open-profile'))
+    }
+
+    const safeTitleFromUser = (u) => {
+      if (!u) return 'Пользователь'
+      const fn = String(u.first_name || '').trim()
+      const ln = String(u.last_name || '').trim()
+      const uname = String(u.username || '').trim()
+      const email = String(u.email || '').trim()
       const full = `${fn} ${ln}`.trim()
-      return full || u?.email || 'Пользователь'
+      return full || uname || email || 'Пользователь'
     }
 
-    const letter = (u) => (displayName(u)[0] || 'П').toUpperCase()
+    const ensureThreadsUsers = async (rows) => {
+      const ids = [...new Set((rows || []).map((x) => x.otherUserId).filter(Boolean))]
+      const map = new Map()
 
-    const fmt = (v) => {
-      const d = new Date(v)
-      if (Number.isNaN(d.getTime())) return ''
-      return d.toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
-    }
-
-    const rebuildFriends = async () => {
-      const list = friendships.value || []
-      const acceptedOtherIds = []
-      const incomingOtherIds = []
-
-      for (const f of list) {
-        const isRequesterMe = f.requester_id === myId.value
-        const otherId = isRequesterMe ? f.addressee_id : f.requester_id
-
-        if (f.status === 'accepted') acceptedOtherIds.push(otherId)
-        if (f.status === 'pending' && !isRequesterMe) incomingOtherIds.push(otherId)
-      }
-
-      const loadUsersByIds = async (ids) => {
-        const out = []
-        for (const id of ids) {
+      await Promise.all(
+        ids.map(async (id) => {
           const { data } = await getPublicUserById(id)
-          if (data?.id) out.push(data)
-        }
-        return out
-      }
-
-      friends.value = await loadUsersByIds(acceptedOtherIds)
-      const incomingUsers = await loadUsersByIds(incomingOtherIds)
-      incomingRequests.value = incomingUsers.map((u) => ({ other: u }))
-    }
-
-    const loadThreads = async () => {
-      const { data } = await getInboxThreads(250)
-      const rows = data || []
-      const out = []
-
-      for (const t of rows) {
-        const { data: u } = await getPublicUserById(t.otherUserId)
-        if (!u?.id) continue
-        out.push({ other: u, lastMessage: t.lastMessage })
-      }
-
-      threads.value = out
-    }
-
-    const openChat = async (otherId) => {
-      selectedUserId.value = otherId
-      error.value = ''
-
-      const { data: u } = await getPublicUserById(otherId)
-      selectedUser.value = u || null
-
-      const { data: conv } = await getConversation(otherId, 200)
-      messages.value = conv || []
-
-      await markConversationRead(otherId)
-
-      // typing subscription for this conversation
-      if (typingChannel) {
-        try {
-          typingChannel.unsubscribe?.()
-        } catch {}
-        typingChannel = null
-      }
-      isTyping.value = false
-      const { channel } = await joinTypingChannel({
-        otherId,
-        onTyping: (v) => {
-          isTyping.value = !!v
-          if (typingOffTimer) clearTimeout(typingOffTimer)
-          // если пришло "typing=true" и потом тишина — не висим вечно
-          if (v) typingOffTimer = setTimeout(() => (isTyping.value = false), 2200)
-        }
-      })
-      typingChannel = channel
-
-      await nextTick()
-      chatBody.value?.scrollTo?.({ top: chatBody.value.scrollHeight, behavior: 'smooth' })
-    }
-
-    const send = async () => {
-      if (!selectedUserId.value) return
-      const text = draft.value.trim()
-      if (!text) return
-
-      sending.value = true
-      try {
-        // оптимистично добавлять можно, но оставим “истина = база”:
-        await sendMessage(selectedUserId.value, text)
-        draft.value = ''
-
-        // переподтянем (обычно уже прилетит realtime, но пусть будет чисто)
-        const { data: conv } = await getConversation(selectedUserId.value, 200)
-        messages.value = conv || []
-
-        await nextTick()
-        chatBody.value?.scrollTo?.({ top: chatBody.value.scrollHeight, behavior: 'smooth' })
-
-        await loadThreads()
-      } catch (e) {
-        error.value = String(e?.message || e)
-      } finally {
-        sending.value = false
-      }
-    }
-
-    const addFriend = async (otherId) => {
-      try {
-        await sendFriendRequest(otherId)
-        await reloadFriendships()
-      } catch (e) {
-        error.value = String(e?.message || e)
-      }
-    }
-
-    const accept = async (otherId) => {
-      try {
-        await acceptFriendRequest(otherId)
-        await reloadFriendships()
-      } catch (e) {
-        error.value = String(e?.message || e)
-      }
-    }
-
-    const removeFriend = async (otherId) => {
-      try {
-        await removeFriendOrRequest(otherId)
-        await reloadFriendships()
-      } catch (e) {
-        error.value = String(e?.message || e)
-      }
-    }
-
-    const reloadFriendships = async () => {
-      const { data } = await getFriendships()
-      friendships.value = data || []
-      await rebuildFriends()
-    }
-
-    const doSearchUsers = async () => {
-      const q = userQuery.value.trim()
-      if (!q) {
-        searchedUsers.value = []
-        return
-      }
-      const { data } = await searchUsers(q, 20)
-      searchedUsers.value = (data || []).filter((x) => x.id !== myId.value)
-    }
-
-    const onUserQueryInput = debounce(doSearchUsers, 250)
-
-    // typing: отправляем “печатает” (только когда открыт чат)
-    const onDraftInput = async () => {
-      if (!selectedUserId.value) return
-      // чтобы не долбить сервер — максимум раз в ~400мс
-      // делаем очень простой throttling таймером
-      if (onDraftInput._t) return
-      onDraftInput._t = setTimeout(() => (onDraftInput._t = null), 400)
-
-      // включаем typing=true, и если пользователь перестал печатать — через 1.2с typing=false
-      try {
-        // typingChannel уже подписан через joinTypingChannel (тот же ключ), отправка будет работать
-        // но sendTyping мы не импортировали — broadcast можно отправить напрямую каналом:
-        typingChannel?.send?.({
-          type: 'broadcast',
-          event: 'typing',
-          payload: { from: myId.value, to: selectedUserId.value, typing: true, ts: Date.now() }
+          if (data) map.set(id, data)
         })
-      } catch {}
+      )
 
-      if (typingOffTimer) clearTimeout(typingOffTimer)
-      typingOffTimer = setTimeout(() => {
-        try {
-          typingChannel?.send?.({
-            type: 'broadcast',
-            event: 'typing',
-            payload: { from: myId.value, to: selectedUserId.value, typing: false, ts: Date.now() }
-          })
-        } catch {}
-      }, 1200)
+      return map
     }
 
-    const applyRealtimeMessage = async (m) => {
-      if (!m?.id) return
-
-      // 1) если это текущий чат — обновляем messages мгновенно
-      const isMyChat =
-        selectedUserId.value &&
-        ((m.sender_id === myId.value && m.receiver_id === selectedUserId.value) ||
-          (m.sender_id === selectedUserId.value && m.receiver_id === myId.value))
-
-      if (isMyChat) {
-        // не дублируем
-        if (!messages.value.some((x) => x.id === m.id)) {
-          messages.value = [...messages.value, m]
-          await nextTick()
-          chatBody.value?.scrollTo?.({ top: chatBody.value.scrollHeight, behavior: 'smooth' })
-        }
-        // отмечаем прочитанным входящее
-        if (m.sender_id === selectedUserId.value && m.receiver_id === myId.value) {
-          await markConversationRead(selectedUserId.value)
-        }
-      }
-
-      // 2) всегда обновляем threads, чтобы “последние чаты” реагировали мгновенно
-      await loadThreads()
-    }
-
-    const startRealtime = async () => {
-      // подписка на INSERT в messages для меня (и моих исходящих)
-      const { channel } = await subscribeToMyMessages({
-        onInsert: async (m) => {
-          try {
-            await applyRealtimeMessage(m)
-          } catch {}
-        }
-      })
-      messagesChannel = channel
-    }
-
-    const reloadAll = async () => {
+    const reload = async () => {
       loading.value = true
-      error.value = ''
       try {
         const { user } = await getUser()
         if (!user?.id) {
-          needAuth.value = true
+          authRequired.value = true
+          myId.value = ''
+          threads.value = []
+          setUnreadCount(0)
           return
         }
-
-        needAuth.value = false
+        authRequired.value = false
         myId.value = user.id
 
-        await getMyPublicUser()
+        const { data, error } = await getInboxThreads(60)
+        if (error) throw error
 
-        await reloadFriendships()
-        await loadThreads()
+        const rows = (data || []).map((x) => ({
+          otherUserId: x.otherUserId,
+          lastMessage: x.lastMessage
+        }))
 
-        // старт realtime только один раз
-        if (!messagesChannel) await startRealtime()
-      } catch (e) {
-        error.value = String(e?.message || e)
+        const usersMap = await ensureThreadsUsers(rows)
+
+        const enriched = rows.map((r) => {
+          const m = r.lastMessage || {}
+          const unread = m.receiver_id === user.id && !m.read_at
+          // В этой модели: unreadCount либо 0/1 по lastMessage.
+          // Если хочешь точное число по диалогу — добавим отдельный запрос/агрегацию.
+          const unreadCount = unread ? 1 : 0
+          const u = usersMap.get(r.otherUserId)
+
+          return {
+            otherUserId: r.otherUserId,
+            lastMessage: m,
+            unread,
+            unreadCount,
+            title: safeTitleFromUser(u),
+            avatar: normalizeStoragePublicUrl(u?.image_path || '')
+          }
+        })
+
+        threads.value = enriched
+        calcUnreadTotal()
+
+        // автоселект из query ?with=
+        const qWith = String(route.query.with || '').trim()
+        if (qWith && enriched.some((t) => t.otherUserId === qWith)) {
+          selectedOtherId.value = qWith
+          await loadPeer(qWith)
+          await reloadConversation()
+          await markThreadAsRead(qWith)
+        }
       } finally {
         loading.value = false
       }
     }
 
-    onMounted(reloadAll)
+    const loadPeer = async (otherId) => {
+      if (!otherId) {
+        peer.value = null
+        return
+      }
+      const { data } = await getPublicUserById(otherId)
+      const title = safeTitleFromUser(data)
+      peer.value = {
+        id: otherId,
+        title,
+        sub: data?.username ? `@${data.username}` : '',
+        avatar: normalizeStoragePublicUrl(data?.image_path || '')
+      }
+    }
+
+    const scrollBottom = async () => {
+      await nextTick()
+      const el = chatBodyRef.value
+      if (!el) return
+      el.scrollTop = el.scrollHeight
+    }
+
+    const reloadConversation = async () => {
+      if (!selectedOtherId.value) return
+      convLoading.value = true
+      try {
+        const { user } = await getUser()
+        if (!user?.id) return
+        myId.value = user.id
+
+        const { data, error } = await getConversation(selectedOtherId.value, 250)
+        if (error) throw error
+
+        messages.value = data || []
+        await scrollBottom()
+      } finally {
+        convLoading.value = false
+      }
+    }
+
+    const markThreadAsRead = async (otherId) => {
+      if (!otherId) return
+      try {
+        // снимаем unread локально сразу (без ожидания)
+        const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
+        if (idx !== -1) {
+          const was = Number(threads.value[idx].unreadCount || 0)
+          threads.value[idx] = {
+            ...threads.value[idx],
+            unread: false,
+            unreadCount: 0,
+            lastMessage: {
+              ...threads.value[idx].lastMessage,
+              read_at: threads.value[idx].lastMessage?.read_at || new Date().toISOString()
+            }
+          }
+          if (was > 0) calcUnreadTotal()
+        }
+
+        await markConversationRead(otherId)
+        calcUnreadTotal()
+      } catch {
+        // игнор
+      }
+    }
+
+    const openThread = async (otherId) => {
+      selectedOtherId.value = otherId
+      router.replace({ name: 'messages', query: { with: otherId } })
+
+      await loadPeer(otherId)
+      await reloadConversation()
+      await markThreadAsRead(otherId)
+    }
+
+    const send = async () => {
+      const otherId = selectedOtherId.value
+      const text = String(draft.value || '').trim()
+      if (!otherId || !text) return
+
+      sending.value = true
+      try {
+        const { data, error } = await sendMessage(otherId, text)
+        if (error) throw error
+
+        draft.value = ''
+
+        // обновим локально список сообщений и треды
+        if (data) {
+          messages.value = [...messages.value, data]
+          await scrollBottom()
+
+          // поднимем тред наверх
+          const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
+          if (idx !== -1) {
+            const t = threads.value[idx]
+            const nextT = { ...t, lastMessage: data }
+            const copy = [...threads.value]
+            copy.splice(idx, 1)
+            threads.value = [nextT, ...copy]
+          }
+        }
+      } finally {
+        sending.value = false
+      }
+    }
+
+    const onAvaErr = (t) => {
+      const idx = threads.value.findIndex((x) => x.otherUserId === t.otherUserId)
+      if (idx !== -1) threads.value[idx] = { ...threads.value[idx], avatar: '' }
+    }
+
+    const onPeerAvaErr = () => {
+      if (!peer.value) return
+      peer.value = { ...peer.value, avatar: '' }
+    }
+
+    const handleRealtimeInsert = async (m) => {
+      if (!m) return
+      const uid = myId.value
+      if (!uid) return
+
+      const otherId = m.sender_id === uid ? m.receiver_id : m.sender_id
+      if (!otherId) return
+
+      // обновляем/создаём тред
+      const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
+      let t = idx !== -1 ? threads.value[idx] : null
+
+      if (!t) {
+        await loadPeer(otherId) // чтобы быстро подтянуть имя, но peer тут не используем; всё равно подтянем user ниже
+        const { data: u } = await getPublicUserById(otherId)
+        t = {
+          otherUserId: otherId,
+          lastMessage: m,
+          unread: false,
+          unreadCount: 0,
+          title: safeTitleFromUser(u),
+          avatar: normalizeStoragePublicUrl(u?.image_path || '')
+        }
+      }
+
+      // если это входящее и мы не в этом диалоге — считаем непрочитанным
+      const isIncoming = m.receiver_id === uid
+      const isOpenNow = selectedOtherId.value === otherId
+      const unread = isIncoming && !m.read_at && !isOpenNow
+      const unreadCount = unread ? 1 : 0
+
+      const nextT = {
+        ...t,
+        lastMessage: m,
+        unread,
+        unreadCount
+      }
+
+      const copy = [...threads.value]
+      if (idx !== -1) copy.splice(idx, 1)
+      threads.value = [nextT, ...copy]
+
+      calcUnreadTotal()
+
+      // если сообщение пришло в открытый диалог — сразу подгружаем в список и помечаем прочитанным
+      if (isOpenNow) {
+        messages.value = [...messages.value, m]
+        await scrollBottom()
+        await markThreadAsRead(otherId)
+      }
+    }
+
+    const setupRealtime = async () => {
+      try {
+        const { user } = await getUser()
+        if (!user?.id) return
+        myId.value = user.id
+
+        const { channel, error } = await subscribeToMyMessages({
+          onInsert: (m) => handleRealtimeInsert(m),
+          onUpdate: () => {
+            // при желании можно реагировать на read_at, пока не нужно
+          }
+        })
+        if (error) return
+        rtChannel = channel
+      } catch {
+        // игнор
+      }
+    }
+
+    onMounted(async () => {
+      // initial select from query
+      const qWith = String(route.query.with || '').trim()
+      if (qWith) selectedOtherId.value = qWith
+
+      await reload()
+      await setupRealtime()
+
+      // если уже выбран — прогружаем
+      if (selectedOtherId.value) {
+        await loadPeer(selectedOtherId.value)
+        await reloadConversation()
+        await markThreadAsRead(selectedOtherId.value)
+      }
+    })
 
     onBeforeUnmount(() => {
       try {
-        messagesChannel?.unsubscribe?.()
-      } catch {}
-      messagesChannel = null
-
-      try {
-        typingChannel?.unsubscribe?.()
-      } catch {}
-      typingChannel = null
-
-      if (typingOffTimer) clearTimeout(typingOffTimer)
-      typingOffTimer = null
+        if (rtChannel && typeof rtChannel.unsubscribe === 'function') rtChannel.unsubscribe()
+      } catch {
+        // ignore
+      }
+      rtChannel = null
     })
 
+    watch(
+      () => route.query.with,
+      async (val) => {
+        const nextId = String(val || '').trim()
+        if (!nextId) {
+          selectedOtherId.value = ''
+          peer.value = null
+          messages.value = []
+          return
+        }
+        if (nextId === selectedOtherId.value) return
+        selectedOtherId.value = nextId
+        await loadPeer(nextId)
+        await reloadConversation()
+        await markThreadAsRead(nextId)
+      }
+    )
+
     return {
-      loading,
-      error,
-      needAuth,
       myId,
+      authRequired,
 
-      userQuery,
-      searchedUsers,
-      onUserQueryInput,
-
-      friends,
-      incomingRequests,
-
-      threads,
-
-      selectedUserId,
-      selectedUser,
-      openChat,
-
-      messages,
-      draft,
-      send,
+      loading,
+      convLoading,
       sending,
 
-      displayName,
-      letter,
-      fmt,
+      threads,
+      selectedOtherId,
+      peer,
+      messages,
+      draft,
 
-      addFriend,
-      accept,
-      removeFriend,
+      chatBodyRef,
 
-      reloadAll,
-      chatBody,
+      reload,
+      openThread,
+      send,
+      reloadConversation,
 
-      onDraftInput,
-      isTyping
+      formatTime,
+      openProfileLogin,
+
+      onAvaErr,
+      onPeerAvaErr
     }
   }
 }
 </script>
 
 <style scoped>
-.page{ padding: 12px 0; }
-.container{ max-width: 1200px; margin: 0 auto; padding: 0 12px; }
+.mv {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 14px;
+  min-height: calc(100vh - 120px);
+}
 
-.head{
-  display:flex; align-items:center; justify-content: space-between; gap: 12px;
+.mv-left,
+.mv-right {
+  background: #fff;
+  border: 1px solid #efefef;
+  border-radius: 18px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.mv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px;
+  border-bottom: 1px solid #efefef;
+}
+.mv-title {
+  font-weight: 900;
+  font-size: 16px;
+}
+.mv-refresh {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 900;
+}
+.mv-refresh:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mv-skel {
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+.skel-row {
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, #f3f3f3, #fafafa, #f3f3f3);
+  background-size: 200% 100%;
+  animation: sk 1.2s infinite linear;
+}
+@keyframes sk {
+  0% { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.mv-list {
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.thread {
+  width: 100%;
+  border: 1px solid #efefef;
+  background: #fff;
+  border-radius: 18px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.06s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.thread:hover {
+  background: #fafafa;
+  border-color: #e9e9e9;
+}
+.thread:active {
+  transform: scale(0.99);
+}
+.thread.active {
+  border-color: #111;
+}
+.thread.unread {
+  background: #f6f8ff;
+  border-color: #dfe6ff;
+}
+
+.thread-ava {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  border: 1px solid #efefef;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  position: relative;
+  background: #fff;
+}
+.thread-ava-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.thread-ava-ph {
+  font-size: 18px;
+}
+.thread-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #2a5bff;
+  right: 6px;
+  top: 6px;
+  border: 2px solid #fff;
+}
+
+.thread-mid {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+.thread-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.thread-name {
+  font-weight: 900;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thread.unread .thread-name {
+  font-weight: 950;
+}
+.thread-time {
+  font-size: 12px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.thread-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.thread-preview {
+  font-size: 13px;
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.thread.unread .thread-preview {
+  opacity: 0.95;
+  font-weight: 800;
+}
+
+.thread-pill {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #2a5bff;
+  color: #fff;
+  font-weight: 900;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+}
+
+.mv-empty {
+  padding: 18px;
+}
+.mv-empty-title {
+  font-weight: 900;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+.mv-empty-text {
+  opacity: 0.8;
   margin-bottom: 12px;
 }
-.h-title{ font-weight: 900; font-size: 18px; }
-.h-actions{ display:flex; gap: 10px; align-items:center; flex: 1 1 auto; justify-content:flex-end; }
-.user-search{
-  width: min(520px, 100%);
-  border: 1px solid #efefef;
+.mv-empty-btn {
+  height: 42px;
   border-radius: 14px;
+  border: none;
+  background: #111;
+  color: #fff;
+  font-weight: 900;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+/* RIGHT */
+.chat {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+.chat-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid #efefef;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.chat-peer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.chat-peer-ava {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  border: 1px solid #efefef;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: #fff;
+}
+.chat-peer-ava-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.chat-peer-ava-ph {
+  font-size: 16px;
+}
+.chat-peer-info {
+  min-width: 0;
+}
+.chat-peer-name {
+  font-weight: 950;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-peer-sub {
+  font-size: 12px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-head-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 900;
+}
+.chat-head-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chat-body {
+  padding: 14px;
+  overflow: auto;
+  background: #fbfbfb;
+}
+.chat-skel {
+  display: grid;
+  gap: 10px;
+}
+.chat-skel-bubble {
+  height: 38px;
+  border-radius: 16px;
+  background: linear-gradient(90deg, #f0f0f0, #fafafa, #f0f0f0);
+  background-size: 200% 100%;
+  animation: sk 1.2s infinite linear;
+}
+.chat-empty-inner {
+  opacity: 0.7;
+  font-weight: 800;
+}
+
+.chat-msgs {
+  display: grid;
+  gap: 8px;
+}
+.msg {
+  display: flex;
+}
+.msg.mine {
+  justify-content: flex-end;
+}
+.msg.their {
+  justify-content: flex-start;
+}
+.msg-bubble {
+  max-width: min(560px, 84%);
+  border-radius: 18px;
   padding: 10px 12px;
+  border: 1px solid #efefef;
+  background: #fff;
+}
+.msg.mine .msg-bubble {
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+.msg-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+}
+.msg-meta {
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: 0.75;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.msg.mine .msg-meta {
+  opacity: 0.7;
+}
+.msg-check {
+  font-weight: 900;
+}
+
+.chat-foot {
+  padding: 12px 14px;
+  border-top: 1px solid #efefef;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  background: #fff;
+}
+.chat-input {
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  padding: 0 12px;
   outline: none;
 }
-
-.grid{
-  display:grid;
-  grid-template-columns: 360px 1fr;
-  gap: 12px;
-
-  /* ✅ важно: чтобы правый блок мог "сжиматься" и отдавать скролл внутрь */
-  align-items: stretch;
+.chat-input:focus {
+  border-color: #e2e2e2;
 }
-@media (max-width: 900px){
-  .grid{ grid-template-columns: 1fr; }
-}
-
-.block{
-  background:#fff;
-  border:1px solid #efefef;
-  border-radius: 16px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
-.b-title{ font-weight: 900; margin-bottom: 10px; }
-.muted{ font-size: 12px; opacity: .7; }
-
-.list{ display:flex; flex-direction: column; gap: 8px; }
-
-.contact{
-  display:flex; align-items:center; gap: 10px;
-  width:100%;
-  border:1px solid #efefef;
-  background:#fff;
+.chat-send {
+  height: 44px;
   border-radius: 14px;
-  padding: 10px;
+  border: none;
+  background: #111;
+  color: #fff;
+  font-weight: 900;
+  padding: 0 14px;
   cursor: pointer;
-  text-align:left;
 }
-.contact.active{
-  border-color:#8a75e3;
-  box-shadow: 0 8px 20px rgba(138,117,227,.18);
+.chat-send:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
-.ava{
-  width: 38px; height: 38px; border-radius: 999px;
-  display:grid; place-items:center;
-  background: #f2f2f2;
+
+.chat-empty {
+  padding: 18px;
+}
+.chat-empty-title {
   font-weight: 900;
+  font-size: 16px;
+  margin-bottom: 6px;
 }
-.meta{ min-width: 0; }
-.name{ font-weight: 900; font-size: 13px; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
-.sub{ font-size: 12px; opacity: .75; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
-.typing{ font-weight: 900; opacity: .85; }
-.mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-.dot{ margin: 0 6px; opacity:.5; }
-.last{ opacity:.85; }
-
-.row{
-  display:flex; align-items:center; justify-content: space-between; gap: 10px;
-  border:1px solid #efefef;
-  border-radius: 14px;
-  padding: 10px;
-  background:#fff;
-}
-.u{ display:flex; align-items:center; gap: 10px; min-width: 0; }
-.actions{ display:flex; gap: 8px; flex-wrap: wrap; }
-
-.right{
-  background:#fff;
-  border:1px solid #efefef;
-  border-radius: 16px;
-  overflow:hidden;
-
-  /* ✅ фиксируем "окно" чата — высота не растёт от сообщений */
-  height: clamp(520px, calc(100vh - 200px), 760px);
-
-  /* ✅ критично для flex-детей со скроллом */
-  min-height: 0;
+.chat-empty-text {
+  opacity: 0.8;
 }
 
-.empty{ padding: 16px; font-weight: 900; opacity: .7; }
-
-.chat{
-  display:flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0; /* ✅ must-have */
+@media (max-width: 980px) {
+  .mv {
+    grid-template-columns: 1fr;
+  }
 }
-.chat-head{
-  display:flex; align-items:center; gap: 10px;
-  padding: 12px;
-  border-bottom: 1px solid #f2f2f2;
-}
-.ch-ava{
-  width: 42px; height: 42px; border-radius: 999px;
-  display:grid; place-items:center;
-  background:#f2f2f2;
-  font-weight: 900;
-}
-.ch-meta{ min-width: 0; }
-.ch-name{ font-weight: 900; }
-.ch-sub{ font-size: 12px; opacity: .75; }
-
-.chat-body{
-  padding: 12px;
-  overflow:auto;          /* ✅ скролл ТОЛЬКО тут */
-  display:flex;
-  flex-direction: column;
-  gap: 10px;
-  flex: 1 1 auto;         /* ✅ занимает всё оставшееся */
-  min-height: 0;          /* ✅ must-have */
-  background: #fafafa;
-}
-
-.msg{ max-width: 76%; }
-.msg.mine{ align-self: flex-end; text-align: right; }
-.bubble{
-  background:#fff;
-  border:1px solid #efefef;
-  border-radius: 16px;
-  padding: 10px 12px;
-  font-weight: 700;
-  line-height: 1.25;
-  white-space: pre-wrap;
-}
-.msg.mine .bubble{
-  border-color: rgba(138,117,227,.35);
-}
-.time{ font-size: 11px; opacity: .6; margin-top: 4px; }
-
-.chat-foot{
-  padding: 12px;
-  border-top: 1px solid #f2f2f2;
-  display:flex;
-  gap: 10px;
-  align-items:flex-end;
-}
-.input{
-  flex: 1 1 auto;
-  border: 1px solid #efefef;
-  border-radius: 14px;
-  padding: 10px 12px;
-  outline:none;
-  resize:none;
-}
-
-.btn{
-  border:none;
-  background:#8a75e3;
-  color:#fff;
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-weight: 900;
-  cursor:pointer;
-}
-.btn.small{ padding: 8px 10px; border-radius: 12px; font-size: 12px; }
-.btn.ghost{
-  background:#fafafa;
-  color:#14181b;
-  border:1px solid #efefef;
-}
-
-.state{
-  margin-top: 12px;
-  padding: 14px;
-  border: 1px solid #efefef;
-  border-radius: 16px;
-  background:#fff;
-}
-.state.error{ border-color: rgba(217,83,79,.35); }
-.s-title{ font-weight: 900; margin-bottom: 6px; }
-.s-sub{ opacity: .8; font-weight: 700; }
 </style>
