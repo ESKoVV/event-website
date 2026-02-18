@@ -47,7 +47,7 @@
 
               <div class="thread-sub">
                 <div class="thread-preview">
-                  {{ t.lastMessage?.body || '' }}
+                  {{ threadPreview(t.lastMessage?.body || '') }}
                 </div>
                 <div v-if="t.unreadCount > 0" class="thread-pill" aria-label="Непрочитанные">{{ t.unreadCount > 99 ? '99+' : t.unreadCount }}</div>
               </div>
@@ -108,7 +108,20 @@
                 :class="{ mine: m.sender_id === myId, their: m.sender_id !== myId }"
               >
                 <div class="msg-bubble">
-                  <div class="msg-text">{{ m.body }}</div>
+                  <div class="msg-actions">
+                    <button class="msg-action" type="button" @click="setReply(m)" aria-label="Ответить">↩︎</button>
+                  </div>
+
+                  <!-- reply preview inside message -->
+                  <div v-if="parseBody(m.body).reply" class="msg-reply">
+                    <div class="msg-reply-top">
+                      Ответ на <span class="msg-reply-who">{{ parseBody(m.body).reply.who }}</span>
+                    </div>
+                    <div class="msg-reply-text">{{ parseBody(m.body).reply.text }}</div>
+                  </div>
+
+                  <div class="msg-text">{{ parseBody(m.body).text }}</div>
+
                   <div class="msg-meta">
                     <span class="msg-time">{{ formatTime(m.created_at) }}</span>
                     <span v-if="m.sender_id === myId" class="msg-check">✓</span>
@@ -120,15 +133,26 @@
         </div>
 
         <div class="chat-foot">
-          <input
-            v-model="draft"
-            class="chat-input"
-            type="text"
-            placeholder="Напиши сообщение…"
-            @keydown.enter.prevent="send"
-            :disabled="sending"
-          />
-          <button class="chat-send" type="button" @click="send" :disabled="sending || !draft.trim()">Отправить</button>
+          <!-- reply-to bar -->
+          <div v-if="replyTo" class="reply-bar">
+            <div class="reply-bar-left">
+              <div class="reply-bar-title">Ответ на {{ replyTo.who }}</div>
+              <div class="reply-bar-snippet">{{ replyTo.text }}</div>
+            </div>
+            <button class="reply-bar-close" type="button" @click="clearReply" aria-label="Отменить ответ">✕</button>
+          </div>
+
+          <div class="chat-input-row">
+            <input
+              v-model="draft"
+              class="chat-input"
+              type="text"
+              placeholder="Напиши сообщение…"
+              @keydown.enter.prevent="send"
+              :disabled="sending"
+            />
+            <button class="chat-send" type="button" @click="send" :disabled="sending || !draft.trim()">Отправить</button>
+          </div>
         </div>
       </div>
     </div>
@@ -136,7 +160,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSupabase } from '../composables/useSupabase.js'
 import { useUnreadMessages } from '../composables/unreadMessages.js'
@@ -148,6 +172,50 @@ const normalizeStoragePublicUrl = (url) => {
   if (u.includes('/storage/v1/object/public/')) return u
   if (u.includes('/storage/v1/object/')) return u.replace('/storage/v1/object/', '/storage/v1/object/public/')
   return u
+}
+
+/**
+ * Reply-мета хранится внутри body:
+ * __REPLY__{"id":"...","who":"...","text":"..."}__REPLY__<текст>
+ */
+const REPLY_PREFIX = '__REPLY__'
+const REPLY_SUFFIX = '__REPLY__'
+
+const safeJsonParse = (s) => {
+  try { return JSON.parse(s) } catch { return null }
+}
+
+const buildBodyWithReply = ({ replyTo, text }) => {
+  const pure = String(text || '')
+  if (!replyTo) return pure
+  const meta = {
+    id: String(replyTo.id || ''),
+    who: String(replyTo.who || 'сообщение'),
+    text: String(replyTo.text || '').slice(0, 180)
+  }
+  return `${REPLY_PREFIX}${JSON.stringify(meta)}${REPLY_SUFFIX}${pure}`
+}
+
+const parseBody = (body) => {
+  const raw = String(body || '')
+  if (!raw.startsWith(REPLY_PREFIX)) {
+    return { reply: null, text: raw }
+  }
+  const end = raw.indexOf(REPLY_SUFFIX, REPLY_PREFIX.length)
+  if (end === -1) return { reply: null, text: raw }
+
+  const jsonPart = raw.slice(REPLY_PREFIX.length, end)
+  const meta = safeJsonParse(jsonPart)
+  const text = raw.slice(end + REPLY_SUFFIX.length)
+
+  if (!meta || typeof meta !== 'object') return { reply: null, text: raw }
+
+  const reply = {
+    id: String(meta.id || ''),
+    who: String(meta.who || 'сообщение'),
+    text: String(meta.text || '').trim()
+  }
+  return { reply, text }
 }
 
 export default {
@@ -181,6 +249,8 @@ export default {
     const peer = ref(null)
     const messages = ref([])
     const draft = ref('')
+
+    const replyTo = ref(null) // { id, who, text }
 
     const chatBodyRef = ref(null)
 
@@ -216,6 +286,12 @@ export default {
       const email = String(u.email || '').trim()
       const full = `${fn} ${ln}`.trim()
       return full || uname || email || 'Пользователь'
+    }
+
+    const threadPreview = (body) => {
+      const p = parseBody(body)
+      const t = String(p.text || '').trim()
+      return t || (p.reply ? 'Ответ' : '')
     }
 
     const ensureThreadsUsers = async (rows) => {
@@ -259,8 +335,6 @@ export default {
         const enriched = rows.map((r) => {
           const m = r.lastMessage || {}
           const unread = m.receiver_id === user.id && !m.read_at
-          // В этой модели: unreadCount либо 0/1 по lastMessage.
-          // Если хочешь точное число по диалогу — добавим отдельный запрос/агрегацию.
           const unreadCount = unread ? 1 : 0
           const u = usersMap.get(r.otherUserId)
 
@@ -277,7 +351,6 @@ export default {
         threads.value = enriched
         calcUnreadTotal()
 
-        // автоселект из query ?with=
         const qWith = String(route.query.with || '').trim()
         if (qWith && enriched.some((t) => t.otherUserId === qWith)) {
           selectedOtherId.value = qWith
@@ -333,7 +406,6 @@ export default {
     const markThreadAsRead = async (otherId) => {
       if (!otherId) return
       try {
-        // снимаем unread локально сразу (без ожидания)
         const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
         if (idx !== -1) {
           const was = Number(threads.value[idx].unreadCount || 0)
@@ -360,9 +432,28 @@ export default {
       selectedOtherId.value = otherId
       router.replace({ name: 'messages', query: { with: otherId } })
 
+      replyTo.value = null
       await loadPeer(otherId)
       await reloadConversation()
       await markThreadAsRead(otherId)
+    }
+
+    const setReply = (m) => {
+      if (!m) return
+      const isMine = m.sender_id === myId.value
+      const who = isMine ? 'тебя' : (peer.value?.title || 'пользователя')
+      const p = parseBody(m.body)
+      const clean = String(p.text || '').trim()
+      replyTo.value = {
+        id: String(m.id || ''),
+        who,
+        text: clean.slice(0, 120)
+      }
+      nextTick(() => {})
+    }
+
+    const clearReply = () => {
+      replyTo.value = null
     }
 
     const send = async () => {
@@ -372,17 +463,18 @@ export default {
 
       sending.value = true
       try {
-        const { data, error } = await sendMessage(otherId, text)
+        const finalBody = buildBodyWithReply({ replyTo: replyTo.value, text })
+
+        const { data, error } = await sendMessage(otherId, finalBody)
         if (error) throw error
 
         draft.value = ''
+        replyTo.value = null
 
-        // обновим локально список сообщений и треды
         if (data) {
           messages.value = [...messages.value, data]
           await scrollBottom()
 
-          // поднимем тред наверх
           const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
           if (idx !== -1) {
             const t = threads.value[idx]
@@ -415,12 +507,10 @@ export default {
       const otherId = m.sender_id === uid ? m.receiver_id : m.sender_id
       if (!otherId) return
 
-      // обновляем/создаём тред
       const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
       let t = idx !== -1 ? threads.value[idx] : null
 
       if (!t) {
-        await loadPeer(otherId) // чтобы быстро подтянуть имя, но peer тут не используем; всё равно подтянем user ниже
         const { data: u } = await getPublicUserById(otherId)
         t = {
           otherUserId: otherId,
@@ -432,7 +522,6 @@ export default {
         }
       }
 
-      // если это входящее и мы не в этом диалоге — считаем непрочитанным
       const isIncoming = m.receiver_id === uid
       const isOpenNow = selectedOtherId.value === otherId
       const unread = isIncoming && !m.read_at && !isOpenNow
@@ -451,7 +540,6 @@ export default {
 
       calcUnreadTotal()
 
-      // если сообщение пришло в открытый диалог — сразу подгружаем в список и помечаем прочитанным
       if (isOpenNow) {
         messages.value = [...messages.value, m]
         await scrollBottom()
@@ -467,9 +555,7 @@ export default {
 
         const { channel, error } = await subscribeToMyMessages({
           onInsert: (m) => handleRealtimeInsert(m),
-          onUpdate: () => {
-            // при желании можно реагировать на read_at, пока не нужно
-          }
+          onUpdate: () => {}
         })
         if (error) return
         rtChannel = channel
@@ -479,14 +565,12 @@ export default {
     }
 
     onMounted(async () => {
-      // initial select from query
       const qWith = String(route.query.with || '').trim()
       if (qWith) selectedOtherId.value = qWith
 
       await reload()
       await setupRealtime()
 
-      // если уже выбран — прогружаем
       if (selectedOtherId.value) {
         await loadPeer(selectedOtherId.value)
         await reloadConversation()
@@ -511,10 +595,12 @@ export default {
           selectedOtherId.value = ''
           peer.value = null
           messages.value = []
+          replyTo.value = null
           return
         }
         if (nextId === selectedOtherId.value) return
         selectedOtherId.value = nextId
+        replyTo.value = null
         await loadPeer(nextId)
         await reloadConversation()
         await markThreadAsRead(nextId)
@@ -535,12 +621,20 @@ export default {
       messages,
       draft,
 
+      replyTo,
+
       chatBodyRef,
 
       reload,
       openThread,
       send,
       reloadConversation,
+
+      setReply,
+      clearReply,
+
+      parseBody,
+      threadPreview,
 
       formatTime,
       openProfileLogin,
@@ -860,22 +954,81 @@ export default {
 .msg.their {
   justify-content: flex-start;
 }
+
 .msg-bubble {
   max-width: min(560px, 84%);
   border-radius: 18px;
   padding: 10px 12px;
   border: 1px solid #efefef;
   background: #fff;
+  position: relative;
 }
+
 .msg.mine .msg-bubble {
   background: #111;
   color: #fff;
   border-color: #111;
 }
+
+/* reply button */
+.msg-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.msg-bubble:hover .msg-actions {
+  opacity: 1;
+}
+.msg-action {
+  width: 30px;
+  height: 30px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.9);
+  cursor: pointer;
+  font-weight: 900;
+}
+.msg.mine .msg-action {
+  border-color: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+
+/* reply preview inside message */
+.msg-reply {
+  border-left: 3px solid #2a5bff;
+  padding-left: 10px;
+  margin-bottom: 8px;
+  opacity: 0.95;
+}
+.msg.mine .msg-reply {
+  border-left-color: rgba(255,255,255,0.55);
+}
+.msg-reply-top {
+  font-size: 12px;
+  font-weight: 900;
+  opacity: 0.85;
+}
+.msg-reply-who {
+  font-weight: 950;
+}
+.msg-reply-text {
+  font-size: 12px;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .msg-text {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 14px;
+  padding-right: 34px; /* место под кнопку reply */
 }
 .msg-meta {
   margin-top: 6px;
@@ -896,11 +1049,49 @@ export default {
 .chat-foot {
   padding: 12px 14px;
   border-top: 1px solid #efefef;
+  background: #fff;
+  display: grid;
+  gap: 10px;
+}
+
+/* reply bar above input */
+.reply-bar {
+  border: 1px solid #efefef;
+  border-radius: 16px;
+  padding: 10px 10px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  background: #fafafa;
+}
+.reply-bar-title {
+  font-weight: 950;
+  font-size: 12px;
+}
+.reply-bar-snippet {
+  font-size: 12px;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reply-bar-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.chat-input-row {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
-  background: #fff;
 }
+
 .chat-input {
   height: 44px;
   border-radius: 14px;
@@ -941,6 +1132,10 @@ export default {
 @media (max-width: 980px) {
   .mv {
     grid-template-columns: 1fr;
+  }
+  /* reply кнопка всегда видна на мобилке */
+  .msg-actions {
+    opacity: 1;
   }
 }
 </style>

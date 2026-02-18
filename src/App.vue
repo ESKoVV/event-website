@@ -3,7 +3,8 @@
     <header class="header">
       <div class="header-container">
         <div class="header-left">
-          <button class="menu-button" aria-label="Меню" @click="openMenu">
+          <!-- На мобилке кнопка меню внизу, но в хедере можно оставить (она будет скрыта CSS-ом) -->
+          <button class="menu-button desktop-only" aria-label="Меню" @click="openMenu">
             <div class="menu-icon"><span></span><span></span><span></span></div>
           </button>
 
@@ -13,7 +14,7 @@
           </div>
         </div>
 
-        <button class="profile-button" @click="openProfileModal" aria-label="Профиль">
+        <button class="profile-button desktop-only" @click="openProfileModal" aria-label="Профиль">
           <img
             v-if="showHeaderAvatar"
             class="header-avatar"
@@ -27,27 +28,36 @@
     </header>
 
     <div class="layout">
+      <!-- DESKTOP SIDEBAR (в мобилке превращается в bottom-bar через CSS) -->
       <aside class="sidebar" aria-label="Разделы">
+        <!-- 1: Лента -->
         <button class="nav-item" :class="{ active: isActiveRoute('home') }" type="button" @click="go('home')">
           <span class="ni-ico">📰</span>
           <span class="ni-txt">Лента</span>
         </button>
 
-        <button class="nav-item" :class="{ active: isActiveRoute('messages') }" type="button" @click="go('messages')">
-          <span class="ni-ico ni-ico-wrap">
+        <!-- 2: Друзья (поиск друзей) -->
+        <button class="nav-item" :class="{ active: isActiveRoute('friends') }" type="button" @click="go('friends')">
+          <span class="ni-ico">👥</span>
+          <span class="ni-txt">Друзья</span>
+        </button>
+
+        <!-- 3: Сообщения (центральная на мобилке) -->
+        <button class="nav-item nav-item-messages" :class="{ active: isActiveRoute('messages') }" type="button" @click="go('messages')">
+          <span class="ni-ico ni-ico-wrap ni-ico-messages">
             <span class="ni-ico-inner">💬</span>
             <span v-if="unreadCount > 0" class="badge" aria-label="Непрочитанные сообщения">{{ badgeText }}</span>
           </span>
           <span class="ni-txt">Сообщения</span>
         </button>
 
-        <button class="nav-item" :class="{ active: isActiveRoute('friends') }" type="button" @click="go('friends')">
-          <span class="ni-ico">👥</span>
-          <span class="ni-txt">Друзья</span>
+        <!-- 4: Меню (в мобилке между сообщениями и профилем) -->
+        <button class="nav-item" type="button" @click="openMenu">
+          <span class="ni-ico">☰</span>
+          <span class="ni-txt">Меню</span>
         </button>
 
-        <div class="nav-sep"></div>
-
+        <!-- 5: Профиль (в мобилке справа) -->
         <button class="nav-item" type="button" @click="openProfileOrAuth">
           <span class="ni-ico">👤</span>
           <span class="ni-txt">Профиль</span>
@@ -73,15 +83,18 @@
           </div>
 
           <div class="menu-body">
-            <button class="menu-item" @click="openProfileOrAuth">👤 Профиль / Вход</button>
             <button class="menu-item" @click="go('home'); closeMenu()">📰 Лента</button>
+            <button class="menu-item" @click="go('friends'); closeMenu()">👥 Друзья</button>
 
             <button class="menu-item menu-item-with-badge" @click="go('messages'); closeMenu()">
               <span class="mib-left">💬 Сообщения</span>
               <span v-if="unreadCount > 0" class="menu-badge">{{ badgeText }}</span>
             </button>
 
-            <button class="menu-item" @click="go('friends'); closeMenu()">👥 Друзья</button>
+            <!-- будущие разделы добавляй сюда -->
+            <div class="menu-note">Здесь будут остальные разделы позже</div>
+
+            <button class="menu-item" @click="openProfileOrAuth">👤 Профиль / Вход</button>
           </div>
 
           <div class="menu-foot">
@@ -91,7 +104,7 @@
       </div>
     </teleport>
 
-    <!-- ✅ ВСЕ МОДАЛКИ ТЕПЕРЬ В BODY -->
+    <!-- ✅ ВСЕ МОДАЛКИ В BODY -->
     <teleport to="body">
       <AuthModal
         v-if="showAuth"
@@ -471,6 +484,7 @@ export default {
   border-radius: 18px;
   background: #fff;
   padding: 10px;
+  height: fit-content;
 }
 .nav-item {
   width: 100%;
@@ -508,12 +522,8 @@ export default {
   font-weight: 600;
   font-size: 14px;
 }
-.nav-sep {
-  height: 1px;
-  background: #efefef;
-  margin: 10px 6px;
-}
 
+/* messages icon with badge */
 .ni-ico-wrap {
   position: relative;
 }
@@ -521,7 +531,6 @@ export default {
   display: inline-block;
   line-height: 1;
 }
-
 .badge {
   position: absolute;
   top: -6px;
@@ -601,6 +610,11 @@ export default {
 .menu-item:hover {
   background: #f7f7f7;
 }
+.menu-note {
+  font-size: 12px;
+  opacity: 0.6;
+  padding: 0 4px;
+}
 .menu-foot {
   padding: 14px;
   border-top: 1px solid #efefef;
@@ -640,14 +654,70 @@ export default {
   place-items: center;
 }
 
+/* ===== MOBILE BOTTOM BAR ===== */
 @media (max-width: 980px) {
   .layout {
     grid-template-columns: 1fr;
+    padding-bottom: 92px; /* место под нижнюю панель */
   }
+
+  .desktop-only {
+    display: none !important;
+  }
+
   .sidebar {
-    position: relative;
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
     top: auto;
-    order: 2;
+    z-index: 30;
+
+    border-radius: 22px;
+    padding: 10px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  }
+
+  .nav-item {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 10px 6px;
+    border-radius: 18px;
+  }
+
+  .ni-txt {
+    display: none;
+  }
+
+  .ni-ico {
+    width: 46px;
+    height: 46px;
+    border-radius: 18px;
+    font-size: 20px;
+  }
+
+  /* центральная кнопка сообщения — чуть выделяем */
+  .nav-item-messages .ni-ico {
+    width: 54px;
+    height: 54px;
+    border-radius: 20px;
+    font-size: 22px;
+    transform: translateY(-10px);
+    border: 1px solid #efefef;
+    background: #fff;
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.08);
+  }
+  .nav-item.active .nav-item-messages .ni-ico {
+    background: #fff;
+  }
+  .badge {
+    top: -8px;
+    right: -10px;
+    border-color: #fff;
   }
 }
 </style>
