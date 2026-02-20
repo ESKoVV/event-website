@@ -1,6 +1,6 @@
 <template>
   <div class="mv">
-    <div class="mv-left" :class="{ 'mv-left-hidden': isChatOpenMobile }">
+    <div class="mv-left">
       <div class="mv-head">
         <div class="mv-title">Сообщения</div>
         <button class="mv-refresh" type="button" @click="reload" :disabled="loading">⟳</button>
@@ -59,7 +59,7 @@
       </div>
     </div>
 
-    <div class="mv-right" :class="{ 'mv-right-open': isChatOpenMobile }">
+    <div class="mv-right">
       <div v-if="authRequired" class="chat-empty">
         <div class="chat-empty-title">Сообщения</div>
         <div class="chat-empty-text">Войди, чтобы открыть чат.</div>
@@ -72,15 +72,6 @@
 
       <div v-else class="chat">
         <div class="chat-head">
-          <button
-            class="chat-back"
-            type="button"
-            @click="closeChat"
-            aria-label="Назад к списку"
-            title="Назад"
-          >
-            ←
-          </button>
           <div class="chat-peer">
             <div class="chat-peer-ava">
               <img
@@ -139,7 +130,7 @@
 
                   <div class="msg-meta">
                     <span class="msg-time">{{ formatTime(m.created_at) }}</span>
-                    <span v-if="m.sender_id === myId" class="msg-check">{{ m.read_at ? '✓✓' : '✓' }}</span>
+                    <span v-if="m.sender_id === myId" class="msg-check">✓</span>
                   </div>
                 </div>
               </div>
@@ -263,9 +254,6 @@ export default {
     const threads = ref([]) // [{ otherUserId, lastMessage, unread, unreadCount, title, avatar }]
     const selectedOtherId = ref('')
 
-    // mobile overlay like VK
-    const isChatOpenMobile = ref(false)
-
     const peer = ref(null)
     const messages = ref([])
     const draft = ref('')
@@ -280,58 +268,6 @@ export default {
     let typingChannel = null
 
     let rtChannel = null
-
-    // ==========================
-    // ✅ Sound "пам" for incoming messages
-    // ==========================
-    let audioCtx = null
-    let audioUnlocked = false
-
-    const unlockAudio = async () => {
-      if (audioUnlocked) return
-      try {
-        const Ctx = window.AudioContext || window.webkitAudioContext
-        if (!Ctx) return
-        audioCtx = audioCtx || new Ctx()
-        // "разблок" через короткий пустой звук
-        const osc = audioCtx.createOscillator()
-        const gain = audioCtx.createGain()
-        gain.gain.value = 0
-        osc.connect(gain)
-        gain.connect(audioCtx.destination)
-        osc.start()
-        osc.stop(audioCtx.currentTime + 0.01)
-        audioUnlocked = true
-      } catch {
-        // ignore
-      }
-    }
-
-    const playPam = async () => {
-      try {
-        await unlockAudio()
-        if (!audioCtx) return
-        const t0 = audioCtx.currentTime
-        const osc = audioCtx.createOscillator()
-        const gain = audioCtx.createGain()
-
-        osc.type = 'sine'
-        osc.frequency.setValueAtTime(520, t0)
-        osc.frequency.exponentialRampToValueAtTime(260, t0 + 0.09)
-
-        gain.gain.setValueAtTime(0.0001, t0)
-        gain.gain.exponentialRampToValueAtTime(0.35, t0 + 0.01)
-        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12)
-
-        osc.connect(gain)
-        gain.connect(audioCtx.destination)
-
-        osc.start(t0)
-        osc.stop(t0 + 0.13)
-      } catch {
-        // ignore
-      }
-    }
 
     const calcUnreadTotal = () => {
       let total = 0
@@ -509,9 +445,6 @@ export default {
       selectedOtherId.value = otherId
       router.replace({ name: 'messages', query: { with: otherId } })
 
-      // на мобилке чат должен быть поверх списка
-      isChatOpenMobile.value = true
-
       replyTo.value = null
       peerTyping.value = false
 
@@ -521,17 +454,6 @@ export default {
       await loadPeer(otherId)
       await reloadConversation()
       await markThreadAsRead(otherId)
-    }
-
-    const closeChat = async () => {
-      await stopTyping()
-      selectedOtherId.value = ''
-      peer.value = null
-      messages.value = []
-      replyTo.value = null
-      peerTyping.value = false
-      isChatOpenMobile.value = false
-      router.replace({ name: 'messages', query: {} })
     }
 
     const setReply = (m) => {
@@ -618,10 +540,7 @@ export default {
         replyTo.value = null
 
         if (data) {
-          // ✅ защита от дублей: realtime INSERT может прийти сразу после успешной отправки
-          if (!messages.value.some((x) => String(x?.id) === String(data.id))) {
-            messages.value = [...messages.value, data]
-          }
+          messages.value = [...messages.value, data]
           await scrollBottom()
 
           const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
@@ -656,9 +575,6 @@ export default {
       const otherId = m.sender_id === uid ? m.receiver_id : m.sender_id
       if (!otherId) return
 
-      const isIncoming = m.receiver_id === uid && m.sender_id !== uid
-      if (isIncoming) playPam()
-
       const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
       let t = idx !== -1 ? threads.value[idx] : null
 
@@ -674,6 +590,7 @@ export default {
         }
       }
 
+      const isIncoming = m.receiver_id === uid
       const isOpenNow = selectedOtherId.value === otherId
       const unread = isIncoming && !m.read_at && !isOpenNow
       const unreadCount = unread ? 1 : 0
@@ -692,41 +609,9 @@ export default {
       calcUnreadTotal()
 
       if (isOpenNow) {
-        // ✅ защита от дублей: сообщение могло быть добавлено оптимистично при отправке
-        if (!messages.value.some((x) => String(x?.id) === String(m.id))) {
-          messages.value = [...messages.value, m]
-        }
+        messages.value = [...messages.value, m]
         await scrollBottom()
         await markThreadAsRead(otherId)
-      }
-    }
-
-    const handleRealtimeUpdate = async (m) => {
-      if (!m) return
-      const uid = myId.value
-      if (!uid) return
-
-      const otherId = m.sender_id === uid ? m.receiver_id : m.sender_id
-      if (!otherId) return
-
-      // обновляем сообщение в открытом чате (например read_at)
-      const mi = messages.value.findIndex((x) => String(x?.id) === String(m.id))
-      if (mi !== -1) {
-        const copy = [...messages.value]
-        copy[mi] = { ...copy[mi], ...m }
-        messages.value = copy
-      }
-
-      // обновляем lastMessage в треде
-      const ti = threads.value.findIndex((t) => t.otherUserId === otherId)
-      if (ti !== -1) {
-        const t = threads.value[ti]
-        const lastId = String(t?.lastMessage?.id || '')
-        if (String(m.id) === lastId) {
-          const copy = [...threads.value]
-          copy[ti] = { ...t, lastMessage: { ...t.lastMessage, ...m } }
-          threads.value = copy
-        }
       }
     }
 
@@ -738,7 +623,7 @@ export default {
 
         const { channel, error } = await subscribeToMyMessages({
           onInsert: (m) => handleRealtimeInsert(m),
-          onUpdate: (m) => handleRealtimeUpdate(m)
+          onUpdate: () => {}
         })
         if (error) return
         rtChannel = channel
@@ -804,20 +689,8 @@ export default {
     }
 
     onMounted(async () => {
-      // браузеры блокируют звук, пока не будет пользовательского действия
-      const unlockOnce = () => {
-        unlockAudio()
-        window.removeEventListener('pointerdown', unlockOnce)
-        window.removeEventListener('keydown', unlockOnce)
-      }
-      window.addEventListener('pointerdown', unlockOnce, { passive: true })
-      window.addEventListener('keydown', unlockOnce)
-
       const qWith = String(route.query.with || '').trim()
       if (qWith) selectedOtherId.value = qWith
-
-      // если открылся напрямую по query.with — на мобилке тоже показываем overlay
-      if (qWith) isChatOpenMobile.value = true
 
       await reload()
       await setupRealtime()
@@ -844,13 +717,6 @@ export default {
 
       teardownTypingRealtime()
 
-      try {
-        if (audioCtx && typeof audioCtx.close === 'function') audioCtx.close()
-      } catch {
-        // ignore
-      }
-      audioCtx = null
-
       if (typingSelfTimer) clearTimeout(typingSelfTimer)
       typingSelfTimer = null
     })
@@ -866,7 +732,6 @@ export default {
           messages.value = []
           replyTo.value = null
           peerTyping.value = false
-          isChatOpenMobile.value = false
           return
         }
         if (nextId === selectedOtherId.value) return
@@ -874,7 +739,6 @@ export default {
         selectedOtherId.value = nextId
         replyTo.value = null
         peerTyping.value = false
-        isChatOpenMobile.value = true
         await loadPeer(nextId)
         await reloadConversation()
         await markThreadAsRead(nextId)
@@ -891,7 +755,6 @@ export default {
 
       threads,
       selectedOtherId,
-      isChatOpenMobile,
       peer,
       messages,
       draft,
@@ -920,8 +783,7 @@ export default {
       // typing
       peerTyping,
       onDraftInput,
-      stopTyping,
-      closeChat
+      stopTyping
     }
   }
 }
@@ -1004,7 +866,6 @@ export default {
   gap: 10px;
   cursor: pointer;
   text-align: left;
-  overflow: hidden; /* ✅ чтобы active/preview не вылезали за рамки */
   transition: transform 0.06s ease, background 0.15s ease, border-color 0.15s ease;
 }
 .thread:hover {
@@ -1015,7 +876,7 @@ export default {
   transform: scale(0.99);
 }
 .thread.active {
-  border-color: #8A75E3;
+  border-color: #111;
 }
 .thread.unread {
   background: #f6f8ff;
@@ -1056,7 +917,6 @@ export default {
   min-width: 0;
   display: grid;
   gap: 6px;
-  overflow: hidden;
 }
 .thread-top {
   display: flex;
@@ -1128,7 +988,7 @@ export default {
   height: 42px;
   border-radius: 14px;
   border: none;
-  background: #8A75E3;
+  background: #111;
   color: #fff;
   font-weight: 900;
   padding: 0 14px;
@@ -1260,9 +1120,9 @@ export default {
 }
 
 .msg.mine .msg-bubble {
-  background: #8A75E3;
+  background: #111;
   color: #fff;
-  border-color: #8A75E3;
+  border-color: #111;
 }
 
 /* reply button */
@@ -1401,7 +1261,7 @@ export default {
   height: 44px;
   border-radius: 14px;
   border: none;
-  background: #8A75E3;
+  background: #111;
   color: #fff;
   font-weight: 900;
   padding: 0 14px;
@@ -1428,62 +1288,9 @@ export default {
   .mv {
     grid-template-columns: 1fr;
   }
-
-  /* чат поверх списка (как VK на мобилке) */
-  .mv-right.mv-right-open {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    border-radius: 0;
-  }
-
-  .mv-left.mv-left-hidden {
-    display: none;
-  }
-
-  .mv-right {
-    border-radius: 18px;
-  }
-
-  .chat {
-    height: 100vh;
-  }
-
-  .chat-head {
-    padding-left: 10px;
-  }
-
-  .chat-back {
-    width: 40px;
-    height: 40px;
-    border-radius: 14px;
-    border: 1px solid #efefef;
-    background: #fff;
-    cursor: pointer;
-    font-weight: 900;
-    flex: 0 0 auto;
-  }
-
   /* reply кнопка всегда видна на мобилке */
   .msg-actions {
     opacity: 1;
   }
-}
-
-/* по умолчанию (desktop) — скрываем кнопку назад */
-.chat-back {
-  display: none;
-}
-
-/* ✅ desktop: убираем всплывающие/лишние кнопки */
-@media (min-width: 981px) {
-  .mv-refresh,
-  .chat-head-btn {
-    display: none;
-  }
-}
-
-@media (max-width: 980px) {
-  .chat-back { display: inline-grid; place-items: center; }
 }
 </style>
