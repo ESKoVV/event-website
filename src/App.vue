@@ -3,11 +3,6 @@
     <header class="header">
       <div class="header-container">
         <div class="header-left">
-          <!-- На мобилке кнопка меню внизу, но в хедере можно оставить (она будет скрыта CSS-ом) -->
-          <button class="menu-button desktop-only" aria-label="Меню" @click="openMenu">
-            <div class="menu-icon"><span></span><span></span><span></span></div>
-          </button>
-
           <div class="search-container">
             <div class="search-icon">🔍</div>
             <input v-model="searchTerm" type="text" placeholder="Поиск" class="search-input" />
@@ -52,7 +47,8 @@
         </button>
 
         <!-- 4: Меню (в мобилке между сообщениями и профилем) -->
-        <button class="nav-item" type="button" @click="openMenu">
+        <!-- Меню нужно только на мобильной версии -->
+        <button class="nav-item nav-item-menu mobile-only" type="button" @click="openMenu">
           <span class="ni-ico">☰</span>
           <span class="ni-txt">Меню</span>
         </button>
@@ -654,8 +650,16 @@ export default {
   place-items: center;
 }
 
+/* Показываем некоторые элементы только на мобильной версии */
+.mobile-only {
+  display: none !important;
+}
+
 /* ===== MOBILE BOTTOM BAR ===== */
 @media (max-width: 980px) {
+  .mobile-only {
+    display: inline-flex !important;
+  }
   .layout {
     grid-template-columns: 1fr;
     padding-bottom: 92px; /* место под нижнюю панель */
