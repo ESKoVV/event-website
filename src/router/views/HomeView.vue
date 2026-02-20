@@ -889,7 +889,18 @@ export default {
 .page { padding: 12px 0; }
 .container { max-width: 1200px; margin: 0 auto; padding: 0 12px; }
 
-.topbar{ display:flex; align-items:center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.topbar{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 72px;
+  z-index: 15;
+  background: #fff;
+  padding: 6px 0;
+}
 
 .filter-btn {
   width: 40px; height: 40px; border-radius: 14px;
@@ -924,6 +935,12 @@ export default {
 /* На ПК убираем кнопку обновления (иконка ⟳). На мобильной оставляем. */
 @media (min-width: 981px){
   .refresh{ display:none !important; }
+
+  /* компактнее на ПК, чтобы не появлялся лишний вертикальный скролл */
+  .topbar{ gap: 8px; margin-bottom: 6px; padding: 4px 0; }
+  .filter-btn{ width: 36px; height: 36px; border-radius: 12px; }
+  .tab{ padding: 8px 10px; border-radius: 12px; }
+  .tab .txt{ font-size: 12px; }
 }
 @media (max-width: 520px){ .tab .txt{ display:none; } .refresh{ margin-left:0; } }
 

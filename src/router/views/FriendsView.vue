@@ -71,21 +71,12 @@
                     <button class="menu-item" type="button" @click="openFriendsOf(u.id)">Посмотреть друзей</button>
 
                     <button
-                      v-if="confirmDeleteId !== u.id"
                       class="menu-item danger"
                       type="button"
-                      @click="confirmDeleteId = u.id"
+                      @click="openDeleteModal(u.id)"
                     >
                       Удалить из друзей
                     </button>
-
-                    <div v-else class="menu-confirm">
-                      <div class="menu-confirm-text">Точно удалить?</div>
-                      <div class="menu-confirm-actions">
-                        <button class="btn small" type="button" @click="doDelete(u.id)">Да</button>
-                        <button class="btn small ghost" type="button" @click="confirmDeleteId = ''">Отмена</button>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -145,7 +136,7 @@
                   <button
                     v-if="relationOf(u.id) === 'friend'"
                     class="btn small"
-                    @click="removeFriendOrReq(u.id)"
+                    @click="openDeleteModal(u.id)"
                   >
                     Удалить
                   </button>
@@ -181,6 +172,21 @@
         </main>
       </div>
     </div>
+
+    <teleport to="body">
+      <div v-if="confirmDeleteId" class="modal-root" @keydown.esc="closeDeleteModal" tabindex="-1">
+        <div class="modal-overlay" @click="closeDeleteModal"></div>
+
+        <div class="modal-card" role="dialog" aria-modal="true" aria-label="Подтверждение удаления">
+          <div class="modal-title">Удалить из друзей?</div>
+          <div class="modal-text">Вы действительно хотите удалить пользователя из друзей?</div>
+          <div class="modal-actions">
+            <button class="btn small ghost" type="button" @click="closeDeleteModal">Отмена</button>
+            <button class="btn small" type="button" @click="doDelete(confirmDeleteId)">Удалить</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 
@@ -347,19 +353,27 @@ export default {
 
 
     const toggleMenu = (uid) => {
-      confirmDeleteId.value = ''
       openMenuId.value = openMenuId.value === String(uid || '') ? '' : String(uid || '')
     }
 
     const closeMenus = () => {
       openMenuId.value = ''
+    }
+
+    const closeDeleteModal = () => {
       confirmDeleteId.value = ''
+    }
+
+    const openDeleteModal = (uid) => {
+      confirmDeleteId.value = String(uid || '')
+      openMenuId.value = ''
     }
 
     const doDelete = async (uid) => {
       try {
         closeMenus()
         await removeFriendOrReq(uid)
+        closeDeleteModal()
       } catch {
         // ignore
       }
@@ -462,6 +476,8 @@ return {
       openMenuId,
       confirmDeleteId,
       toggleMenu,
+      openDeleteModal,
+      closeDeleteModal,
       openFriendsOf,
       closeFriendsOf,
       viewingFriendsOfId,
@@ -602,7 +618,22 @@ return {
 }
 .menu-item:hover{ background:#fafafa; }
 .menu-item.danger{ border-color: rgba(217,83,79,.28); color: #d9534f; }
-.menu-confirm{ border: 1px solid #efefef; border-radius: 12px; padding: 10px; }
-.menu-confirm-text{ font-weight: 900; margin-bottom: 8px; }
-.menu-confirm-actions{ display:flex; gap: 8px; justify-content:flex-end; flex-wrap: wrap; }
+
+.modal-root{ position: fixed; inset: 0; z-index: 70; }
+.modal-overlay{ position: absolute; inset: 0; background: rgba(20,24,27,.45); }
+.modal-card{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100vw - 24px));
+  background: #fff;
+  border: 1px solid #efefef;
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 18px 40px rgba(20,24,27,.20);
+}
+.modal-title{ font-weight: 900; font-size: 16px; margin-bottom: 6px; }
+.modal-text{ opacity: .8; font-weight: 700; }
+.modal-actions{ margin-top: 14px; display:flex; justify-content:flex-end; gap: 8px; }
 </style>
