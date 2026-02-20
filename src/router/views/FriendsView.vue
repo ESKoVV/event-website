@@ -408,7 +408,8 @@ export default {
 
     const goChat = (otherId) => {
       // открываем MessagesView и просим открыть чат сразу
-      router.push({ path: '/messages', query: { user: otherId } })
+      // MessagesView читает query.with
+      router.push({ path: '/messages', query: { with: otherId } })
     }
 
     const reloadAll = async () => {
