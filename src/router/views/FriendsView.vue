@@ -63,8 +63,48 @@
                 </div>
 
                 <div class="actions">
+                  <!-- ✅ 2 кнопки на мобилке: написать + меню; на десктопе меню нет -->
                   <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
-                  <button class="btn small" @click="removeFriendOrReq(u.id)">Удалить</button>
+
+                  <template v-if="isMobile">
+                    <button class="btn small" @click="toggleMenu(u.id)" aria-label="Меню">⋯</button>
+                    <div v-if="openMenuId === u.id" class="menu" @click.stop>
+                      <button class="menu-item" type="button" @click="openFriendsOf(u.id)">Посмотреть друзей</button>
+
+                      <button
+                        v-if="confirmDeleteId !== u.id"
+                        class="menu-item danger"
+                        type="button"
+                        @click="confirmDeleteId = u.id"
+                      >
+                        Удалить из друзей
+                      </button>
+
+                      <div v-else class="menu-confirm">
+                        <div class="menu-confirm-text">Точно удалить?</div>
+                        <div class="menu-confirm-actions">
+                          <button class="btn small" type="button" @click="doDelete(u.id)">Да</button>
+                          <button class="btn small ghost" type="button" @click="confirmDeleteId = ''">Отмена</button>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <button class="btn small" type="button" @click="openFriendsOf(u.id)">Друзья</button>
+                    <button
+                      v-if="confirmDeleteId !== u.id"
+                      class="btn small"
+                      type="button"
+                      @click="confirmDeleteId = u.id"
+                    >
+                      Удалить
+                    </button>
+                    <template v-else>
+                      <button class="btn small" type="button" @click="doDelete(u.id)">Да</button>
+                      <button class="btn small ghost" type="button" @click="confirmDeleteId = ''">Отмена</button>
+                    </template>
+                  </template>
                 </div>
               </div>
             </div>
@@ -73,6 +113,31 @@
 
         <!-- RIGHT: поиск -->
         <main class="right">
+          <div v-if="viewingFriendsOfId" class="block">
+            <div class="b-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+              <span>Друзья пользователя</span>
+              <button class="btn small ghost" type="button" @click="closeFriendsOf">Закрыть</button>
+            </div>
+
+            <div v-if="friendsOfLoading" class="muted">Загрузка…</div>
+            <div v-else-if="friendsOfList.length === 0" class="muted">У пользователя пока нет друзей</div>
+
+            <div v-else class="list">
+              <div v-for="fu in friendsOfList" :key="fu.id" class="row">
+                <div class="u">
+                  <div class="ava">{{ letter(fu) }}</div>
+                  <div class="meta">
+                    <div class="name">{{ displayName(fu) }}</div>
+                    <div class="sub">@{{ fu.username || '—' }}</div>
+                  </div>
+                </div>
+                <div class="actions">
+                  <button class="btn small ghost" @click="goChat(fu.id)">Написать</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="block">
             <div class="b-title">Поиск пользователей</div>
 
@@ -138,9 +203,9 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { useSupabase } from '@/composables/useSupabase'
+import { useSupabase, supabase } from '@/composables/useSupabase'
 
 const debounce = (fn, ms = 250) => {
   let t = null
@@ -178,6 +243,20 @@ export default {
 
     const friends = ref([])
     const incomingRequests = ref([])
+
+    // ✅ UI state
+    const isMobile = ref(false)
+    const openMenuId = ref('')
+    const confirmDeleteId = ref('')
+
+    // ✅ "друзья друга"
+    const viewingFriendsOfId = ref('')
+    const friendsOfLoading = ref(false)
+    const friendsOfList = ref([])
+
+    let mq = null
+    let mqSet = null
+    let onDocClick = null
 
     // быстрый индекс отношений по userId
     // friend | incoming | outgoing | none
@@ -287,9 +366,65 @@ export default {
       }
     }
 
+    const doDelete = async (otherId) => {
+      confirmDeleteId.value = ''
+      openMenuId.value = ''
+      await removeFriendOrReq(otherId)
+    }
+
+    const toggleMenu = (uid) => {
+      confirmDeleteId.value = ''
+      openMenuId.value = openMenuId.value === uid ? '' : uid
+    }
+
+    const closeMenus = () => {
+      openMenuId.value = ''
+      confirmDeleteId.value = ''
+    }
+
+    const closeFriendsOf = () => {
+      viewingFriendsOfId.value = ''
+      friendsOfList.value = []
+    }
+
+    const openFriendsOf = async (otherId) => {
+      closeMenus()
+      viewingFriendsOfId.value = String(otherId || '')
+      friendsOfList.value = []
+      if (!otherId) return
+      friendsOfLoading.value = true
+      try {
+        const { data, error: e1 } = await supabase
+          .from('friendships')
+          .select('*')
+          .eq('status', 'accepted')
+          .or(`requester_id.eq.${otherId},addressee_id.eq.${otherId}`)
+          .order('created_at', { ascending: false })
+        if (e1) throw e1
+
+        const rows = data || []
+        const ids = new Set()
+        for (const f of rows) {
+          const oid = f.requester_id === otherId ? f.addressee_id : f.requester_id
+          if (oid) ids.add(oid)
+        }
+
+        const out = []
+        for (const id of ids) {
+          const { data: u } = await getPublicUserById(id)
+          if (u?.id) out.push(u)
+        }
+        friendsOfList.value = out
+      } catch (e) {
+        error.value = String(e?.message || e)
+      } finally {
+        friendsOfLoading.value = false
+      }
+    }
+
     const goChat = (otherId) => {
       // открываем MessagesView и просим открыть чат сразу
-      router.push({ path: '/messages', query: { user: otherId } })
+      router.push({ path: '/messages', query: { with: otherId } })
     }
 
     const reloadAll = async () => {
@@ -316,7 +451,39 @@ export default {
       }
     }
 
-    onMounted(reloadAll)
+    onMounted(() => {
+      mq = window.matchMedia('(max-width: 980px)')
+      mqSet = () => (isMobile.value = !!mq.matches)
+      mqSet()
+
+      try {
+        mq.addEventListener('change', mqSet)
+      } catch {
+        // Safari fallback
+        mq.addListener(mqSet)
+      }
+
+      onDocClick = () => closeMenus()
+      document.addEventListener('click', onDocClick)
+
+      reloadAll()
+    })
+
+    onBeforeUnmount(() => {
+      try {
+        if (mq && mqSet) mq.removeEventListener('change', mqSet)
+      } catch {
+        try {
+          if (mq && mqSet) mq.removeListener(mqSet)
+        } catch {}
+      }
+      try {
+        if (onDocClick) document.removeEventListener('click', onDocClick)
+      } catch {}
+      mq = null
+      mqSet = null
+      onDocClick = null
+    })
 
     return {
       loading,
@@ -330,6 +497,18 @@ export default {
 
       friends,
       incomingRequests,
+
+      isMobile,
+      openMenuId,
+      confirmDeleteId,
+      toggleMenu,
+      doDelete,
+
+      viewingFriendsOfId,
+      friendsOfLoading,
+      friendsOfList,
+      openFriendsOf,
+      closeFriendsOf,
 
       displayName,
       letter,
@@ -407,6 +586,36 @@ export default {
 .name{ font-weight: 900; font-size: 13px; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
 .sub{ font-size: 12px; opacity: .75; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
 .actions{ display:flex; gap: 8px; flex-wrap: wrap; justify-content:flex-end; }
+
+.menu{
+  position: absolute;
+  margin-top: 6px;
+  right: 10px;
+  background: #fff;
+  border: 1px solid #efefef;
+  border-radius: 14px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  z-index: 20;
+  box-shadow: 0 12px 30px rgba(20,24,27,.10);
+}
+.row{ position: relative; }
+.menu-item{
+  width: 100%;
+  text-align: left;
+  border: 1px solid #efefef;
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.menu-item:hover{ background:#fafafa; }
+.menu-item.danger{ border-color: rgba(217,83,79,.28); color: #d9534f; }
+.menu-confirm{ border: 1px solid #efefef; border-radius: 12px; padding: 10px; }
+.menu-confirm-text{ font-weight: 900; margin-bottom: 8px; }
+.menu-confirm-actions{ display:flex; gap: 8px; justify-content:flex-end; flex-wrap: wrap; }
 
 .btn{
   border:none;

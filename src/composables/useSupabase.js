@@ -478,6 +478,15 @@ export const useSupabase = () => {
       (payload) => onUpdate?.(payload.new)
     )
 
+    // ✅ важно для "двух галочек": когда собеседник читает сообщение,
+    // обновляется read_at у сообщений, где *я* sender_id, а receiver_id = другой пользователь.
+    // Поэтому слушаем UPDATE и по sender_id.
+    ch.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
+      (payload) => onUpdate?.(payload.new)
+    )
+
     const { error } = await ch.subscribe()
     return { channel: ch, error }
   }

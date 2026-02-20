@@ -136,9 +136,22 @@
                 </div>
               </div>
 
-              <button class="go-org" type="button" @click="goOrganizer" :disabled="!event?.user_id">
-                Перейти →
-              </button>
+              <div class="org-actions">
+                <button
+                  v-if="canMessageOrganizer"
+                  class="msg-org"
+                  type="button"
+                  @click="messageOrganizer"
+                  aria-label="Написать организатору"
+                  title="Написать"
+                >
+                  💬
+                </button>
+
+                <button class="go-org" type="button" @click="goOrganizer" :disabled="!event?.user_id">
+                  Перейти →
+                </button>
+              </div>
             </div>
           </div>
 
@@ -394,6 +407,19 @@ export default {
       favoriteIds.value = new Set(loadFavLS(favKey.value))
     }
 
+    const canMessageOrganizer = computed(() => {
+      const isBiz = organizerProfile.value?.It_business === true
+      const my = String(userId.value || '')
+      const other = String(event.value?.user_id || '')
+      return isBiz && my && other && my !== other
+    })
+
+    const messageOrganizer = () => {
+      const other = String(event.value?.user_id || '').trim()
+      if (!other) return
+      router.push({ path: '/messages', query: { with: other } })
+    }
+
     const loadOrganizerBlock = async () => {
       if (!event.value?.user_id) return
       orgLoading.value = true
@@ -408,6 +434,31 @@ export default {
       }
     }
 
+    const ensurePhotosForEventIds = async (idsRaw) => {
+      const ids = (Array.isArray(idsRaw) ? idsRaw : [])
+        .map((x) => Number(x))
+        .filter((n) => Number.isFinite(n))
+
+      if (!ids.length) return
+
+      // какие уже есть
+      const map = cachedPhotosByEventId.value && typeof cachedPhotosByEventId.value === 'object' ? cachedPhotosByEventId.value : {}
+      const missing = ids.filter((id) => !Array.isArray(map[id]) || map[id].length === 0)
+      if (!missing.length) return
+
+      const { data: ph, error: e } = await getEventPhotos(missing)
+      if (e) return
+
+      const next = { ...map }
+      for (const row of (ph || [])) {
+        const eid = Number(row?.event_id)
+        if (!Number.isFinite(eid)) continue
+        if (!next[eid]) next[eid] = []
+        next[eid].push(row)
+      }
+      cachedPhotosByEventId.value = next
+    }
+
     const loadOtherFallbackIfNoCache = async () => {
       if (Array.isArray(cachedAllEvents.value) && cachedAllEvents.value.length) return
       if (!event.value?.user_id) return
@@ -420,6 +471,10 @@ export default {
           excludeEventId: event.value.id
         })
         cachedAllEvents.value = Array.isArray(data) ? data : []
+
+        // ✅ подтягиваем фото для "Другие мероприятия", чтобы карточки были как в ленте
+        const ids = (cachedAllEvents.value || []).map((e) => e?.id).filter((x) => x !== null && x !== undefined)
+        await ensurePhotosForEventIds(ids)
       } finally {
         otherLoading.value = false
       }
@@ -529,6 +584,19 @@ export default {
       () => resetGallery()
     )
 
+    watch(
+      () => tab.value,
+      async (t) => {
+        if (t !== 'other') return
+        try {
+          const ids = (otherEventsForCards.value || []).map((e) => e?.id).filter((x) => x !== null && x !== undefined)
+          await ensurePhotosForEventIds(ids)
+        } catch {
+          // ignore
+        }
+      }
+    )
+
     return {
       routeId,
       loading,
@@ -557,6 +625,9 @@ export default {
       orgLetter,
       orgLoading,
       goOrganizer,
+
+      canMessageOrganizer,
+      messageOrganizer,
 
       otherLoading,
       otherEventsForCards,
@@ -827,6 +898,19 @@ export default {
   font-weight: 900; cursor:pointer;
 }
 .go-org:disabled{ opacity:.6; cursor:not-allowed; }
+
+.org-actions{ display:flex; gap: 10px; align-items:center; }
+.msg-org{
+  width: 44px; height: 44px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  background:#fafafa;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 18px;
+}
 
 .events-shell { margin-top: 10px; }
 .events-list{

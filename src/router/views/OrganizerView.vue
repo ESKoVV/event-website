@@ -28,6 +28,19 @@
               <span class="pill" v-else>Аккаунт</span>
             </div>
           </div>
+
+          <div class="org-actions">
+            <button
+              v-if="canMessage"
+              class="msg"
+              type="button"
+              @click="message"
+              aria-label="Написать бизнес аккаунту"
+              title="Написать"
+            >
+              💬 Написать
+            </button>
+          </div>
         </div>
 
         <div class="events-shell">
@@ -58,7 +71,7 @@
 
 <script>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useSupabase } from '@/composables/useSupabase'
 import { getEventsCache } from '@/composables/eventsCache'
 import EventCard from '@/components/EventCard.vue'
@@ -80,6 +93,7 @@ export default {
   components: { EventCard, EventPhotoModal },
   setup() {
     const route = useRoute()
+    const router = useRouter()
     const { getPublicUserById, getOrganizerEvents, getEventPhotos, getUser } = useSupabase()
 
     const loading = ref(true)
@@ -98,6 +112,19 @@ export default {
     const photoModalUrl = ref('')
 
     const organizerId = computed(() => String(route.params.id || ''))
+
+    const canMessage = computed(() => {
+      const isBiz = profile.value?.It_business === true
+      const my = String(userId.value || '')
+      const other = String(organizerId.value || '')
+      return isBiz && my && other && my !== other
+    })
+
+    const message = () => {
+      const other = String(organizerId.value || '').trim()
+      if (!other) return
+      router.push({ path: '/messages', query: { with: other } })
+    }
 
     const name = computed(() => {
       const p = profile.value
@@ -181,6 +208,7 @@ export default {
     return {
       loading, error,
       profile, avatar, name, letter,
+      canMessage, message,
       eventsForCards, photosByEventId, categoryMap,
       favoriteIds, onToggleFavorite,
       photoModalUrl, openPhoto,
@@ -224,6 +252,17 @@ export default {
   padding:6px 10px; border-radius:999px;
   background: rgba(0,0,0,.06);
   border: 1px solid rgba(0,0,0,.06);
+}
+
+.org-actions{ margin-left: auto; }
+.msg{
+  border:none;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background:#8a75e3;
+  color:#fff;
+  font-weight: 900;
+  cursor:pointer;
 }
 
 .state{

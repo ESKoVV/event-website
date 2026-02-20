@@ -27,7 +27,12 @@
           @click.stop="emitOpenPhoto(url)"
           aria-label="Открыть фото"
         >
-          <img :src="url" alt="event photo" loading="lazy" decoding="async" @error="onSlideError(idx)" />
+          <ProgressiveImage
+            :src="url"
+            alt="event photo"
+            fit="contain"
+            @error="onSlideError(idx)"
+          />
         </button>
       </div>
 
@@ -46,7 +51,7 @@
         class="like"
         type="button"
         @click.stop="toggleLike"
-        :aria-label="isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'"
+        :aria-label="isFavorite ? 'Убрать из избранного' : 'Добавить в избранного'"
       >
         <span :class="{ on: isFavorite }">{{ isFavorite ? '❤️' : '🤍' }}</span>
       </button>
@@ -100,6 +105,8 @@
 </template>
 
 <script>
+import ProgressiveImage from './ProgressiveImage.vue'
+
 const normalizeCategoryNames = (raw, categoryMap) => {
   const map = categoryMap || {}
 
@@ -137,6 +144,7 @@ const copyText = async (text) => {
       return true
     }
   } catch {}
+
   try {
     const ta = document.createElement('textarea')
     ta.value = text
@@ -155,6 +163,7 @@ const copyText = async (text) => {
 
 export default {
   name: 'EventCard',
+  components: { ProgressiveImage },
   props: {
     event: { type: Object, required: true },
     photos: { type: Array, default: () => [] },
@@ -207,7 +216,6 @@ export default {
     }
   },
   mounted() {
-    // Ленивая активация карточки (и запрос фоток) когда близко к экрану
     try {
       const el = this.$refs.cardEl
       if (!el) {
@@ -221,7 +229,6 @@ export default {
           const visible = !!e?.isIntersecting
           if (visible) {
             this.inView = true
-            // если фоток ещё нет — попросим родителя загрузить (он загрузит по очереди)
             if (!this.hasPhotos && !this.photosLoading) {
               this.$emit('need-photos', { eventId: this.event?.id })
             }
@@ -389,13 +396,6 @@ export default {
   background: transparent;
   padding: 0;
   cursor: pointer;
-}
-.slide img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center;
-  display: block;
 }
 
 .arrows {

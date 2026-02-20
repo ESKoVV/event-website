@@ -103,7 +103,6 @@
             <option value="">Не выбран</option>
             <option value="male">Мужской</option>
             <option value="female">Женский</option>
-            <option value="other">Другое</option>
           </select>
         </label>
       </div>
