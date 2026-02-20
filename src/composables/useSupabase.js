@@ -46,6 +46,17 @@ export const useSupabase = () => {
   // =======================
   // Events
   // =======================
+
+  // ✅ НОВОЕ: пагинация вместо getEvents()
+  // from/to — индексы range (0-based)
+  const getEventsPage = async ({ from = 0, to = 9, publishedOnly = true } = {}) => {
+    let q = supabase.from('events').select('*').order('date_time_event', { ascending: true }).range(from, to)
+    if (publishedOnly) q = q.eq('is_published', true)
+    const { data, error } = await q
+    return { data: data ?? [], error }
+  }
+
+  // Старое (оставляем если где-то используется)
   const getEvents = async () => {
     const { data, error } = await supabase.from('events').select('*').order('date_time_event', { ascending: true })
     return { data, error }
@@ -287,7 +298,6 @@ export const useSupabase = () => {
     const q = String(query || '').trim()
     if (!q) return { data: [], error: null }
 
-    // ищем по username и по ФИО
     const pattern = `%${q}%`
     const { data, error } = await supabase
       .from('users')
@@ -300,8 +310,6 @@ export const useSupabase = () => {
 
   // =======================
   // Social: Friendships
-  // ОЖИДАЕМАЯ ТАБЛИЦА: friendships
-  // columns: requester_id uuid, addressee_id uuid, status text ('pending'|'accepted'), created_at timestamptz
   // =======================
   const getFriendships = async () => {
     const { user } = await getUser()
@@ -322,13 +330,9 @@ export const useSupabase = () => {
     if (!otherId) return { data: null, error: new Error('No otherId') }
     if (otherId === user.id) return { data: null, error: new Error('Cannot add self') }
 
-    // вставляем pending (если уже есть — можно получить конфликт, зависит от constraints; если есть unique — лучше upsert)
     const { data, error } = await supabase
       .from('friendships')
-      .upsert(
-        [{ requester_id: user.id, addressee_id: otherId, status: 'pending' }],
-        { onConflict: 'requester_id,addressee_id' }
-      )
+      .upsert([{ requester_id: user.id, addressee_id: otherId, status: 'pending' }], { onConflict: 'requester_id,addressee_id' })
       .select('*')
       .maybeSingle()
 
@@ -357,7 +361,6 @@ export const useSupabase = () => {
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
     if (!otherId) return { data: null, error: new Error('No otherId') }
 
-    // удаляем в обе стороны
     const q = supabase
       .from('friendships')
       .delete()
@@ -366,13 +369,11 @@ export const useSupabase = () => {
       )
 
     const { data, error } = await q.select('*')
-    return { data: data ?? null, error }
+    return { data: data ?? [], error }
   }
 
   // =======================
   // Social: Messages
-  // ОЖИДАЕМАЯ ТАБЛИЦА: messages
-  // columns: id bigserial/uuid, sender_id uuid, receiver_id uuid, body text, created_at timestamptz, read_at timestamptz null
   // =======================
   const getConversation = async (otherId, limit = 200) => {
     const { user } = await getUser()
@@ -382,9 +383,7 @@ export const useSupabase = () => {
     const { data, error } = await supabase
       .from('messages')
       .select('*')
-      .or(
-        `and(sender_id.eq.${user.id},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${user.id})`
-      )
+      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherId}),and(sender_id.eq.${otherId},receiver_id.eq.${user.id})`)
       .order('created_at', { ascending: true })
       .limit(limit)
 
@@ -421,12 +420,10 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
-  // Threads: быстро и без RPC — вытаскиваем последние сообщения и собираем по собеседнику.
   const getInboxThreads = async (limit = 250) => {
     const { user } = await getUser()
     if (!user?.id) return { data: [], error: new Error('Not authorized') }
 
-    // берём больше, чтобы точно хватило на threads
     const take = Math.max(300, limit * 3)
 
     const { data, error } = await supabase
@@ -463,21 +460,18 @@ export const useSupabase = () => {
 
     const ch = supabase.channel(`rt:messages:${user.id}`)
 
-    // incoming
     ch.on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
       (payload) => onInsert?.(payload.new)
     )
 
-    // outgoing (чтобы треды обновлялись мгновенно и у отправителя)
     ch.on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
       (payload) => onInsert?.(payload.new)
     )
 
-    // read receipts (если используешь read_at)
     ch.on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` },
@@ -501,7 +495,6 @@ export const useSupabase = () => {
 
     ch.on('broadcast', { event: 'typing' }, (payload) => {
       const p = payload?.payload || {}
-      // принимаем только от другого (чтобы не реагировать на свои же)
       if (p.from === otherId && p.to === user.id) onTyping?.(!!p.typing)
     })
 
@@ -517,18 +510,17 @@ export const useSupabase = () => {
     const key = convoKey(user.id, otherId)
     const ch = supabase.channel(`rt:typing:${key}`)
 
-    // важно: канал должен быть подписан где-то в UI (MessagesView). Тут просто отправляем.
     const res = await ch.send({
       type: 'broadcast',
       event: 'typing',
       payload: { from: user.id, to: otherId, typing: !!typing, ts: Date.now() }
     })
-    // res = 'ok' | 'timed out' etc. Ошибку не кидаем.
     return { error: null, result: res }
   }
 
   return {
     // events
+    getEventsPage, // ✅ новое
     getEvents,
     searchEvents,
     getCategories,

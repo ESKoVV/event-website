@@ -49,7 +49,9 @@
                 <div class="thread-preview">
                   {{ threadPreview(t.lastMessage?.body || '') }}
                 </div>
-                <div v-if="t.unreadCount > 0" class="thread-pill" aria-label="Непрочитанные">{{ t.unreadCount > 99 ? '99+' : t.unreadCount }}</div>
+                <div v-if="t.unreadCount > 0" class="thread-pill" aria-label="Непрочитанные">
+                  {{ t.unreadCount > 99 ? '99+' : t.unreadCount }}
+                </div>
               </div>
             </div>
           </button>
@@ -81,9 +83,13 @@
               />
               <div v-else class="chat-peer-ava-ph">👤</div>
             </div>
+
             <div class="chat-peer-info">
               <div class="chat-peer-name">{{ peer?.title || 'Пользователь' }}</div>
-              <div class="chat-peer-sub">{{ peer?.sub || '' }}</div>
+              <div class="chat-peer-sub">
+                {{ peer?.sub || '' }}
+                <span v-if="peerTyping" class="typing-pill" aria-label="Печатает">печатает…</span>
+              </div>
             </div>
           </div>
 
@@ -148,6 +154,8 @@
               class="chat-input"
               type="text"
               placeholder="Напиши сообщение…"
+              @input="onDraftInput"
+              @blur="stopTyping"
               @keydown.enter.prevent="send"
               :disabled="sending"
             />
@@ -162,7 +170,7 @@
 <script>
 import { ref, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useSupabase } from '../composables/useSupabase.js'
+import { useSupabase, supabase } from '../composables/useSupabase.js'
 import { useUnreadMessages } from '../composables/unreadMessages.js'
 
 const normalizeStoragePublicUrl = (url) => {
@@ -251,8 +259,13 @@ export default {
     const draft = ref('')
 
     const replyTo = ref(null) // { id, who, text }
-
     const chatBodyRef = ref(null)
+
+    // ✅ typing
+    const peerTyping = ref(false)
+    let typingSelfTimer = null
+    let typingPeerTimer = null
+    let typingChannel = null
 
     let rtChannel = null
 
@@ -433,6 +446,11 @@ export default {
       router.replace({ name: 'messages', query: { with: otherId } })
 
       replyTo.value = null
+      peerTyping.value = false
+
+      // я перестаю "печатать" в прошлом чате
+      await stopTyping()
+
       await loadPeer(otherId)
       await reloadConversation()
       await markThreadAsRead(otherId)
@@ -456,6 +474,55 @@ export default {
       replyTo.value = null
     }
 
+    // ==========================
+    // ✅ Typing (send)
+    // ==========================
+    const setTyping = async (isTyping) => {
+      const uid = myId.value
+      const otherId = selectedOtherId.value
+      if (!uid || !otherId) return
+
+      try {
+        await supabase.from('typing').upsert(
+          [
+            {
+              user_id: uid,
+              other_id: otherId,
+              is_typing: !!isTyping,
+              updated_at: new Date().toISOString()
+            }
+          ],
+          { onConflict: 'user_id,other_id' }
+        )
+      } catch {
+        // ignore
+      }
+    }
+
+    const onDraftInput = async () => {
+      // отправляем "печатает" сразу и сбрасываем через таймер
+      if (!selectedOtherId.value) return
+
+      if (typingSelfTimer) clearTimeout(typingSelfTimer)
+      await setTyping(true)
+      typingSelfTimer = setTimeout(async () => {
+        await setTyping(false)
+      }, 1200)
+    }
+
+    const stopTyping = async () => {
+      try {
+        if (typingSelfTimer) clearTimeout(typingSelfTimer)
+        typingSelfTimer = null
+        await setTyping(false)
+      } catch {
+        // ignore
+      }
+    }
+
+    // ==========================
+    // Send message
+    // ==========================
     const send = async () => {
       const otherId = selectedOtherId.value
       const text = String(draft.value || '').trim()
@@ -463,8 +530,9 @@ export default {
 
       sending.value = true
       try {
-        const finalBody = buildBodyWithReply({ replyTo: replyTo.value, text })
+        await stopTyping()
 
+        const finalBody = buildBodyWithReply({ replyTo: replyTo.value, text })
         const { data, error } = await sendMessage(otherId, finalBody)
         if (error) throw error
 
@@ -564,12 +632,69 @@ export default {
       }
     }
 
+    // ==========================
+    // ✅ Typing (realtime subscribe)
+    // ==========================
+    const setupTypingRealtime = async () => {
+      try {
+        const uid = myId.value
+        if (!uid) return
+
+        // слушаем только строки, где other_id = мой id (то есть "мне печатают")
+        typingChannel = supabase
+          .channel(`typing-${uid}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'typing',
+              filter: `other_id=eq.${uid}`
+            },
+            (payload) => {
+              const row = payload?.new || payload?.old
+              if (!row) return
+
+              // печатает ли текущий собеседник
+              if (String(row.user_id) !== String(selectedOtherId.value)) return
+
+              const isOn = row.is_typing === true
+              peerTyping.value = isOn
+
+              // авто-сброс, если кто-то "завис" в typing=true
+              if (typingPeerTimer) clearTimeout(typingPeerTimer)
+              if (isOn) {
+                typingPeerTimer = setTimeout(() => {
+                  peerTyping.value = false
+                }, 2000)
+              }
+            }
+          )
+          .subscribe()
+      } catch {
+        // ignore
+      }
+    }
+
+    const teardownTypingRealtime = () => {
+      try {
+        if (typingChannel) supabase.removeChannel(typingChannel)
+      } catch {
+        // ignore
+      }
+      typingChannel = null
+      if (typingPeerTimer) clearTimeout(typingPeerTimer)
+      typingPeerTimer = null
+      peerTyping.value = false
+    }
+
     onMounted(async () => {
       const qWith = String(route.query.with || '').trim()
       if (qWith) selectedOtherId.value = qWith
 
       await reload()
       await setupRealtime()
+      await setupTypingRealtime()
 
       if (selectedOtherId.value) {
         await loadPeer(selectedOtherId.value)
@@ -578,13 +703,22 @@ export default {
       }
     })
 
-    onBeforeUnmount(() => {
+    onBeforeUnmount(async () => {
+      try {
+        await stopTyping()
+      } catch {}
+
       try {
         if (rtChannel && typeof rtChannel.unsubscribe === 'function') rtChannel.unsubscribe()
       } catch {
         // ignore
       }
       rtChannel = null
+
+      teardownTypingRealtime()
+
+      if (typingSelfTimer) clearTimeout(typingSelfTimer)
+      typingSelfTimer = null
     })
 
     watch(
@@ -592,15 +726,19 @@ export default {
       async (val) => {
         const nextId = String(val || '').trim()
         if (!nextId) {
+          await stopTyping()
           selectedOtherId.value = ''
           peer.value = null
           messages.value = []
           replyTo.value = null
+          peerTyping.value = false
           return
         }
         if (nextId === selectedOtherId.value) return
+        await stopTyping()
         selectedOtherId.value = nextId
         replyTo.value = null
+        peerTyping.value = false
         await loadPeer(nextId)
         await reloadConversation()
         await markThreadAsRead(nextId)
@@ -640,7 +778,12 @@ export default {
       openProfileLogin,
 
       onAvaErr,
-      onPeerAvaErr
+      onPeerAvaErr,
+
+      // typing
+      peerTyping,
+      onDraftInput,
+      stopTyping
     }
   }
 }
@@ -905,7 +1048,19 @@ export default {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+.typing-pill{
+  opacity: 1;
+  font-weight: 900;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(42,91,255,.10);
+  border: 1px solid rgba(42,91,255,.18);
+}
+
 .chat-head-btn {
   width: 40px;
   height: 40px;

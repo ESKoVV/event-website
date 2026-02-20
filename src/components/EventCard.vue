@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="cardEl"
     class="card"
     role="button"
     tabindex="0"
@@ -8,7 +9,7 @@
     @keydown.space.prevent="openEvent"
   >
     <button ref="photoBtn" class="photo" type="button" @click.stop="handleOpenPhoto" aria-label="Открыть фото">
-      <div v-if="!inView || !hasPhotos" class="photo-skeleton" :class="{ shimmer: photosLoading }"></div>
+      <div v-if="!inView || !hasPhotos" class="photo-skeleton" :class="{ shimmer: photosLoading || !inView }"></div>
 
       <div
         v-else
@@ -161,14 +162,15 @@ export default {
     categoryMap: { type: Object, default: () => ({}) },
     isFavorite: { type: Boolean, default: false }
   },
-  emits: ['open-photo', 'toggle-favorite'],
+  emits: ['open-photo', 'toggle-favorite', 'need-photos'],
   data() {
     return {
       copied: false,
-      inView: true,
+      inView: false,
       activeIndex: 0,
       _raf: null,
-      _slideErrors: new Set()
+      _slideErrors: new Set(),
+      _io: null
     }
   },
   computed: {
@@ -204,9 +206,41 @@ export default {
       return `${p} ₽`
     }
   },
+  mounted() {
+    // Ленивая активация карточки (и запрос фоток) когда близко к экрану
+    try {
+      const el = this.$refs.cardEl
+      if (!el) {
+        this.inView = true
+        return
+      }
+
+      this._io = new IntersectionObserver(
+        (entries) => {
+          const e = entries?.[0]
+          const visible = !!e?.isIntersecting
+          if (visible) {
+            this.inView = true
+            // если фоток ещё нет — попросим родителя загрузить (он загрузит по очереди)
+            if (!this.hasPhotos && !this.photosLoading) {
+              this.$emit('need-photos', { eventId: this.event?.id })
+            }
+          }
+        },
+        { root: null, threshold: 0.01, rootMargin: '700px 0px' }
+      )
+
+      this._io.observe(el)
+    } catch {
+      this.inView = true
+    }
+  },
   beforeUnmount() {
     try {
       if (this._raf) cancelAnimationFrame(this._raf)
+    } catch {}
+    try {
+      if (this._io) this._io.disconnect()
     } catch {}
   },
   methods: {
@@ -263,17 +297,13 @@ export default {
 
       this.copied = false
 
-      // 1) native share (если доступно)
       try {
         if (navigator.share) {
           await navigator.share({ title, url })
           return
         }
-      } catch {
-        // если share отклонён/не сработал — идём копировать
-      }
+      } catch {}
 
-      // 2) copy with fallback
       const ok = await copyText(url)
       if (ok) {
         this.copied = true
@@ -324,6 +354,17 @@ export default {
   width: 100%;
   height: 100%;
   background: #f0f0f0;
+}
+
+.photo-skeleton.shimmer {
+  background: linear-gradient(90deg, #f0f0f0, #fafafa, #f0f0f0);
+  background-size: 200% 100%;
+  animation: sk 1.2s infinite linear;
+}
+
+@keyframes sk {
+  0% { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
 }
 
 .photo-carousel {
@@ -399,190 +440,129 @@ export default {
   top: 10px;
   padding: 7px 10px;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 900;
+  background: rgba(0, 0, 0, 0.45);
   color: #fff;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(6px);
+  font-weight: 900;
+  backdrop-filter: blur(8px);
 }
 
 .dots {
   position: absolute;
-  left: 12px;
-  bottom: 12px;
+  left: 0;
+  right: 0;
+  bottom: 10px;
   display: flex;
+  justify-content: center;
   gap: 6px;
-  padding: 6px 8px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  backdrop-filter: blur(6px);
+  pointer-events: none;
 }
 .dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.5);
 }
 .dot.on {
-  background: rgba(255, 255, 255, 1);
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .like {
   position: absolute;
   right: 10px;
   top: 10px;
-  width: 38px;
-  height: 38px;
-  border-radius: 14px;
+  width: 42px;
+  height: 42px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.55);
-  background: rgba(0, 0, 0, 0.25);
-  backdrop-filter: blur(6px);
+  background: rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(8px);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
 }
 .like span {
-  font-size: 18px;
+  font-size: 20px;
 }
-
-.shimmer {
-  position: relative;
-  overflow: hidden;
-}
-.shimmer::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
-  animation: shimmer 1.2s infinite;
-}
-@keyframes shimmer {
-  to {
-    transform: translateX(100%);
-  }
+.like span.on {
+  transform: scale(1.03);
 }
 
 .info {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 10px;
-  overflow: hidden;
-}
-.top-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow: hidden;
 }
 
 .title-row {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .title {
-  flex: 1 1 auto;
+  font-weight: 950;
   font-size: 18px;
-  font-weight: 900;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .right-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
 }
-
 .share {
-  flex: 0 0 auto;
-  width: 38px;
-  height: 38px;
-  border-radius: 14px;
+  width: 42px;
+  height: 42px;
+  border-radius: 16px;
   border: 1px solid #efefef;
-  background: #fafafa;
+  background: #fff;
   cursor: pointer;
-  font-size: 16px;
-}
-.share:hover {
-  background: #f0f0f0;
+  display: grid;
+  place-items: center;
 }
 
 .badges {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  overflow: hidden;
 }
 .badge {
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(138, 117, 227, 0.12);
-  border: 1px solid rgba(138, 117, 227, 0.22);
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  max-width: 100%;
+  background: #f3f3f3;
+  border: 1px solid #efefef;
 }
 
 .desc {
-  margin: 0;
-  font-size: 14px;
   opacity: 0.85;
-  line-height: 1.35;
-  text-indent: 1.2em;
-  white-space: pre-line;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  line-height: 1.4;
+  margin: 0;
 }
 
 .meta {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 14px;
-  overflow: hidden;
+  gap: 6px;
 }
 .meta-item {
   display: flex;
+  align-items: baseline;
   gap: 8px;
-  align-items: flex-start;
-  font-size: 14px;
-  overflow: hidden;
 }
 .k {
-  width: 18px;
-  flex: 0 0 18px;
+  width: 20px;
 }
 .v {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  opacity: 0.9;
+  opacity: 0.85;
 }
 .price {
   font-weight: 900;
 }
 
 .copied {
-  margin-top: 4px;
-  font-size: 12px;
   font-weight: 900;
-  color: #2e7d32;
-}
-
-@media (max-width: 760px) {
-  .photo {
-    height: 260px;
-  }
-  .meta {
-    grid-template-columns: 1fr;
-  }
-  .arrow {
-    display: none !important;
-  }
+  opacity: 0.9;
 }
 </style>
