@@ -170,8 +170,8 @@
 <script>
 import { ref, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useSupabase, supabase } from '../composables/useSupabase.js'
-import { useUnreadMessages } from '../composables/unreadMessages.js'
+import { useSupabase, supabase } from '../../composables/useSupabase.js'
+import { useUnreadMessages } from '../../composables/unreadMessages.js'
 
 const normalizeStoragePublicUrl = (url) => {
   if (!url || typeof url !== 'string') return ''
