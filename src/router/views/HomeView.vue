@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="container">
-      <div class="topbar" :class="{ 'topbar-hidden': !topbarVisible }">
+      <div class="topbar">
         <button class="filter-btn" @click="openDrawer" aria-label="Открыть фильтры">
           <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
             <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
@@ -357,24 +357,6 @@ export default {
     // ui
     const drawerOpen = ref(false)
     const photoModalUrl = ref('')
-
-    // ✅ topbar появляется при скролле вверх
-    const topbarVisible = ref(true)
-    let lastScrollY = 0
-    const onScroll = () => {
-      const y = window.scrollY || 0
-      // всегда показываем у самого верха
-      if (y < 10) {
-        topbarVisible.value = true
-        lastScrollY = y
-        return
-      }
-
-      const delta = y - lastScrollY
-      if (delta < -8) topbarVisible.value = true
-      else if (delta > 12) topbarVisible.value = false
-      lastScrollY = y
-    }
 
     // ======= НОВОЕ: постраничная загрузка событий =======
     const pageSize = ref(10)
@@ -839,8 +821,6 @@ export default {
     )
 
     onMounted(async () => {
-      lastScrollY = window.scrollY || 0
-      window.addEventListener('scroll', onScroll, { passive: true })
       await boot()
       await nextTick()
       refreshCardObserver()
@@ -848,13 +828,11 @@ export default {
     })
 
     onBeforeUnmount(() => {
-      window.removeEventListener('scroll', onScroll)
       disconnectCardObserver()
       disconnectSentinel()
     })
 
     return {
-      topbarVisible,
       initialLoaded,
       error,
       categories,
@@ -911,26 +889,7 @@ export default {
 .page { padding: 12px 0; }
 .container { max-width: 1200px; margin: 0 auto; padding: 0 12px; }
 
-.topbar{
-  display:flex;
-  align-items:center;
-  gap: 10px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  background: rgba(255,255,255,.92);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  padding: 10px 0;
-  transform: translateY(0);
-  transition: transform .18s ease;
-}
-
-.topbar-hidden{
-  transform: translateY(-120%);
-}
+.topbar{ display:flex; align-items:center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 
 .filter-btn {
   width: 40px; height: 40px; border-radius: 14px;
@@ -960,6 +919,11 @@ export default {
   background: #fff;
   cursor: pointer;
   font-weight: 900;
+}
+
+/* На ПК убираем кнопку обновления (иконка ⟳). На мобильной оставляем. */
+@media (min-width: 981px){
+  .refresh{ display:none !important; }
 }
 @media (max-width: 520px){ .tab .txt{ display:none; } .refresh{ margin-left:0; } }
 
