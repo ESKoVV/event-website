@@ -64,29 +64,7 @@
 
                 <div class="actions">
                   <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
-
-                  <button class="btn small" type="button" @click.stop="toggleMenu(u.id)" aria-label="Меню">⋯</button>
-
-                  <div v-if="openMenuId === u.id" class="menu" @click.stop>
-                    <button class="menu-item" type="button" @click="openFriendsOf(u.id)">Посмотреть друзей</button>
-
-                    <button
-                      v-if="confirmDeleteId !== u.id"
-                      class="menu-item danger"
-                      type="button"
-                      @click="confirmDeleteId = u.id"
-                    >
-                      Удалить из друзей
-                    </button>
-
-                    <div v-else class="menu-confirm">
-                      <div class="menu-confirm-text">Точно удалить?</div>
-                      <div class="menu-confirm-actions">
-                        <button class="btn small" type="button" @click="doDelete(u.id)">Да</button>
-                        <button class="btn small ghost" type="button" @click="confirmDeleteId = ''">Отмена</button>
-                      </div>
-                    </div>
-                  </div>
+                  <button class="btn small" @click="removeFriendOrReq(u.id)">Удалить</button>
                 </div>
               </div>
             </div>
@@ -95,31 +73,6 @@
 
         <!-- RIGHT: поиск -->
         <main class="right">
-
-          <div v-if="viewingFriendsOfId" class="block">
-            <div class="b-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-              <span>Друзья пользователя</span>
-              <button class="btn small ghost" type="button" @click="closeFriendsOf">Закрыть</button>
-            </div>
-
-            <div v-if="friendsOfLoading" class="muted">Загрузка…</div>
-            <div v-else-if="friendsOfList.length === 0" class="muted">У пользователя пока нет друзей</div>
-
-            <div v-else class="list">
-              <div v-for="fu in friendsOfList" :key="fu.id" class="row">
-                <div class="u">
-                  <div class="ava">{{ letter(fu) }}</div>
-                  <div class="meta">
-                    <div class="name">{{ displayName(fu) }}</div>
-                    <div class="sub">@{{ fu.username || '—' }}</div>
-                  </div>
-                </div>
-                <div class="actions">
-                  <button class="btn small ghost" @click="goChat(fu.id)">Написать</button>
-                </div>
-              </div>
-            </div>
-          </div>
           <div class="block">
             <div class="b-title">Поиск пользователей</div>
 
@@ -185,9 +138,9 @@
 </template>
 
 <script>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useSupabase, supabase } from '@/composables/useSupabase'
+import { useSupabase } from '@/composables/useSupabase'
 
 const debounce = (fn, ms = 250) => {
   let t = null
@@ -226,20 +179,9 @@ export default {
     const friends = ref([])
     const incomingRequests = ref([])
 
-    // UI menu (⋯) + confirm delete
-    const openMenuId = ref('')
-    const confirmDeleteId = ref('')
-
-    // "друзья пользователя"
-    const viewingFriendsOfId = ref('')
-    const friendsOfLoading = ref(false)
-    const friendsOfList = ref([])
-
     // быстрый индекс отношений по userId
     // friend | incoming | outgoing | none
     const relationIndex = ref(new Map())
-
-    let cleanupDocClick = null
 
     const displayName = (u) => {
       const fn = String(u?.first_name || '').trim()
@@ -345,71 +287,9 @@ export default {
       }
     }
 
-
-    const toggleMenu = (uid) => {
-      confirmDeleteId.value = ''
-      openMenuId.value = openMenuId.value === String(uid || '') ? '' : String(uid || '')
-    }
-
-    const closeMenus = () => {
-      openMenuId.value = ''
-      confirmDeleteId.value = ''
-    }
-
-    const doDelete = async (uid) => {
-      try {
-        closeMenus()
-        await removeFriendOrReq(uid)
-      } catch {
-        // ignore
-      }
-    }
-
-    const closeFriendsOf = () => {
-      viewingFriendsOfId.value = ''
-      friendsOfList.value = []
-    }
-
-    const openFriendsOf = async (otherId) => {
-      closeMenus()
-      viewingFriendsOfId.value = String(otherId || '')
-      friendsOfList.value = []
-      if (!otherId) return
-
-      friendsOfLoading.value = true
-      try {
-        const { data, error: e1 } = await supabase
-          .from('friendships')
-          .select('*')
-          .eq('status', 'accepted')
-          .or(`requester_id.eq.${otherId},addressee_id.eq.${otherId}`)
-          .order('created_at', { ascending: false })
-        if (e1) throw e1
-
-        const rows = data || []
-        const ids = new Set()
-        for (const f of rows) {
-          const oid = f.requester_id === otherId ? f.addressee_id : f.requester_id
-          if (oid) ids.add(oid)
-        }
-
-        const out = []
-        for (const id of ids) {
-          const { data: u } = await getPublicUserById(id)
-          if (u?.id) out.push(u)
-        }
-        friendsOfList.value = out
-      } catch {
-        friendsOfList.value = []
-      } finally {
-        friendsOfLoading.value = false
-      }
-    }
-
     const goChat = (otherId) => {
       // открываем MessagesView и просим открыть чат сразу
-      // MessagesView читает query.with
-      router.push({ path: '/messages', query: { with: otherId } })
+      router.push({ path: '/messages', query: { user: otherId } })
     }
 
     const reloadAll = async () => {
@@ -438,15 +318,7 @@ export default {
 
     onMounted(reloadAll)
 
-    
-
-    onBeforeUnmount(() => {
-      try {
-        if (cleanupDocClick) cleanupDocClick()
-      } catch {}
-    })
-
-return {
+    return {
       loading,
       error,
       needAuth,
@@ -458,16 +330,6 @@ return {
 
       friends,
       incomingRequests,
-
-      openMenuId,
-      confirmDeleteId,
-      toggleMenu,
-      openFriendsOf,
-      closeFriendsOf,
-      viewingFriendsOfId,
-      friendsOfLoading,
-      friendsOfList,
-      doDelete,
 
       displayName,
       letter,
@@ -572,37 +434,4 @@ return {
 .state.error{ border-color: rgba(217,83,79,.35); }
 .s-title{ font-weight: 900; margin-bottom: 6px; }
 .s-sub{ opacity: .8; font-weight: 700; }
-
-
-/* меню троеточия */
-.row{ position: relative; }
-.menu{
-  position: absolute;
-  margin-top: 6px;
-  right: 10px;
-  top: 100%;
-  background: #fff;
-  border: 1px solid #efefef;
-  border-radius: 14px;
-  padding: 8px;
-  display: grid;
-  gap: 6px;
-  z-index: 30;
-  box-shadow: 0 12px 30px rgba(20,24,27,.10);
-}
-.menu-item{
-  width: 100%;
-  text-align: left;
-  border: 1px solid #efefef;
-  background: #fff;
-  border-radius: 12px;
-  padding: 10px 10px;
-  font-weight: 900;
-  cursor: pointer;
-}
-.menu-item:hover{ background:#fafafa; }
-.menu-item.danger{ border-color: rgba(217,83,79,.28); color: #d9534f; }
-.menu-confirm{ border: 1px solid #efefef; border-radius: 12px; padding: 10px; }
-.menu-confirm-text{ font-weight: 900; margin-bottom: 8px; }
-.menu-confirm-actions{ display:flex; gap: 8px; justify-content:flex-end; flex-wrap: wrap; }
 </style>
