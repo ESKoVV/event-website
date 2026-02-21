@@ -64,6 +64,14 @@
 
           <div class="right-actions">
             <button class="share" type="button" @click.stop="shareEvent" aria-label="Поделиться">🔗</button>
+            <button
+              v-if="canMessageOrganizer"
+              class="share msg-organizer"
+              type="button"
+              @click.stop="messageOrganizer"
+              aria-label="Написать организатору"
+              title="Написать"
+            >💬</button>
           </div>
         </div>
 
@@ -169,9 +177,10 @@ export default {
     photos: { type: Array, default: () => [] },
     photosLoading: { type: Boolean, default: false },
     categoryMap: { type: Object, default: () => ({}) },
-    isFavorite: { type: Boolean, default: false }
+    isFavorite: { type: Boolean, default: false },
+    canMessageOrganizer: { type: Boolean, default: false }
   },
-  emits: ['open-photo', 'toggle-favorite', 'need-photos'],
+  emits: ['open-photo', 'toggle-favorite', 'need-photos', 'message-organizer'],
   data() {
     return {
       copied: false,
@@ -296,6 +305,10 @@ export default {
       if (!el) return
       const w = el.clientWidth || 1
       el.scrollBy({ left: w, behavior: 'smooth' })
+    },
+    messageOrganizer() {
+      if (!this.event?.user_id) return
+      this.$emit('message-organizer', { userId: String(this.event.user_id) })
     },
     async shareEvent() {
       const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '/')
@@ -520,6 +533,9 @@ export default {
   cursor: pointer;
   display: grid;
   place-items: center;
+}
+.msg-organizer {
+  font-size: 15px;
 }
 
 .badges {

@@ -307,6 +307,13 @@ export default {
       return t || (p.reply ? 'Ответ' : '')
     }
 
+    const appendMessageUnique = (m) => {
+      if (!m?.id) return false
+      if (messages.value.some((x) => x?.id === m.id)) return false
+      messages.value = [...messages.value, m]
+      return true
+    }
+
     const ensureThreadsUsers = async (rows) => {
       const ids = [...new Set((rows || []).map((x) => x.otherUserId).filter(Boolean))]
       const map = new Map()
@@ -540,8 +547,8 @@ export default {
         replyTo.value = null
 
         if (data) {
-          messages.value = [...messages.value, data]
-          await scrollBottom()
+          const appended = appendMessageUnique(data)
+          if (appended) await scrollBottom()
 
           const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
           if (idx !== -1) {
@@ -609,8 +616,8 @@ export default {
       calcUnreadTotal()
 
       if (isOpenNow) {
-        messages.value = [...messages.value, m]
-        await scrollBottom()
+        const appended = appendMessageUnique(m)
+        if (appended) await scrollBottom()
         await markThreadAsRead(otherId)
       }
     }
@@ -865,6 +872,7 @@ export default {
 
 .thread {
   width: 100%;
+  overflow: hidden;
   border: 1px solid #efefef;
   background: #fff;
   border-radius: 18px;
@@ -943,6 +951,7 @@ export default {
   font-weight: 950;
 }
 .thread-time {
+  flex: 0 0 auto;
   font-size: 12px;
   opacity: 0.6;
   white-space: nowrap;
@@ -1006,6 +1015,7 @@ export default {
 /* RIGHT */
 .chat {
   height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto 1fr auto;
 }
@@ -1084,6 +1094,7 @@ export default {
 }
 
 .chat-body {
+  min-height: 0;
   padding: 14px;
   overflow: auto;
   background: #fbfbfb;
@@ -1120,6 +1131,7 @@ export default {
 
 .msg-bubble {
   max-width: min(560px, 84%);
+  overflow: hidden;
   border-radius: 18px;
   padding: 10px 12px;
   border: 1px solid #efefef;
@@ -1189,6 +1201,7 @@ export default {
 
 .msg-text {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   font-size: 14px;
   padding-right: 34px; /* место под кнопку reply */

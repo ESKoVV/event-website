@@ -83,8 +83,10 @@
                   :photos-loading="!!photosLoadingById[event.id]"
                   :category-map="categoryMap"
                   :is-favorite="favoriteIds.has(event.id)"
+                  :can-message-organizer="canMessageEventOrganizer(event)"
                   @open-photo="openPhoto"
                   @toggle-favorite="onToggleFavorite"
+                  @message-organizer="onMessageOrganizer"
                 />
               </div>
             </TransitionGroup>
@@ -113,8 +115,10 @@
                   :photos-loading="!!photosLoadingById[event.id]"
                   :category-map="categoryMap"
                   :is-favorite="favoriteIds.has(event.id)"
+                  :can-message-organizer="canMessageEventOrganizer(event)"
                   @open-photo="openPhoto"
                   @toggle-favorite="onToggleFavorite"
+                  @message-organizer="onMessageOrganizer"
                 />
               </div>
             </TransitionGroup>
@@ -315,7 +319,7 @@ export default {
   components: { EventCard, EventPhotoModal, FiltersPanel },
   props: { globalSearchTerm: { type: String, default: '' } },
   setup(props) {
-    const { getCategories, getEventPhotos, getUser, getMyPublicUser } = useSupabase()
+    const { getCategories, getEventPhotos, getUser, getMyPublicUser, getPublicUserById } = useSupabase()
 
     // ======= базовое состояние как в твоём HomeView =======
     const initialLoaded = ref(false)
@@ -341,6 +345,7 @@ export default {
 
     const favoriteIds = ref(new Set())
     const favKey = ref(makeFavKey(null))
+    const businessUserIds = ref(new Set())
 
     // filters
     const selectedCategoryNames = ref([])
@@ -498,6 +503,42 @@ export default {
       saveFavLS(favKey.value, favoriteIds.value)
     }
 
+    const hydrateBusinessUsers = async (events) => {
+      const list = Array.isArray(events) ? events : []
+      const ids = [...new Set(list.map((e) => String(e?.user_id || '').trim()).filter(Boolean))]
+      const missing = ids.filter((id) => !businessUserIds.value.has(id))
+      if (!missing.length) return
+
+      const next = new Set(businessUserIds.value)
+      await Promise.all(
+        missing.map(async (id) => {
+          try {
+            const { data } = await getPublicUserById(id)
+            if (data?.It_business === true) next.add(id)
+          } catch {
+            // ignore
+          }
+        })
+      )
+      businessUserIds.value = next
+    }
+
+    const canMessageEventOrganizer = (event) => {
+      const other = String(event?.user_id || '').trim()
+      const my = String(userId.value || '').trim()
+      if (!other || !my || other === my) return false
+      return businessUserIds.value.has(other)
+    }
+
+    const onMessageOrganizer = ({ userId: otherId } = {}) => {
+      const other = String(otherId || '').trim()
+      if (!other) return
+      const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '/')
+      const query = new URLSearchParams({ with: other }).toString()
+      window.history.pushState({}, '', `${base}messages?${query}`)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    }
+
     const loadUser = async () => {
       const { user } = await getUser()
       userId.value = user?.id || null
@@ -560,6 +601,8 @@ export default {
           return
         }
 
+        await hydrateBusinessUsers(rows)
+
         // добавляем в конец
         feedEvents.value = [...feedEvents.value, ...rows]
         eventsOffset.value += rows.length
@@ -595,6 +638,7 @@ export default {
       })
       if (e) throw e
       myEventsRaw.value = Array.isArray(data) ? data : []
+      await hydrateBusinessUsers(myEventsRaw.value)
       await nextTick()
       refreshCardObserver()
     }
@@ -871,6 +915,8 @@ export default {
 
       favoriteIds,
       onToggleFavorite,
+      canMessageEventOrganizer,
+      onMessageOrganizer,
 
       drawerOpen,
       openDrawer,
