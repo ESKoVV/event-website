@@ -25,8 +25,11 @@
       draggable="false"
     />
 
-    <!-- если вдруг нет thumb — показываем легкий скелет -->
     <div v-if="!thumbSrc && !fullLoaded" class="pimg-skeleton"></div>
+
+    <div v-if="!fullLoaded" class="pimg-loader" aria-hidden="true">
+      <span class="pimg-loader-dot"></span>
+    </div>
   </div>
 </template>
 
@@ -223,4 +226,27 @@ export default {
   0% { background-position: 0% 0; }
   100% { background-position: 200% 0; }
 }
+
+.pimg-loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(1px);
+}
+
+.pimg-loader-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 3px solid rgba(0, 0, 0, 0.12);
+  border-top-color: rgba(0, 0, 0, 0.45);
+  animation: pimgSpin 0.9s linear infinite;
+}
+
+@keyframes pimgSpin {
+  to { transform: rotate(360deg); }
+}
+
 </style>

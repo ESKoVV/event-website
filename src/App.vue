@@ -59,7 +59,16 @@
 
         <!-- 5: Профиль (в мобилке справа) -->
         <button class="nav-item" type="button" @click="openProfileOrAuth">
-          <span class="ni-ico">👤</span>
+          <span class="ni-ico ni-ico-profile">
+            <img
+              v-if="showHeaderAvatar"
+              class="ni-avatar"
+              :src="headerAvatarUrl"
+              alt="avatar"
+              @error="onHeaderImgError"
+            />
+            <span v-else>👤</span>
+          </span>
           <span class="ni-txt">Профиль</span>
         </button>
       </aside>
@@ -547,6 +556,14 @@ export default {
   background: #f3f3f3;
   font-size: 18px;
 }
+.ni-ico-profile {
+  overflow: hidden;
+}
+.ni-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .nav-item.active .ni-ico {
   background: rgba(255, 255, 255, 0.14);
 }
@@ -698,6 +715,8 @@ export default {
   }
   .layout {
     grid-template-columns: 1fr;
+    padding-left: 10px;
+    padding-right: 10px;
     padding-bottom: 92px; /* место под нижнюю панель */
   }
 
@@ -721,7 +740,7 @@ export default {
     padding: 10px;
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 10px;
+    gap: 6px;
 
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
   }
@@ -729,7 +748,7 @@ export default {
   .nav-item {
     grid-template-columns: 1fr;
     justify-items: center;
-    padding: 10px 6px;
+    padding: 9px 4px;
     border-radius: 18px;
   }
 

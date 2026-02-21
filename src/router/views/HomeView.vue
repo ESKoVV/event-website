@@ -990,7 +990,7 @@ export default {
 @media (min-width: 981px){
   .refresh{ display:none !important; }
 }
-@media (max-width: 980px){ .topbar{ top: 0; transform:none; opacity:1; position: static; padding:0; } }
+@media (max-width: 980px){ .topbar{ top: 0; transform:none; opacity:1; position: static; padding:0; } .container{ padding: 0 8px; } }
 @media (max-width: 520px){ .tab .txt{ display:none; } .refresh{ margin-left:0; } }
 
 .biz-ad{

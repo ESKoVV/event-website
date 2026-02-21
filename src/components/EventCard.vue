@@ -601,4 +601,15 @@ export default {
   font-weight: 900;
   opacity: 0.9;
 }
+
+@media (max-width: 760px) {
+  .photo {
+    height: 360px;
+  }
+
+  .card.compact .photo {
+    height: 190px;
+  }
+}
+
 </style>
