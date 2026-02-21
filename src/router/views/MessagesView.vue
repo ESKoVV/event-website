@@ -109,7 +109,7 @@
               Пока нет сообщений
             </div>
 
-            <div v-else class="chat-msgs">
+            <TransitionGroup v-else name="msg-list" tag="div" class="chat-msgs">
               <div
                 v-for="m in messages"
                 :key="m.id"
@@ -144,7 +144,7 @@
                   </div>
                 </div>
               </div>
-            </div>
+            </TransitionGroup>
           </template>
         </div>
 
@@ -1346,6 +1346,7 @@ export default {
 }
 .msg {
   display: flex;
+  transition: transform 0.22s ease, opacity 0.22s ease;
 }
 .msg.mine {
   justify-content: flex-end;
@@ -1454,6 +1455,23 @@ export default {
 }
 .msg-check {
   font-weight: 900;
+}
+
+.msg-list-move,
+.msg-list-enter-active,
+.msg-list-leave-active {
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+.msg-list-enter-from,
+.msg-list-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+}
+
+.msg-list-leave-active {
+  position: absolute;
+  width: min(86%, 760px);
 }
 
 .chat-foot {

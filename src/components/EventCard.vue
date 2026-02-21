@@ -271,8 +271,7 @@ export default {
     },
     openEvent() {
       const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '/')
-      window.history.pushState({}, '', `${base}event/${this.event.id}`)
-      window.dispatchEvent(new PopStateEvent('popstate'))
+      window.location.assign(`${base}event/${this.event.id}`)
     },
     toggleLike() {
       this.$emit('toggle-favorite', { eventId: this.event.id, makeFavorite: !this.isFavorite })

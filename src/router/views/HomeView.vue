@@ -336,7 +336,15 @@ export default {
     const photos = ref({}) // { [eventId]: [] }
     const photosLoadingById = ref({}) // { [eventId]: true/false }
 
-    const activeTab = ref('feed') // feed | favorites | mine | biz
+    const initialTab = (() => {
+      try {
+        const q = new URLSearchParams(window.location.search).get('tab')
+        return ['feed', 'favorites', 'mine', 'biz'].includes(q) ? q : 'feed'
+      } catch {
+        return 'feed'
+      }
+    })()
+    const activeTab = ref(initialTab) // feed | favorites | mine | biz
     const isBusiness = ref(false)
     const userId = ref(null)
 
@@ -744,7 +752,17 @@ export default {
           if (el && el.dataset?.eid) cardIO.observe(el)
         }
       } catch {
-        // если IO недоступен — ничего страшного, будет без ленивых фоток
+        // fallback для старых мобильных браузеров без IntersectionObserver
+        const eagerIds = []
+        const feedEls = Array.isArray(feedCardWraps.value) ? feedCardWraps.value : []
+        for (const el of feedEls) {
+          if (el && el.dataset?.eid) eagerIds.push(el.dataset.eid)
+        }
+        const mineEls = Array.isArray(mineCardWraps.value) ? mineCardWraps.value : []
+        for (const el of mineEls) {
+          if (el && el.dataset?.eid) eagerIds.push(el.dataset.eid)
+        }
+        for (const id of eagerIds) enqueuePhotoLoad(id)
       }
     }
 
