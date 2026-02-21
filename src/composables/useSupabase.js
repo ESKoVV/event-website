@@ -405,6 +405,21 @@ export const useSupabase = () => {
     return { data: data ?? null, error }
   }
 
+  const deleteMessage = async (messageId) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+    if (!messageId) return { data: null, error: new Error('No messageId') }
+
+    const { data, error } = await supabase
+      .from('messages')
+      .delete()
+      .eq('id', messageId)
+      .eq('sender_id', user.id)
+      .select('id')
+
+    return { data: data ?? [], error }
+  }
+
   const markConversationRead = async (otherId) => {
     const { user } = await getUser()
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
@@ -567,6 +582,7 @@ export const useSupabase = () => {
     getInboxThreads,
     getConversation,
     sendMessage,
+    deleteMessage,
     markConversationRead,
 
     // realtime

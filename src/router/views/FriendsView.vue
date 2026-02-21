@@ -102,7 +102,8 @@
                   </div>
                 </div>
                 <div class="actions">
-                  <button class="btn small ghost" @click="goChat(fu.id)">Написать</button>
+                  <div v-if="isMe(fu.id)" class="self-badge">Это вы</div>
+                  <button v-else class="btn small ghost" @click="goChat(fu.id)">Написать</button>
                 </div>
               </div>
             </div>
@@ -296,6 +297,7 @@ export default {
     }
 
     const relationOf = (userId) => relationIndex.value.get(userId) || 'none'
+    const isMe = (userId) => String(userId || '') === String(myId.value || '')
 
     const reloadFriendships = async () => {
       const { data } = await getFriendships()
@@ -487,6 +489,7 @@ return {
       letter,
 
       relationOf,
+      isMe,
 
       addFriend,
       accept,
@@ -530,22 +533,26 @@ return {
 
 .block{
   background:#fff;
-  border:1px solid #efefef;
+  border:1px solid #f3f3f3;
   border-radius: 16px;
   padding: 12px;
   margin-bottom: 12px;
+  box-shadow: 0 8px 24px rgba(20,24,27,.04);
 }
 .b-title{ font-weight: 900; margin-bottom: 10px; }
 .muted{ font-size: 12px; opacity: .7; font-weight: 700; }
 
-.list{ display:flex; flex-direction: column; gap: 8px; }
+.list{ display:flex; flex-direction: column; gap: 0; }
 
 .row{
   display:flex; align-items:center; justify-content: space-between; gap: 10px;
-  border:1px solid #efefef;
-  border-radius: 14px;
-  padding: 10px;
+  border:none;
+  border-radius: 0;
+  padding: 11px 2px;
   background:#fff;
+}
+.row + .row{
+  border-top: 1px solid #efefef;
 }
 .u{ display:flex; align-items:center; gap: 10px; min-width: 0; }
 .ava{
@@ -559,6 +566,14 @@ return {
 .name{ font-weight: 900; font-size: 13px; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
 .sub{ font-size: 12px; opacity: .75; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
 .actions{ display:flex; gap: 8px; flex-wrap: wrap; justify-content:flex-end; }
+.self-badge{
+  font-size: 12px;
+  font-weight: 900;
+  color: #55607b;
+  background: #f3f6ff;
+  border-radius: 999px;
+  padding: 6px 10px;
+}
 
 .btn{
   border:none;
