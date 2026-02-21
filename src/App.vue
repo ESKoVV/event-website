@@ -23,6 +23,18 @@
 
           <div class="build-version" :title="`Версия сборки: ${appVersion}`">v{{ appVersion }}</div>
         </div>
+        <button class="profile-button desktop-only" @click="openProfileModal" aria-label="Профиль">
+          <img
+            v-if="showHeaderAvatar"
+            class="header-avatar"
+            :src="headerAvatarUrl"
+            alt="avatar"
+            @error="onHeaderImgError"
+          />
+          <div v-else class="header-placeholder">👤</div>
+        </button>
+
+        <div class="build-version" :title="`Версия сборки: ${appVersion}`">v{{ appVersion }}</div>
       </div>
     </header>
 
@@ -411,6 +423,8 @@ export default {
   gap: 10px;
 }
 .build-version {
+.build-version {
+  margin-left: auto;
   font-size: 12px;
   font-weight: 800;
   color: #6f6f7a;
