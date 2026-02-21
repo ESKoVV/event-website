@@ -110,6 +110,13 @@ export default {
 
 .tg-mount { min-height: 48px; }
 
+@media (min-width: 981px) {
+  .tg-mount :deep(iframe.bis_skin_checked) {
+    height: 44px !important;
+    max-height: 44px !important;
+  }
+}
+
 .warn { color: #b45309; font-size: 13px; margin-bottom: 10px; }
 .hint { margin-top: 10px; font-size: 12px; opacity: .7; }
 </style>

@@ -70,22 +70,9 @@
                   <div v-if="openMenuId === u.id" class="menu" @click.stop>
                     <button class="menu-item" type="button" @click="openFriendsOf(u.id)">Посмотреть друзей</button>
 
-                    <button
-                      v-if="confirmDeleteId !== u.id"
-                      class="menu-item danger"
-                      type="button"
-                      @click="confirmDeleteId = u.id"
-                    >
+                    <button class="menu-item danger" type="button" @click="openDeleteModal(u)">
                       Удалить из друзей
                     </button>
-
-                    <div v-else class="menu-confirm">
-                      <div class="menu-confirm-text">Точно удалить?</div>
-                      <div class="menu-confirm-actions">
-                        <button class="btn small" type="button" @click="doDelete(u.id)">Да</button>
-                        <button class="btn small ghost" type="button" @click="confirmDeleteId = ''">Отмена</button>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -180,6 +167,22 @@
           </div>
         </main>
       </div>
+
+    <teleport to="body">
+      <div v-if="deleteCandidate" class="confirm-root" @click.self="closeDeleteModal">
+        <div class="confirm-overlay" @click="closeDeleteModal"></div>
+        <div class="confirm-modal" role="dialog" aria-modal="true" aria-label="Подтверждение удаления">
+          <div class="confirm-title">Удалить из друзей?</div>
+          <div class="confirm-text">
+            Пользователь {{ displayName(deleteCandidate) }} будет удалён из списка друзей.
+          </div>
+          <div class="confirm-actions">
+            <button class="btn small ghost" type="button" @click="closeDeleteModal">Отмена</button>
+            <button class="btn small" type="button" @click="doDelete">Удалить</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
     </div>
   </div>
 </template>
@@ -228,7 +231,7 @@ export default {
 
     // UI menu (⋯) + confirm delete
     const openMenuId = ref('')
-    const confirmDeleteId = ref('')
+    const deleteCandidate = ref(null)
 
     // "друзья пользователя"
     const viewingFriendsOfId = ref('')
@@ -347,18 +350,27 @@ export default {
 
 
     const toggleMenu = (uid) => {
-      confirmDeleteId.value = ''
       openMenuId.value = openMenuId.value === String(uid || '') ? '' : String(uid || '')
     }
 
     const closeMenus = () => {
       openMenuId.value = ''
-      confirmDeleteId.value = ''
     }
 
-    const doDelete = async (uid) => {
+    const openDeleteModal = (user) => {
+      deleteCandidate.value = user || null
+      closeMenus()
+    }
+
+    const closeDeleteModal = () => {
+      deleteCandidate.value = null
+    }
+
+    const doDelete = async () => {
+      const uid = deleteCandidate.value?.id
+      if (!uid) return
       try {
-        closeMenus()
+        closeDeleteModal()
         await removeFriendOrReq(uid)
       } catch {
         // ignore
@@ -460,8 +472,10 @@ return {
       incomingRequests,
 
       openMenuId,
-      confirmDeleteId,
+      deleteCandidate,
       toggleMenu,
+      openDeleteModal,
+      closeDeleteModal,
       openFriendsOf,
       closeFriendsOf,
       viewingFriendsOfId,
@@ -602,7 +616,28 @@ return {
 }
 .menu-item:hover{ background:#fafafa; }
 .menu-item.danger{ border-color: rgba(217,83,79,.28); color: #d9534f; }
-.menu-confirm{ border: 1px solid #efefef; border-radius: 12px; padding: 10px; }
-.menu-confirm-text{ font-weight: 900; margin-bottom: 8px; }
-.menu-confirm-actions{ display:flex; gap: 8px; justify-content:flex-end; flex-wrap: wrap; }
+
+.confirm-root{
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+.confirm-overlay{
+  position: absolute;
+  inset: 0;
+  background: rgba(20,24,27,.45);
+}
+.confirm-modal{
+  position: relative;
+  width: min(420px, calc(100vw - 28px));
+  margin: 18vh auto 0;
+  background: #fff;
+  border: 1px solid #efefef;
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 14px 40px rgba(20,24,27,.20);
+}
+.confirm-title{ font-weight: 900; margin-bottom: 8px; }
+.confirm-text{ font-size: 13px; opacity: .82; margin-bottom: 12px; }
+.confirm-actions{ display:flex; justify-content:flex-end; gap: 8px; }
 </style>
