@@ -417,15 +417,7 @@ export default {
 
 
     const goBack = () => {
-      const hasHistory = window.history.length > 1
-      if (hasHistory) {
-        const fromEvent = document.referrer && document.referrer.includes('/event/')
-        if (!fromEvent) {
-          router.back()
-          return
-        }
-      }
-      router.push({ name: 'home' })
+      router.push({ name: 'home', query: { tab: 'feed' } })
     }
 
     const goOrganizer = () => {
@@ -448,10 +440,9 @@ export default {
     }
 
     const canMessageOrganizer = computed(() => {
-      const isBiz = organizerProfile.value?.It_business === true
       const my = String(userId.value || '')
       const other = String(event.value?.user_id || '')
-      return isBiz && my && other && my !== other
+      return Boolean(my && other && my !== other)
     })
 
     const messageOrganizer = () => {

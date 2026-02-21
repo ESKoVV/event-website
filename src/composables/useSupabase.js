@@ -256,17 +256,22 @@ export const useSupabase = () => {
     if (!user?.id) return { publicUrl: '', error: new Error('Not authorized') }
     if (!file) return { publicUrl: '', error: new Error('No file') }
 
-    const ext = (file.name || 'png').split('.').pop()
+    const fileName = typeof file.name === 'string' ? file.name : ''
+    const fromName = fileName.includes('.') ? fileName.split('.').pop() : ''
+    const fromType = String(file.type || '').toLowerCase().includes('jpeg') ? 'jpg' : ''
+    const ext = (fromName || fromType || 'png').toLowerCase()
     const filePath = `avatars/${user.id}/${Date.now()}.${ext}`
 
     const { error: upErr } = await supabase.storage.from('public').upload(filePath, file, {
       upsert: true,
-      cacheControl: '3600'
+      cacheControl: '3600',
+      contentType: file.type || 'image/png'
     })
     if (upErr) return { publicUrl: '', error: upErr }
 
     const { data } = supabase.storage.from('public').getPublicUrl(filePath)
-    const publicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
+    const basePublicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
+    const publicUrl = basePublicUrl ? `${basePublicUrl}${basePublicUrl.includes('?') ? '&' : '?'}v=${Date.now()}` : ''
     return { publicUrl, error: null, data: { publicUrl } }
   }
 
