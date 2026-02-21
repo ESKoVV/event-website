@@ -9,6 +9,20 @@
           </div>
         </div>
 
+        <div class="header-right">
+          <button class="profile-button desktop-only" @click="openProfileModal" aria-label="Профиль">
+            <img
+              v-if="showHeaderAvatar"
+              class="header-avatar"
+              :src="headerAvatarUrl"
+              alt="avatar"
+              @error="onHeaderImgError"
+            />
+            <div v-else class="header-placeholder">👤</div>
+          </button>
+
+          <div class="build-version" :title="`Версия сборки: ${appVersion}`">v{{ appVersion }}</div>
+        </div>
         <button class="profile-button desktop-only" @click="openProfileModal" aria-label="Профиль">
           <img
             v-if="showHeaderAvatar"
@@ -402,6 +416,13 @@ export default {
   gap: 12px;
   min-width: 0;
 }
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.build-version {
 .build-version {
   margin-left: auto;
   font-size: 12px;
