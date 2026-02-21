@@ -59,7 +59,7 @@
       </div>
     </div>
 
-    <div class="mv-right">
+    <div class="mv-right" :class="{ 'mv-right-open': !!selectedOtherId }">
       <div v-if="authRequired" class="chat-empty">
         <div class="chat-empty-title">Сообщения</div>
         <div class="chat-empty-text">Войди, чтобы открыть чат.</div>
@@ -93,7 +93,10 @@
             </div>
           </div>
 
-          <button class="chat-head-btn" type="button" @click="reloadConversation" :disabled="convLoading">⟳</button>
+          <div class="chat-head-actions">
+            <button class="chat-back" type="button" @click="closeThread" aria-label="Назад">←</button>
+            <button class="chat-head-btn" type="button" @click="reloadConversation" :disabled="convLoading">⟳</button>
+          </div>
         </div>
 
         <div ref="chatBodyRef" class="chat-body" @scroll.passive="onChatScroll">
@@ -328,6 +331,31 @@ export default {
       const p = parseBody(body)
       const t = String(p.text || '').trim()
       return t || (p.reply ? 'Ответ' : '')
+    }
+
+    const playIncomingSound = () => {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext
+        if (!Ctx) return
+        const ctx = new Ctx()
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.value = 820
+        gain.gain.value = 0.0001
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        const now = ctx.currentTime
+        gain.gain.exponentialRampToValueAtTime(0.04, now + 0.01)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
+        osc.start(now)
+        osc.stop(now + 0.24)
+        osc.onended = () => {
+          try { ctx.close() } catch {}
+        }
+      } catch {
+        // ignore
+      }
     }
 
     const appendMessageUnique = (m) => {
@@ -731,6 +759,7 @@ export default {
       const isOpenNow = selectedOtherId.value === otherId
       const unread = isIncoming && !m.read_at && !isOpenNow
       const unreadCount = unread ? 1 : 0
+      if (unread) playIncomingSound()
 
       const nextT = {
         ...t,
@@ -865,6 +894,19 @@ export default {
       typingSelfTimer = null
     })
 
+    const closeThread = async () => {
+      await stopTyping()
+      router.replace({ name: 'messages', query: {} })
+      selectedOtherId.value = ''
+      peer.value = null
+      messages.value = []
+      oldestLoadedAt.value = ''
+      convHasMore.value = true
+      showScrollDown.value = false
+      replyTo.value = null
+      peerTyping.value = false
+    }
+
     watch(
       () => route.query.with,
       async (val) => {
@@ -918,6 +960,7 @@ export default {
       reloadConversation,
       onChatScroll,
       scrollBottom,
+      closeThread,
 
       setReply,
       clearReply,
@@ -1243,6 +1286,22 @@ export default {
   cursor: default;
 }
 
+.chat-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-back {
+  display: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid #efefef;
+  background: #fff;
+  cursor: pointer;
+  font-weight: 900;
+}
+
 .chat-body {
   min-height: 0;
   padding: 14px;
@@ -1485,7 +1544,30 @@ export default {
     grid-template-columns: 1fr;
     height: auto;
     min-height: calc(100vh - 120px);
+    position: relative;
   }
+
+  .mv-left {
+    width: 100%;
+  }
+
+  .mv-right {
+    display: none;
+  }
+
+  .mv-right.mv-right-open {
+    display: flex;
+    position: fixed;
+    inset: 74px 8px 88px 8px;
+    z-index: 40;
+    box-shadow: 0 12px 34px rgba(0,0,0,.18);
+  }
+
+  .chat-back {
+    display: inline-grid;
+    place-items: center;
+  }
+
   /* кнопки действий всегда видны на мобилке */
   .msg-actions {
     opacity: 1;

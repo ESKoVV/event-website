@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="container">
-      <button class="back" type="button" @click="$router.back()">← Назад</button>
+      <button class="back" type="button" @click="goBack">← Назад</button>
 
       <div v-if="loading" class="state">
         <div class="spinner"></div>
@@ -35,7 +35,7 @@
                 @click="openPhoto(url)"
                 aria-label="Открыть фото"
               >
-                <img class="photo" :src="url" alt="event" />
+                <ProgressiveImage class="photo" :src="url" alt="event" fit="cover" />
               </button>
             </div>
 
@@ -115,7 +115,7 @@
               Профиль организатора
             </button>
             <button class="tab" :class="{ active: tab === 'other' }" type="button" @click="tab = 'other'">
-              Другие мероприятия
+              Похожие мероприятия
             </button>
           </div>
 
@@ -158,7 +158,7 @@
           <div class="panel" v-else>
             <div v-if="otherLoading" class="mini-state">Загрузка…</div>
 
-            <div v-else-if="otherEventsForCards.length === 0" class="mini-state">Других мероприятий нет</div>
+            <div v-else-if="otherEventsForCards.length === 0" class="mini-state">Похожих мероприятий пока нет</div>
 
             <div v-else class="events-shell">
               <TransitionGroup name="list" tag="div" class="events-list">
@@ -190,6 +190,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import EventPhotoModal from '@/components/EventPhotoModal.vue'
 import EventCard from '@/components/EventCard.vue'
+import ProgressiveImage from '@/components/ProgressiveImage.vue'
 import { useSupabase } from '@/composables/useSupabase'
 import { getEventsCache } from '@/composables/eventsCache'
 
@@ -244,7 +245,7 @@ const saveFavLS = (key, idsSet) => {
 
 export default {
   name: 'EventView',
-  components: { EventPhotoModal, EventCard },
+  components: { EventPhotoModal, EventCard, ProgressiveImage },
   setup() {
     const route = useRoute()
     const router = useRouter()
@@ -252,6 +253,7 @@ export default {
     const api = useSupabase()
     const { getEventById, getEventPhotos, getPublicUserById, getUser } = api
     const getOrganizerEvents = api.getOrganizerEvents
+    const getEvents = api.getEvents
 
     const loading = ref(true)
     const error = ref('')
@@ -377,17 +379,54 @@ export default {
       return []
     }
 
+    const eventCategoryKeys = computed(() => {
+      const raw = event.value?.selectCategory
+      const list = Array.isArray(raw) ? raw : String(raw || '').split(/[,;|]+/g)
+      return new Set(
+        list
+          .map((x) => String(x || '').trim().toLowerCase())
+          .filter(Boolean)
+      )
+    })
+
+    const categoryOverlapScore = (candidate) => {
+      const own = eventCategoryKeys.value
+      if (!own.size) return 0
+      const raw = candidate?.selectCategory
+      const list = Array.isArray(raw) ? raw : String(raw || '').split(/[,;|]+/g)
+      let score = 0
+      for (const c of list.map((x) => String(x || '').trim().toLowerCase()).filter(Boolean)) {
+        if (own.has(c)) score += 1
+      }
+      return score
+    }
+
     const otherEventsForCards = computed(() => {
-      const orgId = String(event.value?.user_id || '')
       const currentId = Number(event.value?.id)
       const source = Array.isArray(cachedAllEvents.value) ? cachedAllEvents.value : []
-      if (!orgId || !source.length) return []
+      if (!source.length) return []
 
       return source
-        .filter((e) => String(e?.user_id || '') === orgId)
         .filter((e) => Number(e?.id) !== currentId)
         .filter((e) => e?.is_published !== false)
+        .map((e) => ({ event: e, score: categoryOverlapScore(e) }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map((x) => x.event)
     })
+
+
+    const goBack = () => {
+      const hasHistory = window.history.length > 1
+      if (hasHistory) {
+        const fromEvent = document.referrer && document.referrer.includes('/event/')
+        if (!fromEvent) {
+          router.back()
+          return
+        }
+      }
+      router.push({ name: 'home' })
+    }
 
     const goOrganizer = () => {
       if (!event.value?.user_id) return
@@ -462,18 +501,22 @@ export default {
 
     const loadOtherFallbackIfNoCache = async () => {
       if (Array.isArray(cachedAllEvents.value) && cachedAllEvents.value.length) return
-      if (!event.value?.user_id) return
-      if (typeof getOrganizerEvents !== 'function') return
 
       otherLoading.value = true
       try {
-        const { data } = await getOrganizerEvents(String(event.value.user_id), {
-          publishedOnly: true,
-          excludeEventId: event.value.id
-        })
-        cachedAllEvents.value = Array.isArray(data) ? data : []
+        if (typeof getEvents === 'function') {
+          const { data } = await getEvents()
+          cachedAllEvents.value = Array.isArray(data) ? data : []
+        } else if (event.value?.user_id && typeof getOrganizerEvents === 'function') {
+          const { data } = await getOrganizerEvents(String(event.value.user_id), {
+            publishedOnly: true,
+            excludeEventId: event.value.id
+          })
+          cachedAllEvents.value = Array.isArray(data) ? data : []
+        } else {
+          cachedAllEvents.value = []
+        }
 
-        // ✅ подтягиваем фото для "Другие мероприятия", чтобы карточки были как в ленте
         const ids = (cachedAllEvents.value || []).map((e) => e?.id).filter((x) => x !== null && x !== undefined)
         await ensurePhotosForEventIds(ids)
       } finally {
@@ -625,6 +668,7 @@ export default {
       orgName,
       orgLetter,
       orgLoading,
+      goBack,
       goOrganizer,
 
       canMessageOrganizer,
@@ -815,10 +859,10 @@ export default {
 .thumb img{ width:100%; height:100%; object-fit: cover; display:block; }
 
 .info{ padding: 14px; display:grid; gap: 10px; }
-.title-row{ display:flex; align-items:flex-start; gap: 10px; }
+.title-row{ display:flex; align-items:flex-start; gap: 10px; flex-wrap: wrap; }
 .title{ flex:1 1 auto; font-weight: 900; font-size: 20px; overflow-wrap:anywhere; }
 
-.actions{ display:flex; gap: 8px; flex: 0 0 auto; }
+.actions{ display:flex; gap: 8px; flex: 0 0 auto; margin-left: auto; order: -1; }
 .icon-btn{
   width: 40px; height: 40px; border-radius: 14px;
   border: 1px solid #efefef; background:#fafafa;
@@ -922,6 +966,10 @@ export default {
 }
 
 @media (max-width: 760px){
+  .main-carousel, .main-slide, .photo{ height: 230px; }
+  .main-arrow{ top: 115px; }
+  .main-dots{ bottom: 74px; }
+
   .events-list{
     grid-template-columns: 1fr;
     justify-content: stretch;
