@@ -169,6 +169,7 @@
                   :photos="getPhotosForEvent(e.id)"
                   :photos-loading="false"
                   :category-map="categoryMap"
+                  :compact="true"
                   :is-favorite="favoriteIds.has(Number(e.id))"
                   @open-photo="openPhoto"
                   @toggle-favorite="onToggleFavorite"
