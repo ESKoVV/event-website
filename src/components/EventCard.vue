@@ -2,6 +2,7 @@
   <div
     ref="cardEl"
     class="card"
+    :class="{ compact }"
     role="button"
     tabindex="0"
     @click="openEvent"
@@ -178,7 +179,8 @@ export default {
     photosLoading: { type: Boolean, default: false },
     categoryMap: { type: Object, default: () => ({}) },
     isFavorite: { type: Boolean, default: false },
-    canMessageOrganizer: { type: Boolean, default: false }
+    canMessageOrganizer: { type: Boolean, default: false },
+    compact: { type: Boolean, default: false }
   },
   emits: ['open-photo', 'toggle-favorite', 'need-photos', 'message-organizer'],
   data() {
@@ -368,6 +370,22 @@ export default {
   border: none;
   position: relative;
   padding: 0;
+}
+
+.card.compact {
+  gap: 12px;
+  padding: 14px;
+}
+
+.card.compact .photo {
+  height: 330px;
+}
+
+.card.compact .desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .photo-skeleton {
