@@ -116,6 +116,13 @@
                 <div class="msg-bubble">
                   <div class="msg-actions">
                     <button class="msg-action" type="button" @click="setReply(m)" aria-label="Ответить">↩︎</button>
+                    <button
+                      v-if="m.sender_id === myId"
+                      class="msg-action msg-action-danger"
+                      type="button"
+                      @click="removeMessage(m.id)"
+                      aria-label="Удалить сообщение"
+                    >🗑</button>
                   </div>
 
                   <!-- reply preview inside message -->
@@ -249,6 +256,7 @@ export default {
       getInboxThreads,
       getConversation,
       sendMessage,
+      deleteMessage,
       markConversationRead,
       subscribeToMyMessages
     } = useSupabase()
@@ -566,7 +574,7 @@ export default {
     const setReply = (m) => {
       if (!m) return
       const isMine = m.sender_id === myId.value
-      const who = isMine ? 'тебя' : (peer.value?.title || 'пользователя')
+      const who = isMine ? 'себя' : (peer.value?.title || 'пользователя')
       const p = parseBody(m.body)
       const clean = String(p.text || '').trim()
       replyTo.value = {
@@ -574,7 +582,6 @@ export default {
         who,
         text: clean.slice(0, 120)
       }
-      nextTick(() => {})
     }
 
     const clearReply = () => {
@@ -661,6 +668,29 @@ export default {
         }
       } finally {
         sending.value = false
+      }
+    }
+
+
+    const removeMessage = async (messageId) => {
+      const id = String(messageId || '')
+      if (!id) return
+      try {
+        const { error } = await deleteMessage(id)
+        if (error) throw error
+
+        const nextMessages = messages.value.filter((x) => String(x?.id || '') !== id)
+        messages.value = nextMessages
+
+        if (selectedOtherId.value) {
+          const idx = threads.value.findIndex((t) => t.otherUserId === selectedOtherId.value)
+          if (idx !== -1) {
+            const last = nextMessages[nextMessages.length - 1] || null
+            threads.value[idx] = { ...threads.value[idx], lastMessage: last }
+          }
+        }
+      } catch {
+        // ignore
       }
     }
 
@@ -891,6 +921,7 @@ export default {
 
       setReply,
       clearReply,
+      removeMessage,
 
       parseBody,
       threadPreview,
@@ -1289,9 +1320,13 @@ export default {
   gap: 6px;
   opacity: 0;
   transition: opacity 0.15s ease;
+  z-index: 2;
 }
 .msg-bubble:hover .msg-actions {
   opacity: 1;
+}
+.msg-bubble {
+  pointer-events: auto;
 }
 .msg-action {
   width: 30px;
@@ -1301,6 +1336,11 @@ export default {
   background: rgba(255,255,255,0.9);
   cursor: pointer;
   font-weight: 900;
+  display: grid;
+  place-items: center;
+}
+.msg-action-danger {
+  color: #d9534f;
 }
 .msg.mine .msg-action {
   border-color: rgba(255,255,255,0.18);
@@ -1446,7 +1486,7 @@ export default {
     height: auto;
     min-height: calc(100vh - 120px);
   }
-  /* reply кнопка всегда видна на мобилке */
+  /* кнопки действий всегда видны на мобилке */
   .msg-actions {
     opacity: 1;
   }
