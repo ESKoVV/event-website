@@ -260,19 +260,54 @@ export const useSupabase = () => {
     const fromName = fileName.includes('.') ? fileName.split('.').pop() : ''
     const fromType = String(file.type || '').toLowerCase().includes('jpeg') ? 'jpg' : ''
     const ext = (fromName || fromType || 'png').toLowerCase()
-    const filePath = `avatars/${user.id}/${Date.now()}.${ext}`
+    const bucket = String(import.meta.env.VITE_AVATAR_BUCKET || 'Biom').trim() || 'Biom'
+    const folder = String(import.meta.env.VITE_AVATAR_FOLDER || 'ProfileImage').trim() || 'ProfileImage'
+    const filePath = `${folder}/${user.id}_${Date.now()}.${ext}`
 
-    const { error: upErr } = await supabase.storage.from('public').upload(filePath, file, {
+    let uploadedBucket = bucket
+    let { error: upErr } = await supabase.storage.from(bucket).upload(filePath, file, {
       upsert: true,
       cacheControl: '3600',
       contentType: file.type || 'image/png'
     })
+
+    // fallback для старой конфигурации проекта
+    if (upErr && bucket !== 'public') {
+      const fallbackPath = `avatars/${user.id}/${Date.now()}.${ext}`
+      const res = await supabase.storage.from('public').upload(fallbackPath, file, {
+        upsert: true,
+        cacheControl: '3600',
+        contentType: file.type || 'image/png'
+      })
+      upErr = res.error
+      if (!upErr) {
+        uploadedBucket = 'public'
+        const { data } = supabase.storage.from(uploadedBucket).getPublicUrl(fallbackPath)
+        const basePublicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
+        const publicUrl = basePublicUrl ? `${basePublicUrl}${basePublicUrl.includes('?') ? '&' : '?'}v=${Date.now()}` : ''
+        return { publicUrl, error: null, data: { publicUrl } }
+      }
+    }
+
     if (upErr) return { publicUrl: '', error: upErr }
 
-    const { data } = supabase.storage.from('public').getPublicUrl(filePath)
+    const { data } = supabase.storage.from(uploadedBucket).getPublicUrl(filePath)
     const basePublicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
     const publicUrl = basePublicUrl ? `${basePublicUrl}${basePublicUrl.includes('?') ? '&' : '?'}v=${Date.now()}` : ''
     return { publicUrl, error: null, data: { publicUrl } }
+  }
+
+  const getMyUnreadMessagesCount = async () => {
+    const { user } = await getUser()
+    if (!user?.id) return { count: 0, error: null }
+
+    const { count, error } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('receiver_id', user.id)
+      .is('read_at', null)
+
+    return { count: Number(count || 0), error }
   }
 
   // =======================
@@ -589,6 +624,7 @@ export const useSupabase = () => {
     sendMessage,
     deleteMessage,
     markConversationRead,
+    getMyUnreadMessagesCount,
 
     // realtime
     subscribeToMyMessages,
