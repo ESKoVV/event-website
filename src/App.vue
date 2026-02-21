@@ -9,16 +9,20 @@
           </div>
         </div>
 
-        <button class="profile-button desktop-only" @click="openProfileModal" aria-label="Профиль">
-          <img
-            v-if="showHeaderAvatar"
-            class="header-avatar"
-            :src="headerAvatarUrl"
-            alt="avatar"
-            @error="onHeaderImgError"
-          />
-          <div v-else class="header-placeholder">👤</div>
-        </button>
+        <div class="header-right">
+          <button class="profile-button desktop-only" @click="openProfileModal" aria-label="Профиль">
+            <img
+              v-if="showHeaderAvatar"
+              class="header-avatar"
+              :src="headerAvatarUrl"
+              alt="avatar"
+              @error="onHeaderImgError"
+            />
+            <div v-else class="header-placeholder">👤</div>
+          </button>
+
+          <div class="build-version" :title="`Версия сборки: ${appVersion}`">v{{ appVersion }}</div>
+        </div>
       </div>
     </header>
 
@@ -182,6 +186,7 @@ export default {
     const { unreadCount } = useUnreadMessages()
 
     const telegramBotUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || ''
+    const appVersion = import.meta.env.VITE_APP_VERSION || 'dev'
 
     const searchTerm = ref('')
 
@@ -334,6 +339,7 @@ export default {
 
     return {
       telegramBotUsername,
+      appVersion,
       searchTerm,
 
       showAuth,
@@ -397,6 +403,22 @@ export default {
   align-items: center;
   gap: 12px;
   min-width: 0;
+}
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.build-version {
+  font-size: 12px;
+  font-weight: 800;
+  color: #6f6f7a;
+  background: #f4f3ff;
+  border: 1px solid #e8e4ff;
+  border-radius: 999px;
+  padding: 6px 10px;
+  white-space: nowrap;
 }
 .menu-button {
   width: 42px;
@@ -667,6 +689,10 @@ export default {
 
   .desktop-only {
     display: none !important;
+  }
+
+  .build-version {
+    display: none;
   }
 
   .sidebar {
