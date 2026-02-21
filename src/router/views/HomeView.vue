@@ -374,7 +374,8 @@ export default {
     const lastScrollY = ref(0)
 
     // ======= НОВОЕ: постраничная загрузка событий =======
-    const pageSize = ref(10)
+    const initialPageSize = 4
+    const pageSize = ref(initialPageSize)
     const eventsOffset = ref(0)
     const eventsPageLoading = ref(false)
     const eventsHasMore = ref(true)
@@ -582,14 +583,15 @@ export default {
     }
 
     // ======= НОВОЕ: загрузка СТРАНИЦЫ событий (только опубликованные) =======
-    const fetchEventsPage = async () => {
+    const fetchEventsPage = async ({ batchSize } = {}) => {
       if (eventsPageLoading.value) return
       if (!eventsHasMore.value) return
 
       eventsPageLoading.value = true
       try {
+        const size = Math.max(1, Number(batchSize || pageSize.value || 1))
         const from = eventsOffset.value
-        const to = eventsOffset.value + pageSize.value - 1
+        const to = eventsOffset.value + size - 1
 
         const { data, error: e } = await withRetry(async () => {
           // published only for feed
@@ -614,7 +616,7 @@ export default {
         // добавляем в конец
         feedEvents.value = [...feedEvents.value, ...rows]
         eventsOffset.value += rows.length
-        if (rows.length < pageSize.value) eventsHasMore.value = false
+        if (rows.length < size) eventsHasMore.value = false
 
         // обновляем кэш (теперь кэш хранит только то, что уже подгружено)
         setEventsCache({
@@ -787,7 +789,7 @@ export default {
             if (activeTab.value !== 'feed' && activeTab.value !== 'favorites') return
             if (eventsPageLoading.value) return
             if (!eventsHasMore.value) return
-            fetchEventsPage()
+            fetchEventsPage({ batchSize: 1 })
           },
           { root: null, threshold: 0.01, rootMargin: '1200px 0px' }
         )
@@ -852,7 +854,7 @@ export default {
         eventsOffset.value = 0
         eventsHasMore.value = true
 
-        await fetchEventsPage()
+        await fetchEventsPage({ batchSize: initialPageSize })
 
         initialLoaded.value = true
         await nextTick()

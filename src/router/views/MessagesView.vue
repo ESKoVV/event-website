@@ -402,11 +402,23 @@ export default {
         }))
 
         const usersMap = await ensureThreadsUsers(rows)
+        const unreadByOther = new Map()
+        const { data: unreadRows } = await supabase
+          .from('messages')
+          .select('sender_id')
+          .eq('receiver_id', user.id)
+          .is('read_at', null)
+
+        for (const m of (unreadRows || [])) {
+          const other = String(m?.sender_id || '')
+          if (!other) continue
+          unreadByOther.set(other, Number(unreadByOther.get(other) || 0) + 1)
+        }
 
         const enriched = rows.map((r) => {
           const m = r.lastMessage || {}
-          const unread = m.receiver_id === user.id && !m.read_at
-          const unreadCount = unread ? 1 : 0
+          const unreadCount = Number(unreadByOther.get(String(r.otherUserId)) || 0)
+          const unread = unreadCount > 0
           const u = usersMap.get(r.otherUserId)
 
           return {
@@ -704,8 +716,9 @@ export default {
       const id = String(messageId || '')
       if (!id) return
       try {
-        const { error } = await deleteMessage(id)
+        const { data, error } = await deleteMessage(id)
         if (error) throw error
+        if (!Array.isArray(data) || data.length === 0) throw new Error('Message was not deleted on server')
 
         const nextMessages = messages.value.filter((x) => String(x?.id || '') !== id)
         messages.value = nextMessages
@@ -716,9 +729,9 @@ export default {
             const last = nextMessages[nextMessages.length - 1] || null
             threads.value[idx] = { ...threads.value[idx], lastMessage: last }
           }
-        }
-      } catch {
-        // ignore
+      }
+      } catch (e) {
+        console.error('Delete message failed:', e)
       }
     }
 
@@ -758,7 +771,7 @@ export default {
       const isIncoming = m.receiver_id === uid
       const isOpenNow = selectedOtherId.value === otherId
       const unread = isIncoming && !m.read_at && !isOpenNow
-      const unreadCount = unread ? 1 : 0
+      const unreadCount = unread ? (Number(t?.unreadCount || 0) + 1) : 0
       if (unread) playIncomingSound()
 
       const nextT = {
@@ -1359,7 +1372,7 @@ export default {
   max-width: min(560px, 84%);
   overflow: hidden;
   border-radius: 18px;
-  padding: 10px 12px;
+  padding: 10px 12px 8px;
   border: 1px solid #efefef;
   background: #fff;
   position: relative;
@@ -1373,17 +1386,11 @@ export default {
 
 /* reply button */
 .msg-actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  position: static;
+  margin-top: 8px;
   display: flex;
+  justify-content: flex-end;
   gap: 6px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  z-index: 2;
-}
-.msg-bubble:hover .msg-actions {
-  opacity: 1;
 }
 .msg-bubble {
   pointer-events: auto;
@@ -1439,7 +1446,6 @@ export default {
   overflow-wrap: anywhere;
   word-break: break-word;
   font-size: 14px;
-  padding-right: 34px; /* место под кнопку reply */
 }
 .msg-meta {
   margin-top: 6px;

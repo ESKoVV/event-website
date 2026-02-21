@@ -153,7 +153,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthModal from './components/AuthModal.vue'
 import ProfileModal from './components/ProfileModal.vue'
@@ -188,11 +188,14 @@ export default {
       uploadAvatar,
       linkTelegramViaEdgeFunction,
       getMyTelegramLink,
+      getMyUnreadMessagesCount,
+      subscribeToMyMessages,
       getCategories,
       createBusinessEvent
     } = useSupabase()
 
-    const { unreadCount } = useUnreadMessages()
+    const { unreadCount, setUnreadCount } = useUnreadMessages()
+    let rtMessagesChannel = null
 
     const telegramBotUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || ''
     const appVersion = import.meta.env.VITE_APP_VERSION || 'dev'
@@ -249,9 +252,13 @@ export default {
 
         const { data: tg } = await getMyTelegramLink()
         telegramLink.value = tg || null
+
+        const { count } = await getMyUnreadMessagesCount()
+        setUnreadCount(count || 0)
       } else {
         profile.value = null
         telegramLink.value = null
+        setUnreadCount(0)
       }
 
       showHeaderAvatar.value = !!(session.value && headerAvatarUrl.value)
@@ -348,7 +355,30 @@ export default {
       window.addEventListener('open-profile', onOpenProfileEvent)
       await loadCategories()
       await loadSessionAndProfile()
+
+      const { channel } = await subscribeToMyMessages({
+        onInsert: async () => {
+          const { count } = await getMyUnreadMessagesCount()
+          setUnreadCount(count || 0)
+        },
+        onUpdate: async () => {
+          const { count } = await getMyUnreadMessagesCount()
+          setUnreadCount(count || 0)
+        }
+      })
+      rtMessagesChannel = channel
     })
+
+    const teardown = () => {
+      try {
+        if (rtMessagesChannel?.unsubscribe) rtMessagesChannel.unsubscribe()
+      } catch {
+        // ignore
+      }
+      rtMessagesChannel = null
+    }
+
+    onBeforeUnmount(() => teardown())
 
     watch(
       () => headerAvatarUrl.value,

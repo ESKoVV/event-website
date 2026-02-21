@@ -167,12 +167,13 @@
                   :key="e.id"
                   :event="e"
                   :photos="getPhotosForEvent(e.id)"
-                  :photos-loading="false"
+                  :photos-loading="isPhotosLoading(e.id)"
                   :category-map="categoryMap"
                   :compact="true"
                   :is-favorite="favoriteIds.has(Number(e.id))"
                   @open-photo="openPhoto"
                   @toggle-favorite="onToggleFavorite"
+                  @need-photos="onNeedEventPhotos"
                 />
               </TransitionGroup>
             </div>
@@ -276,6 +277,7 @@ export default {
     const otherLoading = ref(false)
     const cachedAllEvents = ref(null)
     const cachedPhotosByEventId = ref(null)
+    const photosLoadingByEventId = ref({})
     const categoryMap = ref({})
 
     const userId = ref(null)
@@ -377,6 +379,12 @@ export default {
       const map = cachedPhotosByEventId.value
       if (map && map[idNum]) return map[idNum]
       return []
+    }
+
+    const isPhotosLoading = (eventId) => {
+      const idNum = Number(eventId)
+      if (!Number.isFinite(idNum)) return false
+      return !!photosLoadingByEventId.value?.[idNum]
     }
 
     const eventCategoryKeys = computed(() => {
@@ -490,6 +498,20 @@ export default {
       cachedPhotosByEventId.value = next
     }
 
+    const onNeedEventPhotos = async ({ eventId } = {}) => {
+      const id = Number(eventId)
+      if (!Number.isFinite(id)) return
+      if (isPhotosLoading(id)) return
+      if (Array.isArray(cachedPhotosByEventId.value?.[id]) && cachedPhotosByEventId.value[id].length > 0) return
+
+      photosLoadingByEventId.value = { ...photosLoadingByEventId.value, [id]: true }
+      try {
+        await ensurePhotosForEventIds([id])
+      } finally {
+        photosLoadingByEventId.value = { ...photosLoadingByEventId.value, [id]: false }
+      }
+    }
+
     const loadOtherFallbackIfNoCache = async () => {
       if (Array.isArray(cachedAllEvents.value) && cachedAllEvents.value.length) return
 
@@ -508,8 +530,6 @@ export default {
           cachedAllEvents.value = []
         }
 
-        const ids = (cachedAllEvents.value || []).map((e) => e?.id).filter((x) => x !== null && x !== undefined)
-        await ensurePhotosForEventIds(ids)
       } finally {
         otherLoading.value = false
       }
@@ -619,19 +639,6 @@ export default {
       () => resetGallery()
     )
 
-    watch(
-      () => tab.value,
-      async (t) => {
-        if (t !== 'other') return
-        try {
-          const ids = (otherEventsForCards.value || []).map((e) => e?.id).filter((x) => x !== null && x !== undefined)
-          await ensurePhotosForEventIds(ids)
-        } catch {
-          // ignore
-        }
-      }
-    )
-
     return {
       routeId,
       loading,
@@ -668,6 +675,8 @@ export default {
       otherLoading,
       otherEventsForCards,
       getPhotosForEvent,
+      isPhotosLoading,
+      onNeedEventPhotos,
       categoryMap,
 
       favoriteIds,
