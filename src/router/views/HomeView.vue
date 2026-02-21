@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="container">
-      <div class="topbar">
+      <div class="topbar" :class="{ 'topbar-visible': showStickyTopbar }">
         <button class="filter-btn" @click="openDrawer" aria-label="Открыть фильтры">
           <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
             <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
@@ -357,6 +357,8 @@ export default {
     // ui
     const drawerOpen = ref(false)
     const photoModalUrl = ref('')
+    const showStickyTopbar = ref(true)
+    const lastScrollY = ref(0)
 
     // ======= НОВОЕ: постраничная загрузка событий =======
     const pageSize = ref(10)
@@ -820,14 +822,29 @@ export default {
       }
     )
 
+
+    const onWindowScroll = () => {
+      const y = window.scrollY || window.pageYOffset || 0
+      if (y < 120) {
+        showStickyTopbar.value = true
+      } else {
+        const goingUp = y < lastScrollY.value
+        showStickyTopbar.value = goingUp
+      }
+      lastScrollY.value = y
+    }
+
     onMounted(async () => {
       await boot()
       await nextTick()
       refreshCardObserver()
       setupSentinel()
+      lastScrollY.value = window.scrollY || window.pageYOffset || 0
+      window.addEventListener('scroll', onWindowScroll, { passive: true })
     })
 
     onBeforeUnmount(() => {
+      window.removeEventListener('scroll', onWindowScroll)
       disconnectCardObserver()
       disconnectSentinel()
     })
@@ -875,6 +892,7 @@ export default {
 
       goToProfile,
       forceReload,
+      showStickyTopbar,
 
       // refs
       feedCardWraps,
@@ -889,7 +907,8 @@ export default {
 .page { padding: 12px 0; }
 .container { max-width: 1200px; margin: 0 auto; padding: 0 12px; }
 
-.topbar{ display:flex; align-items:center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.topbar{ display:flex; align-items:center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; position: sticky; top: 72px; z-index: 12; background:#f6f7f9; padding: 8px 0; transform: translateY(-120%); opacity: 0; transition: transform .2s ease, opacity .2s ease; }
+.topbar.topbar-visible{ transform: translateY(0); opacity: 1; }
 
 .filter-btn {
   width: 40px; height: 40px; border-radius: 14px;
@@ -925,6 +944,7 @@ export default {
 @media (min-width: 981px){
   .refresh{ display:none !important; }
 }
+@media (max-width: 980px){ .topbar{ top: 0; transform:none; opacity:1; position: static; padding:0; } }
 @media (max-width: 520px){ .tab .txt{ display:none; } .refresh{ margin-left:0; } }
 
 .biz-ad{
