@@ -400,6 +400,7 @@ export default {
 
     const scrollBottom = async () => {
       await nextTick()
+      await new Promise((resolve) => requestAnimationFrame(resolve))
       const el = chatBodyRef.value
       if (!el) return
       el.scrollTop = el.scrollHeight
@@ -801,16 +802,20 @@ export default {
   display: grid;
   grid-template-columns: 360px 1fr;
   gap: 14px;
-  min-height: calc(100vh - 120px);
+  height: calc(100vh - 120px);
+  min-height: 0;
 }
 
 .mv-left,
 .mv-right {
+  display: flex;
+  flex-direction: column;
   background: #fff;
   border: 1px solid #efefef;
   border-radius: 18px;
   overflow: hidden;
   min-width: 0;
+  min-height: 0;
 }
 
 .mv-head {
@@ -1308,6 +1313,8 @@ export default {
 @media (max-width: 980px) {
   .mv {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: calc(100vh - 120px);
   }
   /* reply кнопка всегда видна на мобилке */
   .msg-actions {
