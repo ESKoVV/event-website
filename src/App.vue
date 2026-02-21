@@ -21,20 +21,8 @@
             <div v-else class="header-placeholder">👤</div>
           </button>
 
-          <div class="build-version" :title="`Версия сборки: ${appVersion}`">v{{ appVersion }}</div>
+          <div class="build-version" :title="versionTitle">{{ versionLabel }}</div>
         </div>
-        <button class="profile-button desktop-only" @click="openProfileModal" aria-label="Профиль">
-          <img
-            v-if="showHeaderAvatar"
-            class="header-avatar"
-            :src="headerAvatarUrl"
-            alt="avatar"
-            @error="onHeaderImgError"
-          />
-          <div v-else class="header-placeholder">👤</div>
-        </button>
-
-        <div class="build-version" :title="`Версия сборки: ${appVersion}`">v{{ appVersion }}</div>
       </div>
     </header>
 
@@ -199,6 +187,7 @@ export default {
 
     const telegramBotUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || ''
     const appVersion = import.meta.env.VITE_APP_VERSION || 'dev'
+    const appCommitName = import.meta.env.VITE_APP_COMMIT_NAME || ''
 
     const searchTerm = ref('')
 
@@ -223,6 +212,16 @@ export default {
       if (n <= 0) return ''
       if (n > 99) return '99+'
       return String(n)
+    })
+
+    const versionLabel = computed(() => {
+      if (appCommitName) return appCommitName
+      return `v${appVersion}`
+    })
+
+    const versionTitle = computed(() => {
+      if (appCommitName) return `Коммит: ${appCommitName}`
+      return `Версия сборки: ${appVersion}`
     })
 
     const onHeaderImgError = () => {
@@ -352,6 +351,8 @@ export default {
     return {
       telegramBotUsername,
       appVersion,
+      versionLabel,
+      versionTitle,
       searchTerm,
 
       showAuth,
@@ -422,7 +423,6 @@ export default {
   align-items: center;
   gap: 10px;
 }
-.build-version {
 .build-version {
   margin-left: auto;
   font-size: 12px;

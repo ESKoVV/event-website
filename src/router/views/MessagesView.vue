@@ -516,6 +516,12 @@ export default {
       }
     }
 
+    const jumpToLatestOnOpen = async () => {
+      await scrollBottom()
+      await nextTick()
+      showScrollDown.value = !isAtBottom()
+    }
+
     const markThreadAsRead = async (otherId) => {
       if (!otherId) return
       try {
@@ -553,6 +559,7 @@ export default {
 
       await loadPeer(otherId)
       await reloadConversation()
+      await jumpToLatestOnOpen()
       await markThreadAsRead(otherId)
     }
 
@@ -805,6 +812,7 @@ export default {
       if (selectedOtherId.value) {
         await loadPeer(selectedOtherId.value)
         await reloadConversation()
+        await jumpToLatestOnOpen()
         await markThreadAsRead(selectedOtherId.value)
       }
     })
@@ -850,6 +858,7 @@ export default {
         peerTyping.value = false
         await loadPeer(nextId)
         await reloadConversation()
+        await jumpToLatestOnOpen()
         await markThreadAsRead(nextId)
       }
     )
