@@ -96,7 +96,7 @@
           <button class="chat-head-btn" type="button" @click="reloadConversation" :disabled="convLoading">⟳</button>
         </div>
 
-        <div ref="chatBodyRef" class="chat-body">
+        <div ref="chatBodyRef" class="chat-body" @scroll.passive="onChatScroll">
           <div v-if="convLoading" class="chat-skel">
             <div class="chat-skel-bubble" v-for="i in 8" :key="i"></div>
           </div>
@@ -137,6 +137,17 @@
             </div>
           </template>
         </div>
+
+        <button
+          v-if="showScrollDown"
+          class="scroll-down-btn"
+          type="button"
+          @click="scrollBottom(true)"
+          aria-label="Прокрутить вниз"
+          title="Вниз"
+        >
+          ↓
+        </button>
 
         <div class="chat-foot">
           <!-- reply-to bar -->
@@ -260,6 +271,10 @@ export default {
 
     const replyTo = ref(null) // { id, who, text }
     const chatBodyRef = ref(null)
+    const showScrollDown = ref(false)
+    const convHasMore = ref(true)
+    const convLoadingMore = ref(false)
+    const oldestLoadedAt = ref('')
 
     // ✅ typing
     const peerTyping = ref(false)
@@ -398,12 +413,77 @@ export default {
       }
     }
 
-    const scrollBottom = async () => {
+    const isAtBottom = (el = chatBodyRef.value) => {
+      if (!el) return true
+      const delta = el.scrollHeight - el.scrollTop - el.clientHeight
+      return delta <= 80
+    }
+
+    const scrollBottom = async (smooth = false) => {
       await nextTick()
       await new Promise((resolve) => requestAnimationFrame(resolve))
       const el = chatBodyRef.value
       if (!el) return
-      el.scrollTop = el.scrollHeight
+      if (smooth) {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      } else {
+        el.scrollTop = el.scrollHeight
+      }
+      showScrollDown.value = false
+    }
+
+    const loadOlderMessages = async () => {
+      if (!selectedOtherId.value || convLoading.value || convLoadingMore.value || !convHasMore.value || !oldestLoadedAt.value) return
+      convLoadingMore.value = true
+      try {
+        const { user } = await getUser()
+        if (!user?.id) return
+
+        const beforeTop = chatBodyRef.value?.scrollHeight || 0
+
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .or(`and(sender_id.eq.${user.id},receiver_id.eq.${selectedOtherId.value}),and(sender_id.eq.${selectedOtherId.value},receiver_id.eq.${user.id})`)
+          .lt('created_at', oldestLoadedAt.value)
+          .order('created_at', { ascending: false })
+          .limit(80)
+
+        if (error) throw error
+
+        const rows = (data || []).slice().reverse()
+        if (rows.length === 0) {
+          convHasMore.value = false
+          return
+        }
+
+        const dedup = rows.filter((m) => !messages.value.some((x) => x?.id === m?.id))
+        if (dedup.length === 0) {
+          convHasMore.value = false
+          return
+        }
+
+        messages.value = [...dedup, ...messages.value]
+        oldestLoadedAt.value = String(messages.value?.[0]?.created_at || oldestLoadedAt.value || '')
+
+        await nextTick()
+        const el = chatBodyRef.value
+        if (el) {
+          const afterTop = el.scrollHeight
+          el.scrollTop += Math.max(0, afterTop - beforeTop)
+        }
+      } finally {
+        convLoadingMore.value = false
+      }
+    }
+
+    const onChatScroll = async () => {
+      const el = chatBodyRef.value
+      if (!el) return
+      showScrollDown.value = !isAtBottom(el)
+      if (el.scrollTop <= 120) {
+        await loadOlderMessages()
+      }
     }
 
     const reloadConversation = async () => {
@@ -414,10 +494,22 @@ export default {
         if (!user?.id) return
         myId.value = user.id
 
-        const { data, error } = await getConversation(selectedOtherId.value, 250)
+        // загружаем последние сообщения (снизу), затем разворачиваем в хронологию
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .or(`and(sender_id.eq.${user.id},receiver_id.eq.${selectedOtherId.value}),and(sender_id.eq.${selectedOtherId.value},receiver_id.eq.${user.id})`)
+          .order('created_at', { ascending: false })
+          .limit(80)
+
         if (error) throw error
 
-        messages.value = data || []
+        const rows = (data || []).slice().reverse()
+        messages.value = rows
+        oldestLoadedAt.value = String(rows?.[0]?.created_at || '')
+        convHasMore.value = rows.length >= 80
+        showScrollDown.value = false
+
         await scrollBottom()
       } finally {
         convLoading.value = false
@@ -618,7 +710,13 @@ export default {
 
       if (isOpenNow) {
         const appended = appendMessageUnique(m)
-        if (appended) await scrollBottom()
+        if (appended) {
+          if (isAtBottom()) {
+            await scrollBottom()
+          } else {
+            showScrollDown.value = true
+          }
+        }
         await markThreadAsRead(otherId)
       }
     }
@@ -738,6 +836,9 @@ export default {
           selectedOtherId.value = ''
           peer.value = null
           messages.value = []
+          oldestLoadedAt.value = ''
+          convHasMore.value = true
+          showScrollDown.value = false
           replyTo.value = null
           peerTyping.value = false
           return
@@ -770,11 +871,14 @@ export default {
       replyTo,
 
       chatBodyRef,
+      showScrollDown,
 
       reload,
       openThread,
       send,
       reloadConversation,
+      onChatScroll,
+      scrollBottom,
 
       setReply,
       clearReply,
@@ -1019,6 +1123,7 @@ export default {
 
 /* RIGHT */
 .chat {
+  position: relative;
   height: 100%;
   min-height: 0;
   display: grid;
@@ -1103,6 +1208,22 @@ export default {
   padding: 14px;
   overflow: auto;
   background: #fbfbfb;
+}
+.scroll-down-btn {
+  position: absolute;
+  right: 18px;
+  bottom: 82px;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid #e8e8e8;
+  background: #111;
+  color: #fff;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  z-index: 2;
+  box-shadow: 0 6px 18px rgba(0,0,0,.16);
 }
 .chat-skel {
   display: grid;

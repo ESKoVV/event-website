@@ -373,17 +373,19 @@ export default {
 }
 
 .card.compact {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   padding: 14px;
 }
 
 .card.compact .photo {
-  height: 330px;
+  height: 230px;
 }
 
 .card.compact .desc {
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
