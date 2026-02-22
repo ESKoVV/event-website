@@ -140,7 +140,7 @@
 </template>
 
 <script>
-import { reactive, watch, ref, computed } from 'vue'
+import { reactive, watch, ref, computed, onBeforeUnmount } from 'vue'
 
 export default {
   name: 'ProfileModal',
@@ -201,9 +201,20 @@ export default {
 
     const triggerPick = () => fileInput.value?.click()
 
+    const clearLocalAvatarPreview = () => {
+      if (localAvatarUrl.value) URL.revokeObjectURL(localAvatarUrl.value)
+      localAvatarUrl.value = ''
+    }
+
     const onPick = (e) => {
       const file = e?.target?.files?.[0]
       if (!file) return
+
+      clearLocalAvatarPreview()
+      localAvatarUrl.value = URL.createObjectURL(file)
+      localErrored.value = false
+      profileErrored.value = false
+
       emit('pick-avatar', file)
       e.target.value = ''
     }
@@ -220,6 +231,17 @@ export default {
     const onProfileImgError = () => {
       profileErrored.value = true
     }
+
+    watch(
+      () => profileAvatarUrl.value,
+      (nextUrl) => {
+        if (nextUrl) clearLocalAvatarPreview()
+      }
+    )
+
+    onBeforeUnmount(() => {
+      clearLocalAvatarPreview()
+    })
 
     const avatarLetter = computed(() => {
       const n = (form.first_name || form.email || 'П')[0] || 'П'
@@ -238,6 +260,7 @@ export default {
 
       fileInput,
       localAvatarUrl,
+      clearLocalAvatarPreview,
       triggerPick,
       onPick,
 
