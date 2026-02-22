@@ -382,7 +382,9 @@ export default {
   background:#fff;
   cursor:pointer;
   display:grid; place-items:center;
+  padding: 0;
 }
+
 .pm-ava img{ width:100%; height:100%; object-fit:cover; display:block; }
 .pm-ava-fallback{ width:100%; height:100%; display:grid; place-items:center; color:#fff; font-weight:900; font-size:22px; }
 .pm-ava-hint{ font-size: 13px; opacity: .8; font-weight: 700; }
