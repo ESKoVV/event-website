@@ -140,7 +140,7 @@
 </template>
 
 <script>
-import { reactive, watch, ref, computed } from 'vue'
+import { reactive, watch, ref, computed, onBeforeUnmount } from 'vue'
 
 export default {
   name: 'ProfileModal',
@@ -201,9 +201,20 @@ export default {
 
     const triggerPick = () => fileInput.value?.click()
 
+    const clearLocalAvatarPreview = () => {
+      if (localAvatarUrl.value) URL.revokeObjectURL(localAvatarUrl.value)
+      localAvatarUrl.value = ''
+    }
+
     const onPick = (e) => {
       const file = e?.target?.files?.[0]
       if (!file) return
+
+      clearLocalAvatarPreview()
+      localAvatarUrl.value = URL.createObjectURL(file)
+      localErrored.value = false
+      profileErrored.value = false
+
       emit('pick-avatar', file)
       e.target.value = ''
     }
@@ -220,6 +231,17 @@ export default {
     const onProfileImgError = () => {
       profileErrored.value = true
     }
+
+    watch(
+      () => profileAvatarUrl.value,
+      (nextUrl) => {
+        if (nextUrl) clearLocalAvatarPreview()
+      }
+    )
+
+    onBeforeUnmount(() => {
+      clearLocalAvatarPreview()
+    })
 
     const avatarLetter = computed(() => {
       const n = (form.first_name || form.email || 'П')[0] || 'П'
@@ -238,6 +260,7 @@ export default {
 
       fileInput,
       localAvatarUrl,
+      clearLocalAvatarPreview,
       triggerPick,
       onPick,
 
@@ -359,7 +382,9 @@ export default {
   background:#fff;
   cursor:pointer;
   display:grid; place-items:center;
+  padding: 0;
 }
+
 .pm-ava img{ width:100%; height:100%; object-fit:cover; display:block; }
 .pm-ava-fallback{ width:100%; height:100%; display:grid; place-items:center; color:#fff; font-weight:900; font-size:22px; }
 .pm-ava-hint{ font-size: 13px; opacity: .8; font-weight: 700; }

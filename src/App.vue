@@ -149,6 +149,15 @@
         @created="onCreatedEvent"
       />
     </teleport>
+
+    <teleport to="body">
+      <AvatarCropModal
+        v-if="showAvatarCrop && cropSourceAvatar"
+        :file="cropSourceAvatar"
+        @close="onAvatarCropClose"
+        @done="onAvatarCropDone"
+      />
+    </teleport>
   </div>
 </template>
 
@@ -158,6 +167,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AuthModal from './components/AuthModal.vue'
 import ProfileModal from './components/ProfileModal.vue'
 import CreateEventModal from './components/CreateEventModal.vue'
+import AvatarCropModal from './components/AvatarCropModal.vue'
 import { useSupabase } from './composables/useSupabase.js'
 import { useUnreadMessages } from './composables/unreadMessages.js'
 
@@ -172,7 +182,7 @@ const normalizeStoragePublicUrl = (url) => {
 
 export default {
   name: 'App',
-  components: { AuthModal, ProfileModal, CreateEventModal },
+  components: { AuthModal, ProfileModal, CreateEventModal, AvatarCropModal },
   setup() {
     const router = useRouter()
     const route = useRoute()
@@ -213,6 +223,9 @@ export default {
     const showAuth = ref(false)
     const showProfileEdit = ref(false)
     const showCreateEvent = ref(false)
+
+    const showAvatarCrop = ref(false)
+    const cropSourceAvatar = ref(null)
 
     const menuOpen = ref(false)
 
@@ -325,16 +338,28 @@ export default {
       }
     }
 
-    const onPickedAvatar = async (fileOrBlob) => {
+    const onPickedAvatar = (fileOrBlob) => {
       if (!fileOrBlob) return
+      cropSourceAvatar.value = fileOrBlob
+      showAvatarCrop.value = true
+    }
+
+    const onAvatarCropClose = () => {
+      showAvatarCrop.value = false
+      cropSourceAvatar.value = null
+    }
+
+    const onAvatarCropDone = async (croppedFile) => {
+      if (!croppedFile) return
       saving.value = true
       try {
-        const { data, error } = await uploadAvatar(fileOrBlob)
+        const { data, error } = await uploadAvatar(croppedFile)
         if (error) throw error
         await updateMyPublicUser({ image_path: data?.publicUrl || data?.url || profile.value?.image_path })
         await loadSessionAndProfile()
       } finally {
         saving.value = false
+        onAvatarCropClose()
       }
     }
 
@@ -397,6 +422,8 @@ export default {
       showAuth,
       showProfileEdit,
       showCreateEvent,
+      showAvatarCrop,
+      cropSourceAvatar,
 
       session,
       profile,
@@ -419,6 +446,8 @@ export default {
       logout,
       saveProfile,
       onPickedAvatar,
+      onAvatarCropClose,
+      onAvatarCropDone,
       openCreateEvent,
       onCreatedEvent,
 

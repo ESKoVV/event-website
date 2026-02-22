@@ -260,40 +260,45 @@ export const useSupabase = () => {
     const fromName = fileName.includes('.') ? fileName.split('.').pop() : ''
     const fromType = String(file.type || '').toLowerCase().includes('jpeg') ? 'jpg' : ''
     const ext = (fromName || fromType || 'png').toLowerCase()
-    const bucket = String(import.meta.env.VITE_AVATAR_BUCKET || 'Biom').trim() || 'Biom'
-    const folder = String(import.meta.env.VITE_AVATAR_FOLDER || 'ProfileImage').trim() || 'ProfileImage'
-    const filePath = `${folder}/${user.id}_${Date.now()}.${ext}`
 
-    let uploadedBucket = bucket
-    let { error: upErr } = await supabase.storage.from(bucket).upload(filePath, file, {
+    // основной путь по требованию проекта:
+    // storage / avatars / ProfileImage / <userId> / <timestamp>.<ext>
+    const preferredBucket = 'avatars'
+    const preferredFolder = 'ProfileImage'
+    const timestamp = Date.now()
+    const preferredPath = `${preferredFolder}/${user.id}/${timestamp}.${ext}`
+
+    const uploadOptions = {
       upsert: true,
       cacheControl: '3600',
       contentType: file.type || 'image/png'
-    })
+    }
 
-    // fallback для старой конфигурации проекта
-    if (upErr && bucket !== 'public') {
-      const fallbackPath = `avatars/${user.id}/${Date.now()}.${ext}`
-      const res = await supabase.storage.from('public').upload(fallbackPath, file, {
-        upsert: true,
-        cacheControl: '3600',
-        contentType: file.type || 'image/png'
-      })
-      upErr = res.error
-      if (!upErr) {
-        uploadedBucket = 'public'
-        const { data } = supabase.storage.from(uploadedBucket).getPublicUrl(fallbackPath)
-        const basePublicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
-        const publicUrl = basePublicUrl ? `${basePublicUrl}${basePublicUrl.includes('?') ? '&' : '?'}v=${Date.now()}` : ''
-        return { publicUrl, error: null, data: { publicUrl } }
+    let uploadedBucket = preferredBucket
+    let uploadedPath = preferredPath
+
+    let { error: upErr } = await supabase.storage.from(uploadedBucket).upload(uploadedPath, file, uploadOptions)
+
+    // fallback на env-конфиг, если в окружении задан другой bucket/folder
+    if (upErr) {
+      const envBucket = String(import.meta.env.VITE_AVATAR_BUCKET || '').trim()
+      const envFolder = String(import.meta.env.VITE_AVATAR_FOLDER || '').trim() || preferredFolder
+      if (envBucket && envBucket !== preferredBucket) {
+        const envPath = `${envFolder}/${user.id}/${timestamp}.${ext}`
+        const res = await supabase.storage.from(envBucket).upload(envPath, file, uploadOptions)
+        upErr = res.error
+        if (!upErr) {
+          uploadedBucket = envBucket
+          uploadedPath = envPath
+        }
       }
     }
 
     if (upErr) return { publicUrl: '', error: upErr }
 
-    const { data } = supabase.storage.from(uploadedBucket).getPublicUrl(filePath)
+    const { data } = supabase.storage.from(uploadedBucket).getPublicUrl(uploadedPath)
     const basePublicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
-    const publicUrl = basePublicUrl ? `${basePublicUrl}${basePublicUrl.includes('?') ? '&' : '?'}v=${Date.now()}` : ''
+    const publicUrl = basePublicUrl ? `${basePublicUrl}${basePublicUrl.includes('?') ? '&' : '?'}v=${timestamp}` : ''
     return { publicUrl, error: null, data: { publicUrl } }
   }
 
