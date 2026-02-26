@@ -123,60 +123,37 @@ export const useSupabase = () => {
   }
 
   const createBusinessEvent = async (payload) => {
-    const { user } = await getUser()
-    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+  const { user } = await getUser()
+  if (!user?.id) return { data: null, error: new Error('Not authorized') }
 
-    const {
-      title,
-      description,
-      date_time_event,
-      address,
-      organizer,
-      price,
-      is_online,
-      is_free,
-      selectCategory,
-      photo_file
-    } = payload || {}
+  const { title, description, date_time_event, address, organizer,
+          price, is_online, is_free, selectCategory, photo_files } = payload || {}
 
+  const { data, error } = await supabase.functions.invoke('validate-event', {
+    body: { title, description, date: date_time_event }
+  })
 
-    const { data: validation, error: valError } = await supabase.functions.invoke('validate-event', {
-      body: { title, description }
-    })
-    if (valError) return { data: null, error: valError }
-    if (!validation?.valid) return { data: null, error: new Error(validation?.reason) }
+  if (error) return { data: null, error }
 
-    const { data: created, error: e1 } = await supabase
-      .from('events')
-      .insert([
-        compact({
-          title,
-          description,
-          date_time_event,
-          address,
-          organizer,
-          price,
-          is_online,
-          is_free,
-          user_id: user.id,
-          selectCategory,
-          is_published: false
-        })
-      ])
-      .select('*')
-      .maybeSingle()
-
-
-    if (e1) return { data: null, error: e1 }
-    if (!created?.id) return { data: null, error: new Error('Event not created') }
-
-    if (photo_file) {
-      const dataUrl = await readFileAsDataUrl(photo_file)
-      const { error: e2 } = await supabase.from('event_photos').insert([{ event_id: created.id, photo_url: dataUrl }])
-      if (e2) return { data: created, error: e2 }
+  if (data.status === 'rejected') {
+    return {
+      data: null,
+      error: new Error(data.reason ?? 'Мероприятие отклонено модератором')
     }
+  }
 
-    return { data: created, error: null }
+  // Если approved или pending — сохраняем фото
+  if (photo_files?.length) {
+    for (const file of photo_files) {
+      const dataUrl = await readFileAsDataUrl(file)
+      await supabase.from('event_photos').insert([{
+        event_id: data.data.id,
+        photo_url: dataUrl
+      }])
+    }
+  }
+
+  return { data: data.data, error: null }
   }
 
   // =======================
