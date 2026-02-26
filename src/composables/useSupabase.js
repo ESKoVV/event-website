@@ -139,6 +139,13 @@ export const useSupabase = () => {
       photo_file
     } = payload || {}
 
+
+    const { data: validation, error: valError } = await supabase.functions.invoke('validate-event', {
+      body: { title, description }
+    })
+    if (valError) return { data: null, error: valError }
+    if (!validation?.valid) return { data: null, error: new Error(validation?.reason) }
+
     const { data: created, error: e1 } = await supabase
       .from('events')
       .insert([
@@ -158,6 +165,7 @@ export const useSupabase = () => {
       ])
       .select('*')
       .maybeSingle()
+
 
     if (e1) return { data: null, error: e1 }
     if (!created?.id) return { data: null, error: new Error('Event not created') }
