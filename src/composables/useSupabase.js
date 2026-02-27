@@ -376,6 +376,27 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
+  const getAcceptedFriendsOf = async (userId) => {
+    const uid = String(userId || '').trim()
+    if (!uid) return { data: [], error: new Error('No userId') }
+
+    const { data, error } = await supabase
+      .from('friendships')
+      .select('requester_id,addressee_id')
+      .eq('status', 'accepted')
+      .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`)
+
+    const out = []
+    for (const row of (data || [])) {
+      const requester = String(row?.requester_id || '')
+      const addressee = String(row?.addressee_id || '')
+      const other = requester === uid ? addressee : requester
+      if (other) out.push(other)
+    }
+
+    return { data: [...new Set(out)], error }
+  }
+
   const sendFriendRequest = async (otherId) => {
     const { user } = await getUser()
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
@@ -467,6 +488,11 @@ export const useSupabase = () => {
       .delete()
       .eq('id', messageId)
       .eq('sender_id', user.id)
+      .select('id')
+
+    if (!error && (!data || data.length === 0)) {
+      return { data: null, error: new Error('Message was not deleted in database') }
+    }
 
     return { data: data ?? null, error }
   }
@@ -626,6 +652,7 @@ export const useSupabase = () => {
     searchUsers,
 
     getFriendships,
+    getAcceptedFriendsOf,
     sendFriendRequest,
     acceptFriendRequest,
     removeFriendOrRequest,

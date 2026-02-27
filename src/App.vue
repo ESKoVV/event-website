@@ -32,6 +32,7 @@
 
                   <div class="people-actions">
                     <button class="people-btn" type="button" @click="messageUser(u)">Написать</button>
+                    <button class="people-btn" type="button" @click="openUserProfile(u)">Профиль</button>
                     <button
                       class="people-btn people-btn-primary"
                       type="button"
@@ -373,6 +374,7 @@ export default {
         if (addressee === me && requester) set.add(requester)
       }
       myFriendsSet.value = set
+      mutualFriendsCache.clear()
     }
 
     const friendshipState = (userId) => {
@@ -439,6 +441,8 @@ export default {
       peopleSearchLoading.value = true
       showPeopleDropdown.value = true
       try {
+        if (session.value?.user?.id) await loadMyFriendsSet()
+
         const seed = usernameOnly ? pureQuery : pureQuery.split(/\s+/)[0]
         const { data } = await searchUsers(seed, 8, { usernameOnly })
         const myId = String(profile.value?.id || session.value?.user?.id || '')
@@ -483,6 +487,14 @@ export default {
       showPeopleDropdown.value = false
       searchTerm.value = ''
       router.push({ name: 'messages', query: { with: otherId } })
+    }
+
+    const openUserProfile = (u) => {
+      const otherId = String(u?.id || '').trim()
+      if (!otherId) return
+      showPeopleDropdown.value = false
+      searchTerm.value = ''
+      router.push({ name: 'user-profile', params: { id: otherId } })
     }
 
     const addFriendFromSearch = async (u) => {
@@ -656,6 +668,7 @@ export default {
       showPeopleDropdown,
       onSearchFocus,
       messageUser,
+      openUserProfile,
       addFriendFromSearch,
       formatMutualFriendsText,
 

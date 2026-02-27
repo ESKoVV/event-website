@@ -63,6 +63,7 @@
                 </div>
 
                 <div class="actions">
+                  <button class="btn small ghost" @click="openUserProfile(u.id)">Профиль</button>
                   <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
 
                   <button class="btn small" type="button" @click.stop="toggleMenu(u.id)" aria-label="Меню">⋯</button>
@@ -103,7 +104,10 @@
                 </div>
                 <div class="actions">
                   <div v-if="isMe(fu.id)" class="self-badge">Это вы</div>
-                  <button v-else class="btn small ghost" @click="goChat(fu.id)">Написать</button>
+                  <template v-else>
+                    <button class="btn small ghost" @click="openUserProfile(fu.id)">Профиль</button>
+                    <button class="btn small ghost" @click="goChat(fu.id)">Написать</button>
+                  </template>
                 </div>
               </div>
             </div>
@@ -128,6 +132,7 @@
                 </div>
 
                 <div class="actions">
+                  <button class="btn small ghost" @click="openUserProfile(u.id)">Профиль</button>
                   <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
 
                   <button
@@ -426,6 +431,11 @@ export default {
       router.push({ path: '/messages', query: { with: otherId } })
     }
 
+    const openUserProfile = (otherId) => {
+      if (!otherId) return
+      router.push({ name: 'user-profile', params: { id: otherId } })
+    }
+
     const reloadAll = async () => {
       loading.value = true
       error.value = ''
@@ -495,6 +505,7 @@ return {
       accept,
       removeFriendOrReq,
       goChat,
+      openUserProfile,
 
       reloadAll
     }
