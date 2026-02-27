@@ -87,7 +87,7 @@
             <div class="chat-peer-info" @click="openPeerProfile" role="button" tabindex="0">
               <div class="chat-peer-name">{{ peer?.title || 'Пользователь' }}</div>
               <div class="chat-peer-sub">
-                {{ peer?.sub || '' }}
+                {{ peerStatusText }}
                 <span v-if="peerTyping" class="typing-pill" aria-label="Печатает">печатает…</span>
               </div>
             </div>
@@ -190,7 +190,7 @@
 </template>
 
 <script>
-import { ref, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, onMounted, watch, nextTick, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSupabase, supabase } from '../../composables/useSupabase.js'
 import { useUnreadMessages } from '../../composables/unreadMessages.js'
@@ -280,6 +280,8 @@ export default {
     const peer = ref(null)
     const messages = ref([])
     const draft = ref('')
+    const peerOnline = ref(false)
+    const peerLastSeenAt = ref('')
 
     const replyTo = ref(null) // { id, who, text }
     const chatBodyRef = ref(null)
@@ -293,6 +295,8 @@ export default {
     const peerTyping = ref(false)
     let typingSelfTimer = null
     let typingPeerTimer = null
+    let typingPresenceTimer = null
+    let peerStatusTickTimer = null
     let typingChannel = null
     const typingFeatureEnabled = ref(true)
 
@@ -339,6 +343,69 @@ export default {
       const p = parseBody(body)
       const t = String(p.text || '').trim()
       return t || (p.reply ? 'Ответ' : '')
+    }
+
+    const formatLastSeen = (iso) => {
+      if (!iso) return ''
+      const dt = new Date(iso)
+      if (Number.isNaN(dt.getTime())) return ''
+      const now = Date.now()
+      const deltaSec = Math.max(0, Math.floor((now - dt.getTime()) / 1000))
+      if (deltaSec < 60) return 'был(а) только что'
+      const deltaMin = Math.floor(deltaSec / 60)
+      if (deltaMin < 60) return `был(а) ${deltaMin} мин назад`
+      const hh = String(dt.getHours()).padStart(2, '0')
+      const mm = String(dt.getMinutes()).padStart(2, '0')
+      return `был(а) в ${hh}:${mm}`
+    }
+
+    const peerStatusText = computed(() => {
+      const base = peer?.value?.sub || ''
+      const status = peerOnline.value ? 'в сети' : formatLastSeen(peerLastSeenAt.value)
+      return [base, status].filter(Boolean).join(' · ')
+    })
+
+    const refreshPeerOnlineByTime = () => {
+      if (!peerLastSeenAt.value) {
+        peerOnline.value = false
+        return
+      }
+      const dt = new Date(peerLastSeenAt.value)
+      if (Number.isNaN(dt.getTime())) {
+        peerOnline.value = false
+        return
+      }
+      peerOnline.value = Date.now() - dt.getTime() <= 35000
+    }
+
+    const loadPeerPresence = async () => {
+      const uid = myId.value
+      const otherId = selectedOtherId.value
+      if (!uid || !otherId || !typingFeatureEnabled.value) {
+        peerLastSeenAt.value = ''
+        peerOnline.value = false
+        return
+      }
+      try {
+        const { data, error } = await supabase
+          .from('typing')
+          .select('updated_at,is_typing')
+          .eq('user_id', otherId)
+          .eq('other_id', uid)
+          .maybeSingle()
+        if (error) throw error
+
+        const updatedAt = String(data?.updated_at || '')
+        peerLastSeenAt.value = updatedAt
+        if (data?.is_typing) {
+          peerOnline.value = true
+          return
+        }
+        refreshPeerOnlineByTime()
+      } catch {
+        peerLastSeenAt.value = ''
+        peerOnline.value = false
+      }
     }
 
     const playIncomingSound = () => {
@@ -633,11 +700,15 @@ export default {
 
       replyTo.value = null
       peerTyping.value = false
+      peerLastSeenAt.value = ''
+      peerOnline.value = false
 
       // я перестаю "печатать" в прошлом чате
       await stopTyping()
 
       await loadPeer(otherId)
+      await loadPeerPresence()
+      await startTypingPresence()
       await reloadConversation()
       await jumpToLatestOnOpen()
       await markThreadAsRead(otherId)
@@ -728,6 +799,23 @@ export default {
       } catch {
         // ignore
       }
+    }
+
+    const startTypingPresence = async () => {
+      if (typingPresenceTimer) clearInterval(typingPresenceTimer)
+      typingPresenceTimer = null
+      if (!selectedOtherId.value || !typingFeatureEnabled.value) return
+
+      await setTyping(false)
+      typingPresenceTimer = setInterval(() => {
+        if (!selectedOtherId.value) return
+        setTyping(false)
+      }, 20000)
+    }
+
+    const stopTypingPresence = () => {
+      if (typingPresenceTimer) clearInterval(typingPresenceTimer)
+      typingPresenceTimer = null
     }
 
     // ==========================
@@ -901,6 +989,9 @@ export default {
 
               const isOn = row.is_typing === true
               peerTyping.value = isOn
+              peerLastSeenAt.value = String(row.updated_at || '')
+              peerOnline.value = isOn
+              if (!isOn) refreshPeerOnlineByTime()
 
               // авто-сброс, если кто-то "завис" в typing=true
               if (typingPeerTimer) clearTimeout(typingPeerTimer)
@@ -941,8 +1032,15 @@ export default {
       await setupRealtime()
       await setupTypingRealtime()
 
+      if (peerStatusTickTimer) clearInterval(peerStatusTickTimer)
+      peerStatusTickTimer = setInterval(() => {
+        if (!peerTyping.value) refreshPeerOnlineByTime()
+      }, 15000)
+
       if (selectedOtherId.value) {
         await loadPeer(selectedOtherId.value)
+        await loadPeerPresence()
+        await startTypingPresence()
         await reloadConversation()
         await jumpToLatestOnOpen()
         await markThreadAsRead(selectedOtherId.value)
@@ -962,9 +1060,13 @@ export default {
       rtChannel = null
 
       teardownTypingRealtime()
+      stopTypingPresence()
 
       if (typingSelfTimer) clearTimeout(typingSelfTimer)
       typingSelfTimer = null
+
+      if (peerStatusTickTimer) clearInterval(peerStatusTickTimer)
+      peerStatusTickTimer = null
     })
 
     const closeThread = async () => {
@@ -972,12 +1074,15 @@ export default {
       router.replace({ name: 'messages', query: {} })
       selectedOtherId.value = ''
       peer.value = null
+      peerLastSeenAt.value = ''
+      peerOnline.value = false
       messages.value = []
       oldestLoadedAt.value = ''
       convHasMore.value = true
       showScrollDown.value = false
       replyTo.value = null
       peerTyping.value = false
+      stopTypingPresence()
     }
 
     const openPeerProfile = () => {
@@ -994,12 +1099,15 @@ export default {
           await stopTyping()
           selectedOtherId.value = ''
           peer.value = null
+          peerLastSeenAt.value = ''
+          peerOnline.value = false
           messages.value = []
           oldestLoadedAt.value = ''
           convHasMore.value = true
           showScrollDown.value = false
           replyTo.value = null
           peerTyping.value = false
+          stopTypingPresence()
           return
         }
         if (nextId === selectedOtherId.value) return
@@ -1007,7 +1115,11 @@ export default {
         selectedOtherId.value = nextId
         replyTo.value = null
         peerTyping.value = false
+        peerLastSeenAt.value = ''
+        peerOnline.value = false
         await loadPeer(nextId)
+        await loadPeerPresence()
+        await startTypingPresence()
         await reloadConversation()
         await jumpToLatestOnOpen()
         await markThreadAsRead(nextId)
@@ -1025,6 +1137,7 @@ export default {
       threads,
       selectedOtherId,
       peer,
+      peerStatusText,
       messages,
       draft,
 
