@@ -483,6 +483,33 @@ export const useSupabase = () => {
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
     if (!messageId) return { data: null, error: new Error('No messageId') }
 
+    const tryRpcDelete = async () => {
+      const { data, error } = await supabase.rpc('delete_own_message', {
+        p_message_id: messageId
+      })
+
+      if (error) return { data: null, error }
+      if (!data) return { data: null, error: new Error('Message was not deleted in database') }
+
+      return { data: [{ id: data }], error: null }
+    }
+
+    const rpcResult = await tryRpcDelete()
+    if (!rpcResult.error) return rpcResult
+
+    const rpcErrorCode = String(rpcResult?.error?.code || '')
+    const rpcErrorMessage = String(rpcResult?.error?.message || '').toLowerCase()
+    const canFallbackToDirectDelete = !(
+      rpcErrorCode === '42501' ||
+      rpcErrorMessage.includes('not authorized') ||
+      rpcErrorMessage.includes('jwt') ||
+      rpcErrorMessage.includes('auth')
+    )
+
+    // Fallback для окружений, где SQL-функция ещё не применена
+    // или вызов RPC недоступен по любой другой не-auth причине.
+    if (!canFallbackToDirectDelete) return rpcResult
+
     const { data, error } = await supabase
       .from('messages')
       .delete()
