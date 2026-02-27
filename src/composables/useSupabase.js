@@ -483,29 +483,10 @@ export const useSupabase = () => {
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
     if (!messageId) return { data: null, error: new Error('No messageId') }
 
-    const tryRpcDelete = async () => {
-      const { data, error } = await supabase.rpc('delete_own_message', {
-        p_message_id: messageId
-      })
-
-      if (error) return { data: null, error }
-      if (!data) return { data: null, error: new Error('Message was not deleted in database') }
-
-      return { data: [{ id: data }], error: null }
-    }
-
-    const rpcResult = await tryRpcDelete()
-    const rpcErrorCode = String(rpcResult?.error?.code || '')
-
-    // Fallback для окружений, где SQL-функция ещё не применена.
-    if (!rpcResult.error) return rpcResult
-    if (rpcErrorCode !== 'PGRST202' && rpcErrorCode !== '42883') return rpcResult
-
     const { data, error } = await supabase
       .from('messages')
       .delete()
       .eq('id', messageId)
-      .eq('sender_id', user.id)
       .select('id')
 
     if (!error && (!data || data.length === 0)) {
@@ -514,6 +495,7 @@ export const useSupabase = () => {
 
     return { data: data ?? null, error }
   }
+
 
   const markConversationRead = async (otherId) => {
     const { user } = await getUser()
