@@ -483,6 +483,35 @@ export const useSupabase = () => {
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
     if (!messageId) return { data: null, error: new Error('No messageId') }
 
+    const tryRpcDelete = async () => {
+      const { data, error } = await supabase.rpc('delete_own_message', {
+        p_message_id: messageId
+      })
+
+      if (error) return { data: null, error }
+      if (!data) return { data: null, error: new Error('Message was not deleted in database') }
+
+      return { data: [{ id: data }], error: null }
+    }
+
+    const rpcResult = await tryRpcDelete()
+    const rpcErrorCode = String(rpcResult?.error?.code || '')
+    const rpcErrorMessage = String(rpcResult?.error?.message || '').toLowerCase()
+    const rpcErrorDetails = String(rpcResult?.error?.details || '').toLowerCase()
+    const rpcStatus = Number(rpcResult?.error?.status || 0)
+    const rpcMissingFn =
+      rpcStatus === 404 ||
+      rpcErrorCode === 'PGRST202' ||
+      rpcErrorCode === '42883' ||
+      rpcErrorMessage.includes('delete_own_message') ||
+      rpcErrorMessage.includes('not found') ||
+      rpcErrorDetails.includes('delete_own_message')
+
+    // Fallback для окружений, где SQL-функция ещё не применена
+    // или PostgREST отвечает 404 на RPC.
+    if (!rpcResult.error) return rpcResult
+    if (!rpcMissingFn) return rpcResult
+
     const { data, error } = await supabase
       .from('messages')
       .delete()
