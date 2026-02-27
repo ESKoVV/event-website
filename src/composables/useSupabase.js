@@ -516,7 +516,6 @@ export const useSupabase = () => {
       .from('messages')
       .delete()
       .eq('id', messageId)
-      .eq('sender_id', user.id)
       .select('id')
 
     if (!error && (!data || data.length === 0)) {
@@ -525,6 +524,7 @@ export const useSupabase = () => {
 
     return { data: data ?? null, error }
   }
+
 
   const markConversationRead = async (otherId) => {
     const { user } = await getUser()
