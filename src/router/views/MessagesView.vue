@@ -84,7 +84,7 @@
               <div v-else class="chat-peer-ava-ph">👤</div>
             </div>
 
-            <div class="chat-peer-info">
+            <div class="chat-peer-info" @click="openPeerProfile" role="button" tabindex="0">
               <div class="chat-peer-name">{{ peer?.title || 'Пользователь' }}</div>
               <div class="chat-peer-sub">
                 {{ peer?.sub || '' }}
@@ -965,6 +965,12 @@ export default {
       peerTyping.value = false
     }
 
+    const openPeerProfile = () => {
+      const id = String(selectedOtherId.value || '').trim()
+      if (!id) return
+      router.push({ name: 'user-profile', params: { id } })
+    }
+
     watch(
       () => route.query.with,
       async (val) => {
@@ -1020,6 +1026,7 @@ export default {
       onChatScroll,
       scrollBottom,
       closeThread,
+      openPeerProfile,
 
       setReply,
       clearReply,
@@ -1305,6 +1312,7 @@ export default {
 }
 .chat-peer-info {
   min-width: 0;
+  cursor: pointer;
 }
 .chat-peer-name {
   font-weight: 950;

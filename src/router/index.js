@@ -5,6 +5,7 @@ import OrganizerView from './views/OrganizerView.vue'
 import MyEventsView from './views/MyEventsView.vue'
 import MessagesView from './views/MessagesView.vue'
 import FriendsView from './views/FriendsView.vue'
+import UserProfileView from './views/UserProfileView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -16,7 +17,8 @@ const router = createRouter({
     { path: '/my-events', name: 'my-events', component: MyEventsView },
 
     { path: '/messages', name: 'messages', component: MessagesView },
-    { path: '/friends', name: 'friends', component: FriendsView }
+    { path: '/friends', name: 'friends', component: FriendsView },
+    { path: '/profile/:id', name: 'user-profile', component: UserProfileView, props: true }
   ]
 })
 
