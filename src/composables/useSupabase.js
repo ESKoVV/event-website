@@ -495,20 +495,11 @@ export const useSupabase = () => {
     }
 
     const rpcResult = await tryRpcDelete()
-    if (!rpcResult.error) return rpcResult
-
     const rpcErrorCode = String(rpcResult?.error?.code || '')
-    const rpcErrorMessage = String(rpcResult?.error?.message || '').toLowerCase()
-    const canFallbackToDirectDelete = !(
-      rpcErrorCode === '42501' ||
-      rpcErrorMessage.includes('not authorized') ||
-      rpcErrorMessage.includes('jwt') ||
-      rpcErrorMessage.includes('auth')
-    )
 
-    // Fallback для окружений, где SQL-функция ещё не применена
-    // или вызов RPC недоступен по любой другой не-auth причине.
-    if (!canFallbackToDirectDelete) return rpcResult
+    // Fallback для окружений, где SQL-функция ещё не применена.
+    if (!rpcResult.error) return rpcResult
+    if (rpcErrorCode !== 'PGRST202' && rpcErrorCode !== '42883') return rpcResult
 
     const { data, error } = await supabase
       .from('messages')
