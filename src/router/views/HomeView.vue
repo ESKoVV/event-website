@@ -147,6 +147,7 @@
           <div class="drawer-body">
             <FiltersPanel
               :categories="categories"
+              v-model:titleQuery="titleQuery"
               v-model:selectedCategoryNames="selectedCategoryNames"
               v-model:onlineOnly="onlineOnly"
               v-model:priceMode="priceMode"
@@ -317,8 +318,7 @@ const saveFavLS = (key, idsSet) => {
 export default {
   name: 'HomeViewLazy',
   components: { EventCard, EventPhotoModal, FiltersPanel },
-  props: { globalSearchTerm: { type: String, default: '' } },
-  setup(props) {
+  setup() {
     const { getCategories, getEventPhotos, getUser, getMyPublicUser, getPublicUserById } = useSupabase()
 
     // ======= базовое состояние как в твоём HomeView =======
@@ -356,6 +356,7 @@ export default {
     const businessUserIds = ref(new Set())
 
     // filters
+    const titleQuery = ref('')
     const selectedCategoryNames = ref([])
     const onlineOnly = ref(false)
     const priceMode = ref('all')
@@ -407,6 +408,7 @@ export default {
     const openPhoto = (url) => (photoModalUrl.value = url || '')
 
     const resetAllFilters = () => {
+      titleQuery.value = ''
       selectedCategoryNames.value = []
       onlineOnly.value = false
       priceMode.value = 'all'
@@ -495,7 +497,7 @@ export default {
     }
 
     const filteredEvents = computed(() => {
-      const term = (props.globalSearchTerm || '').trim().toLowerCase()
+      const term = String(titleQuery.value || '').trim().toLowerCase()
       let list = basePublishedFeed.value
       if (term) list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
       return applyFilters(list)
@@ -944,6 +946,7 @@ export default {
       openPhoto,
       photoModalUrl,
 
+      titleQuery,
       selectedCategoryNames,
       onlineOnly,
       priceMode,
