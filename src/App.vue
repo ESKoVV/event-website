@@ -253,7 +253,9 @@ export default {
       createBusinessEvent,
       searchUsers,
       getFriendships,
-      sendFriendRequest
+      sendFriendRequest,
+      acceptFriendRequest,
+      removeFriendOrRequest
     } = useSupabase()
 
     const { unreadCount, setUnreadCount } = useUnreadMessages()
@@ -269,6 +271,7 @@ export default {
     const peopleSearchLoading = ref(false)
     const showPeopleDropdown = ref(false)
     const myFriendsSet = ref(new Set())
+    const friendshipIndex = ref(new Map())
     const mutualFriendsCache = new Map()
     let searchDebounce = null
 
@@ -336,6 +339,7 @@ export default {
         setUnreadCount(count || 0)
       } else {
         myFriendsSet.value = new Set()
+        friendshipIndex.value = new Map()
         profile.value = null
         telegramLink.value = null
         setUnreadCount(0)
@@ -372,14 +376,23 @@ export default {
       const { data } = await getFriendships()
       const me = String(profile.value?.id || session.value?.user?.id || '')
       const set = new Set()
+      const idx = new Map()
       for (const row of (data || [])) {
-        if (row?.status !== 'accepted') continue
         const requester = String(row?.requester_id || '')
         const addressee = String(row?.addressee_id || '')
-        if (requester === me && addressee) set.add(addressee)
-        if (addressee === me && requester) set.add(requester)
+        const isRequesterMe = requester === me
+        const otherId = isRequesterMe ? addressee : requester
+        if (!otherId) continue
+
+        if (row?.status === 'accepted') {
+          set.add(otherId)
+          idx.set(otherId, 'friend')
+        } else if (row?.status === 'pending') {
+          idx.set(otherId, isRequesterMe ? 'outgoing' : 'incoming')
+        }
       }
       myFriendsSet.value = set
+      friendshipIndex.value = idx
       mutualFriendsCache.clear()
     }
 
@@ -387,8 +400,7 @@ export default {
       const id = String(userId || '')
       const me = String(profile.value?.id || session.value?.user?.id || '')
       if (!id || !me) return 'guest'
-      if (myFriendsSet.value.has(id)) return 'friends'
-      return 'none'
+      return friendshipIndex.value.get(id) || 'none'
     }
 
     const getMutualFriendsCount = async (otherId) => {
@@ -407,13 +419,19 @@ export default {
     const enrichUsersForDropdown = async (list) => {
       const out = (list || []).map((u) => {
         const state = friendshipState(u.id)
-        const actionLabel = state === 'friends' ? 'В друзьях' : 'Добавить в друзья'
+        const actionLabel = state === 'friend'
+          ? 'В друзьях'
+          : state === 'incoming'
+            ? 'Принять заявку'
+            : state === 'outgoing'
+              ? 'Заявка отправлена'
+              : 'Добавить в друзья'
         return {
           ...u,
           title: userTitle(u),
           avatar: normalizeStoragePublicUrl(u.image_path || ''),
           friendActionLabel: actionLabel,
-          friendActionDisabled: state === 'friends',
+          friendActionDisabled: state === 'friend',
           mutualFriendsCount: null
         }
       })
@@ -510,8 +528,14 @@ export default {
         showAuth.value = true
         return
       }
+      const state = friendshipState(otherId)
+      const action = state === 'incoming'
+        ? acceptFriendRequest(otherId)
+        : state === 'outgoing'
+          ? removeFriendOrRequest(otherId)
+          : sendFriendRequest(otherId)
 
-      const { error } = await sendFriendRequest(otherId)
+      const { error } = await action
       if (error) return
       await loadMyFriendsSet()
       mutualFriendsCache.delete(otherId)
