@@ -58,6 +58,17 @@
                 <option value="female">Женский</option>
               </select>
             </label>
+
+            <label class="field field-full">
+              <span>Описание профиля (до 100 символов)</span>
+              <textarea
+                v-model="form.description"
+                maxlength="100"
+                rows="3"
+                placeholder="Расскажите кратко о себе"
+              ></textarea>
+              <small class="counter">{{ descriptionLeft }} символов осталось</small>
+            </label>
           </div>
 
           <div class="avatar-block">
@@ -81,6 +92,16 @@
             <span v-if="telegramLink">привязан (@{{ telegramLink.username || 'без username' }})</span>
             <span v-else>не привязан (открой вход → Telegram)</span>
           </div>
+
+          <div class="business-block">
+            <b>Мероприятия:</b>
+            <template v-if="profile?.It_business">
+              <button class="btn" type="button" @click="goToMyEvents">Добавить / управлять мероприятиями</button>
+            </template>
+            <p v-else class="muted no-margin">
+              Добавлять мероприятия могут только бизнес аккаунты.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -97,14 +118,17 @@
 </template>
 
 <script>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import AuthModal from '../../components/AuthModal.vue'
+import { useRouter } from 'vue-router'
 import { useSupabase } from '../../composables/useSupabase'
 
 export default {
   name: 'ProfileView',
   components: { AuthModal },
   setup() {
+    const router = useRouter()
+
     const {
       getSession,
       getUser,
@@ -135,7 +159,8 @@ export default {
       birth_day: '',
       phone: '',
       email: '',
-      gender: ''
+      gender: '',
+      description: ''
     })
 
     const pickedAvatarFile = ref(null)
@@ -152,6 +177,7 @@ export default {
       form.phone = p?.phone ?? ''
       form.email = p?.email ?? ''
       form.gender = p?.gender ?? ''
+      form.description = p?.description ?? ''
     }
 
     const load = async () => {
@@ -237,6 +263,11 @@ export default {
           gender: form.gender || null
         }
 
+        const profileHasDescriptionField = profile.value && Object.prototype.hasOwnProperty.call(profile.value, 'description')
+        if (profileHasDescriptionField) {
+          patch.description = String(form.description || '').trim().slice(0, 100) || null
+        }
+
         if (avatarUrl) patch.image_path = avatarUrl
 
         const { data, error } = await updateMyPublicUser(patch)
@@ -258,6 +289,13 @@ export default {
       await signOut()
       showAuth.value = false
       await load()
+    }
+
+
+    const descriptionLeft = computed(() => Math.max(0, 100 - String(form.description || '').length))
+
+    const goToMyEvents = () => {
+      router.push({ name: 'my-events' })
     }
 
     onMounted(async () => {
@@ -282,7 +320,9 @@ export default {
       onPickAvatar,
       pickedAvatarFile,
       previewAvatarUrl,
-      saveProfile
+      saveProfile,
+      descriptionLeft,
+      goToMyEvents
     }
   }
 }
@@ -290,7 +330,7 @@ export default {
 
 <style scoped>
 .wrap { max-width: 1200px; margin: 0 auto; padding: 20px; }
-.card { background:#fff; border-radius:16px; padding:18px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+.card { background:linear-gradient(180deg,#ffffff,#fcfbff); border-radius:20px; padding:22px; box-shadow:0 14px 40px rgba(67,43,132,.08); border:1px solid rgba(138,117,227,.14); }
 .title { margin: 0 0 12px; }
 
 .muted { opacity:.7; margin-bottom: 10px; }
@@ -319,12 +359,18 @@ export default {
 .field { display:flex; flex-direction:column; gap:6px; }
 .field span { font-size:12px; opacity:.7; }
 
-input, select {
+input, select, textarea {
   border: 1px solid #efefef;
   border-radius: 12px;
   padding: 10px 12px;
   outline: none;
 }
+
+textarea{resize:vertical;min-height:82px;font-family:inherit;}
+.field-full{grid-column:1/-1;}
+.counter{opacity:.7;font-size:12px;}
+.business-block{margin-top:14px;padding-top:14px;border-top:1px solid #efefef;display:flex;flex-direction:column;gap:10px;}
+.no-margin{margin:0;}
 
 .avatar-block { display:flex; gap:14px; align-items:center; margin-top: 14px; }
 .avatar {

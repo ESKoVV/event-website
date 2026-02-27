@@ -140,7 +140,7 @@
 
                   <div class="msg-meta">
                     <span class="msg-time">{{ formatTime(m.created_at) }}</span>
-                    <span v-if="m.sender_id === myId" class="msg-check">✓</span>
+                    <span v-if="m.sender_id === myId" class="msg-check" :class="{ read: !!m.read_at }">{{ m.read_at ? '✓✓' : '✓' }}</span>
                   </div>
                 </div>
               </div>
@@ -346,21 +346,36 @@ export default {
         const Ctx = window.AudioContext || window.webkitAudioContext
         if (!Ctx) return
         const ctx = new Ctx()
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.type = 'sine'
-        osc.frequency.value = 820
-        gain.gain.value = 0.0001
-        osc.connect(gain)
-        gain.connect(ctx.destination)
+
+        const master = ctx.createGain()
+        master.gain.value = 0.0001
+        master.connect(ctx.destination)
+
         const now = ctx.currentTime
-        gain.gain.exponentialRampToValueAtTime(0.04, now + 0.01)
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
-        osc.start(now)
-        osc.stop(now + 0.24)
-        osc.onended = () => {
-          try { ctx.close() } catch {}
+
+        const beep = (freq, start, len, volume) => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.type = 'sine'
+          osc.frequency.value = freq
+          gain.gain.value = 0.0001
+          osc.connect(gain)
+          gain.connect(master)
+          gain.gain.exponentialRampToValueAtTime(volume, start + 0.01)
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + len)
+          osc.start(start)
+          osc.stop(start + len + 0.02)
         }
+
+        // Чуть громче и выразительнее: двойной "пинг"
+        master.gain.exponentialRampToValueAtTime(0.22, now + 0.02)
+        master.gain.exponentialRampToValueAtTime(0.0001, now + 0.45)
+        beep(820, now, 0.16, 0.24)
+        beep(980, now + 0.14, 0.18, 0.26)
+
+        setTimeout(() => {
+          try { ctx.close() } catch {}
+        }, 650)
       } catch {
         // ignore
       }
@@ -1515,6 +1530,10 @@ export default {
 }
 .msg-check {
   font-weight: 900;
+  letter-spacing: -1px;
+}
+.msg-check.read {
+  color: #2a5bff;
 }
 
 .msg-list-move,
