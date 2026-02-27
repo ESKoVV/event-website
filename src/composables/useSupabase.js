@@ -339,17 +339,24 @@ export const useSupabase = () => {
   // =======================
   // Social: Users search
   // =======================
-  const searchUsers = async (query, limit = 20) => {
+  const searchUsers = async (query, limit = 20, opts = {}) => {
     const q = String(query || '').trim()
     if (!q) return { data: [], error: null }
 
-    const pattern = `%${q}%`
-    const { data, error } = await supabase
+    const { usernameOnly = false } = opts || {}
+    let req = supabase
       .from('users')
       .select('id,first_name,last_name,email,username,image_path,It_business')
-      .or(`username.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`)
       .limit(limit)
 
+    if (usernameOnly) {
+      req = req.ilike('username', `${q}%`)
+    } else {
+      const pattern = `%${q}%`
+      req = req.or(`username.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern}`)
+    }
+
+    const { data, error } = await req
     return { data: data ?? [], error }
   }
 
@@ -460,9 +467,8 @@ export const useSupabase = () => {
       .delete()
       .eq('id', messageId)
       .eq('sender_id', user.id)
-      .select('id')
 
-    return { data: data ?? [], error }
+    return { data: data ?? null, error }
   }
 
   const markConversationRead = async (otherId) => {

@@ -171,6 +171,7 @@
 
           <div class="chat-input-row">
             <input
+              ref="chatInputRef"
               v-model="draft"
               class="chat-input"
               type="text"
@@ -282,6 +283,7 @@ export default {
 
     const replyTo = ref(null) // { id, who, text }
     const chatBodyRef = ref(null)
+    const chatInputRef = ref(null)
     const showScrollDown = ref(false)
     const convHasMore = ref(true)
     const convLoadingMore = ref(false)
@@ -292,6 +294,7 @@ export default {
     let typingSelfTimer = null
     let typingPeerTimer = null
     let typingChannel = null
+    const typingFeatureEnabled = ref(true)
 
     let rtChannel = null
 
@@ -299,6 +302,11 @@ export default {
       let total = 0
       for (const t of threads.value) total += Number(t.unreadCount || 0)
       setUnreadCount(total)
+    }
+
+    const isNotAuthorizedError = (error) => {
+      const msg = String(error?.message || error || '').toLowerCase()
+      return msg.includes('not authorized') || msg.includes('jwt') || msg.includes('auth')
     }
 
     const formatTime = (iso) => {
@@ -394,7 +402,16 @@ export default {
         myId.value = user.id
 
         const { data, error } = await getInboxThreads(60)
-        if (error) throw error
+        if (error) {
+          if (isNotAuthorizedError(error)) {
+            authRequired.value = true
+            myId.value = ''
+            threads.value = []
+            setUnreadCount(0)
+            return
+          }
+          throw error
+        }
 
         const rows = (data || []).map((x) => ({
           otherUserId: x.otherUserId,
@@ -611,7 +628,22 @@ export default {
       await markThreadAsRead(otherId)
     }
 
-    const setReply = (m) => {
+    const focusChatInput = async () => {
+      await nextTick()
+      const input = chatInputRef.value
+      if (!input) return
+      try {
+        input.focus()
+        if (typeof input.setSelectionRange === 'function') {
+          const len = String(draft.value || '').length
+          input.setSelectionRange(len, len)
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const setReply = async (m) => {
       if (!m) return
       const isMine = m.sender_id === myId.value
       const who = isMine ? 'себя' : (peer.value?.title || 'пользователя')
@@ -622,6 +654,7 @@ export default {
         who,
         text: clean.slice(0, 120)
       }
+      await focusChatInput()
     }
 
     const clearReply = () => {
@@ -632,12 +665,13 @@ export default {
     // ✅ Typing (send)
     // ==========================
     const setTyping = async (isTyping) => {
+      if (!typingFeatureEnabled.value) return
       const uid = myId.value
       const otherId = selectedOtherId.value
       if (!uid || !otherId) return
 
       try {
-        await supabase.from('typing').upsert(
+        const { error } = await supabase.from('typing').upsert(
           [
             {
               user_id: uid,
@@ -648,8 +682,15 @@ export default {
           ],
           { onConflict: 'user_id,other_id' }
         )
-      } catch {
-        // ignore
+
+        if (error && String(error?.message || '').toLowerCase().includes('404')) {
+          typingFeatureEnabled.value = false
+        }
+      } catch (e) {
+        const msg = String(e?.message || '').toLowerCase()
+        if (msg.includes('404') || msg.includes('not found')) {
+          typingFeatureEnabled.value = false
+        }
       }
     }
 
@@ -716,9 +757,8 @@ export default {
       const id = String(messageId || '')
       if (!id) return
       try {
-        const { data, error } = await deleteMessage(id)
+        const { error } = await deleteMessage(id)
         if (error) throw error
-        if (!Array.isArray(data) || data.length === 0) throw new Error('Message was not deleted on server')
 
         const nextMessages = messages.value.filter((x) => String(x?.id || '') !== id)
         messages.value = nextMessages
@@ -729,7 +769,7 @@ export default {
             const last = nextMessages[nextMessages.length - 1] || null
             threads.value[idx] = { ...threads.value[idx], lastMessage: last }
           }
-      }
+        }
       } catch (e) {
         console.error('Delete message failed:', e)
       }
@@ -822,6 +862,7 @@ export default {
     // ==========================
     const setupTypingRealtime = async () => {
       try {
+        if (!typingFeatureEnabled.value) return
         const uid = myId.value
         if (!uid) return
 
@@ -855,7 +896,11 @@ export default {
               }
             }
           )
-          .subscribe()
+          .subscribe((status) => {
+            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              typingFeatureEnabled.value = false
+            }
+          })
       } catch {
         // ignore
       }
@@ -965,6 +1010,7 @@ export default {
       replyTo,
 
       chatBodyRef,
+      chatInputRef,
       showScrollDown,
 
       reload,
