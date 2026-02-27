@@ -91,7 +91,7 @@
 
         <!-- 4: Меню (в мобилке между сообщениями и профилем) -->
         <!-- Меню нужно только на мобильной версии -->
-        <button class="nav-item nav-item-menu mobile-only" type="button" @click="openMenu">
+        <button v-if="showMobileMenuButton" class="nav-item nav-item-menu mobile-only" type="button" @click="openMenu">
           <span class="ni-ico">☰</span>
           <span class="ni-txt">Меню</span>
         </button>
@@ -121,7 +121,7 @@
 
     <!-- MENU DRAWER -->
     <teleport to="body">
-      <div v-if="menuOpen" class="menu-root" @keydown.esc="closeMenu" tabindex="-1">
+      <div v-if="menuOpen && showMobileMenuButton" class="menu-root" @keydown.esc="closeMenu" tabindex="-1">
         <div class="overlay" @click="closeMenu"></div>
 
         <aside class="menu-drawer" role="dialog" aria-modal="true" aria-label="Меню">
@@ -307,6 +307,12 @@ export default {
       if (appCommitName) return `Коммит: ${appCommitName}`
       return `Версия сборки: ${appVersion}`
     })
+
+    const isMobileChatFocused = computed(() => {
+      return route.name === 'messages' && String(route.query.with || '').trim().length > 0
+    })
+
+    const showMobileMenuButton = computed(() => !isMobileChatFocused.value)
 
     const onHeaderImgError = () => {
       showHeaderAvatar.value = false
@@ -656,6 +662,14 @@ export default {
       }
     )
 
+
+    watch(
+      () => isMobileChatFocused.value,
+      (focused) => {
+        if (focused) closeMenu()
+      }
+    )
+
     return {
       telegramBotUsername,
       appVersion,
@@ -709,7 +723,8 @@ export default {
       createBusinessEvent,
 
       unreadCount,
-      badgeText
+      badgeText,
+      showMobileMenuButton
     }
   }
 }
@@ -892,6 +907,10 @@ export default {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
+  border-radius: 50%;
+  display: block;
+  transform: scale(1.22);
 }
 .header-placeholder {
   font-size: 18px;

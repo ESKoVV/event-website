@@ -66,7 +66,7 @@
                   <button class="btn small ghost" @click="openUserProfile(u.id)">Профиль</button>
                   <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
 
-                  <button class="btn small" type="button" @click.stop="toggleMenu(u.id)" aria-label="Меню">⋯</button>
+                  <button class="btn small more-btn" type="button" @click.stop="toggleMenu(u.id)" aria-label="Меню">⋯</button>
 
                   <div v-if="openMenuId === u.id" class="menu" @click.stop>
                     <button class="menu-item" type="button" @click="openFriendsOf(u.id)">Посмотреть друзей</button>
@@ -156,7 +156,7 @@
                     class="btn small ghost"
                     @click="removeFriendOrReq(u.id)"
                   >
-                    Отменить
+                    Заявка отправлена
                   </button>
 
                   <button v-else class="btn small" @click="addFriend(u.id)">
@@ -576,7 +576,7 @@ return {
 .meta{ min-width: 0; }
 .name{ font-weight: 900; font-size: 13px; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
 .sub{ font-size: 12px; opacity: .75; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
-.actions{ display:flex; gap: 8px; flex-wrap: wrap; justify-content:flex-end; }
+.actions{ display:flex; gap: 8px; flex-wrap: nowrap; justify-content:flex-end; align-items:center; }
 .self-badge{
   font-size: 12px;
   font-weight: 900;
@@ -595,7 +595,8 @@ return {
   font-weight: 900;
   cursor:pointer;
 }
-.btn.small{ padding: 8px 10px; border-radius: 12px; font-size: 12px; }
+.btn.small{ padding: 8px 12px; border-radius: 12px; font-size: 12px; min-height: 36px; min-width: 98px; display:inline-flex; align-items:center; justify-content:center; line-height:1; }
+.more-btn{ min-width: 36px; width: 36px; padding: 0; font-size: 18px; }
 .btn.ghost{
   background:#fafafa;
   color:#14181b;
@@ -666,4 +667,11 @@ return {
 .confirm-title{ font-weight: 900; margin-bottom: 8px; }
 .confirm-text{ font-size: 13px; opacity: .82; margin-bottom: 12px; }
 .confirm-actions{ display:flex; justify-content:flex-end; gap: 8px; }
+
+@media (max-width: 760px){
+  .row{ align-items:flex-start; }
+  .actions{ width: 100%; justify-content:flex-end; flex-wrap: wrap; }
+  .actions .btn.small:not(.more-btn){ min-width: 88px; }
+}
+
 </style>

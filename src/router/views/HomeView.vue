@@ -2,11 +2,29 @@
   <div class="page">
     <div class="container">
       <div class="topbar" :class="{ 'topbar-visible': showStickyTopbar }">
-        <button class="filter-btn" @click="openDrawer" aria-label="Открыть фильтры">
-          <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
-            <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
-          </svg>
-        </button>
+        <div class="filter-stack">
+          <button
+            class="filter-btn"
+            :class="{ active: hasActiveFilters }"
+            @click="openDrawer"
+            aria-label="Открыть фильтры"
+          >
+            <svg viewBox="0 0 24 24" class="filter-icon" aria-hidden="true">
+              <path d="M3 5h18l-7 8v5l-4 2v-7L3 5z" fill="currentColor" />
+            </svg>
+          </button>
+
+          <button
+            v-if="hasActiveFilters"
+            class="filter-reset-vertical"
+            type="button"
+            @click="resetAllFilters"
+            aria-label="Сбросить фильтры"
+            title="Сбросить фильтры"
+          >
+            Сбросить
+          </button>
+        </div>
 
         <button class="tab" :class="{ active: activeTab === 'feed' }" type="button" @click="activeTab = 'feed'">
           <span class="ico">📰</span><span class="txt">Моя лента</span>
@@ -420,6 +438,17 @@ export default {
       dateTo.value = ''
       datePivot.value = ''
     }
+
+    const hasActiveFilters = computed(() => {
+      const hasTitle = String(titleQuery.value || '').trim().length > 0
+      const hasCats = (selectedCategoryNames.value || []).length > 0
+      const hasOnline = onlineOnly.value === true
+      const hasPriceMode = priceMode.value !== 'all'
+      const hasPriceRange = String(customPriceMin.value || '').trim() !== '' || String(customPriceMax.value || '').trim() !== ''
+      const hasDateMode = dateMode.value !== 'all'
+      const hasDateValues = [dateOn.value, dateFrom.value, dateTo.value, datePivot.value].some((v) => String(v || '').trim() !== '')
+      return hasTitle || hasCats || hasOnline || hasPriceMode || hasPriceRange || hasDateMode || hasDateValues
+    })
 
     const goToProfile = () => {
       const base = import.meta.env.BASE_URL || '/'
@@ -958,6 +987,7 @@ export default {
       dateTo,
       datePivot,
       resetAllFilters,
+      hasActiveFilters,
 
       goToProfile,
       forceReload,
@@ -979,10 +1009,35 @@ export default {
 .topbar{ display:flex; align-items:center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; position: sticky; top: 72px; z-index: 12; background:#f6f7f9; padding: 8px 0; transform: translateY(-120%); opacity: 0; transition: transform .2s ease, opacity .2s ease; }
 .topbar.topbar-visible{ transform: translateY(0); opacity: 1; }
 
+.filter-stack{
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
 .filter-btn {
   width: 40px; height: 40px; border-radius: 14px;
   border: 1px solid #efefef; background: #fff; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
+}
+.filter-btn.active{
+  border-color: rgba(138,117,227,.65);
+  box-shadow: 0 0 0 3px rgba(138,117,227,.18), 0 10px 20px rgba(138,117,227,.25);
+  color: #6f58d6;
+}
+.filter-reset-vertical{
+  border: 1px solid rgba(138,117,227,.35);
+  background: #fff;
+  color: #6f58d6;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+  transform: rotate(90deg);
+  transform-origin: center;
+  white-space: nowrap;
 }
 .filter-icon { width: 18px; height: 18px; }
 
@@ -1014,7 +1069,7 @@ export default {
   .refresh{ display:none !important; }
 }
 @media (max-width: 980px){ .topbar{ top: 0; transform:none; opacity:1; position: static; padding:0; } .container{ padding: 0 8px; } }
-@media (max-width: 520px){ .tab .txt{ display:none; } .refresh{ margin-left:0; } }
+@media (max-width: 520px){ .tab .txt{ display:none; } .refresh{ margin-left:0; } .filter-reset-vertical{ font-size:10px; padding:5px 8px; } }
 
 .biz-ad{
   margin-bottom: 10px; padding: 14px; border-radius: 18px;
