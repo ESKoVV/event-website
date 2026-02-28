@@ -138,6 +138,42 @@
 
                   <div class="msg-text">{{ parseBody(m.body).text }}</div>
 
+                  <div class="msg-reactions">
+                    <button
+                      v-for="item in getMessageReactions(m.id)"
+                      :key="`${m.id}-${item.reaction}`"
+                      class="msg-reaction-chip"
+                      :class="{ mine: item.mine }"
+                      type="button"
+                      @click="setMessageReaction(m.id, item.reaction)"
+                    >
+                      <span>{{ item.reaction }}</span>
+                      <span>{{ item.count }}</span>
+                    </button>
+
+                    <button
+                      class="msg-reaction-add"
+                      type="button"
+                      aria-label="Добавить реакцию"
+                      @click="toggleReactionPicker(m.id)"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <div v-if="reactionPickerMessageId === String(m.id)" class="msg-reaction-picker">
+                    <button
+                      v-for="emoji in reactionOptions"
+                      :key="`${m.id}-${emoji}`"
+                      class="msg-reaction-picker-item"
+                      type="button"
+                      :class="{ active: myReactionByMessage(m.id) === emoji }"
+                      @click="setMessageReaction(m.id, emoji)"
+                    >
+                      {{ emoji }}
+                    </button>
+                  </div>
+
                   <div class="msg-meta">
                     <span class="msg-time">{{ formatTime(m.created_at) }}</span>
                     <span v-if="m.sender_id === myId" class="msg-check" :class="{ read: !!m.read_at }">{{ m.read_at ? '✓✓' : '✓' }}</span>
@@ -218,6 +254,7 @@ const normalizeStoragePublicUrl = (url) => {
  */
 const REPLY_PREFIX = '__REPLY__'
 const REPLY_SUFFIX = '__REPLY__'
+const REACTION_OPTIONS = ['❤️', '🫡', '👌', '👍', '😡', '🥲', '😭']
 
 const safeJsonParse = (s) => {
   try { return JSON.parse(s) } catch { return null }
@@ -289,6 +326,8 @@ export default {
 
     const peer = ref(null)
     const messages = ref([])
+    const reactionsByMessage = ref({})
+    const reactionPickerMessageId = ref('')
     const draft = ref('')
     const peerOnline = ref(false)
     const peerLastSeenAt = ref('')
@@ -311,6 +350,9 @@ export default {
     const typingFeatureEnabled = ref(true)
 
     let rtChannel = null
+    let reactionsChannel = null
+
+    const reactionOptions = REACTION_OPTIONS
 
     const calcUnreadTotal = () => {
       let total = 0
@@ -463,6 +505,108 @@ export default {
       if (messages.value.some((x) => x?.id === m.id)) return false
       messages.value = [...messages.value, m]
       return true
+    }
+
+
+    const groupReactions = (rows) => {
+      const grouped = {}
+      for (const row of (rows || [])) {
+        const messageId = String(row?.message_id || '')
+        const reaction = String(row?.reaction || '')
+        if (!messageId || !reaction) continue
+
+        if (!grouped[messageId]) grouped[messageId] = { myReaction: '', byEmoji: {} }
+        if (!grouped[messageId].byEmoji[reaction]) grouped[messageId].byEmoji[reaction] = { reaction, count: 0, mine: false }
+
+        grouped[messageId].byEmoji[reaction].count += 1
+        if (String(row?.user_id || '') === myId.value) {
+          grouped[messageId].myReaction = reaction
+          grouped[messageId].byEmoji[reaction].mine = true
+        }
+      }
+
+      const next = {}
+      for (const [messageId, val] of Object.entries(grouped)) {
+        const items = Object.values(val.byEmoji).sort((a, b) => {
+          const ai = reactionOptions.indexOf(a.reaction)
+          const bi = reactionOptions.indexOf(b.reaction)
+          return ai - bi
+        })
+        next[messageId] = { items, myReaction: val.myReaction }
+      }
+      return next
+    }
+
+    const loadReactionsForMessages = async (messageIds) => {
+      const ids = Array.isArray(messageIds)
+        ? [...new Set(messageIds.map((x) => String(x || '').trim()).filter(Boolean))]
+        : []
+
+      if (ids.length === 0) {
+        reactionsByMessage.value = {}
+        return
+      }
+
+      const numericIds = ids
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id))
+
+      if (numericIds.length === 0) {
+        reactionsByMessage.value = {}
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('message_reactions')
+        .select('message_id,user_id,reaction')
+        .in('message_id', numericIds)
+
+      if (error) throw error
+      reactionsByMessage.value = groupReactions(data || [])
+    }
+
+    const refreshReactionsForCurrentConversation = async () => {
+      const ids = messages.value.map((m) => m?.id)
+      await loadReactionsForMessages(ids)
+    }
+
+    const getMessageReactions = (messageId) => {
+      const key = String(messageId || '')
+      return reactionsByMessage.value?.[key]?.items || []
+    }
+
+    const myReactionByMessage = (messageId) => {
+      const key = String(messageId || '')
+      return String(reactionsByMessage.value?.[key]?.myReaction || '')
+    }
+
+    const toggleReactionPicker = (messageId) => {
+      const id = String(messageId || '')
+      reactionPickerMessageId.value = reactionPickerMessageId.value === id ? '' : id
+    }
+
+    const setMessageReaction = async (messageId, reaction) => {
+      const messageKey = String(messageId || '')
+      const picked = String(reaction || '')
+      if (!messageKey || !reactionOptions.includes(picked) || !myId.value) return
+
+      const current = myReactionByMessage(messageKey)
+      if (current === picked) {
+        const { error } = await supabase
+          .from('message_reactions')
+          .delete()
+          .eq('message_id', Number(messageKey))
+          .eq('user_id', myId.value)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('message_reactions')
+          .upsert([{ message_id: Number(messageKey), user_id: myId.value, reaction: picked }], { onConflict: 'message_id,user_id' })
+        if (error) throw error
+      }
+
+      reactionPickerMessageId.value = ''
+      await loadReactionsForMessages([messageKey])
     }
 
     const ensureThreadsUsers = async (rows) => {
@@ -629,6 +773,8 @@ export default {
           const afterTop = el.scrollHeight
           el.scrollTop += Math.max(0, afterTop - beforeTop)
         }
+
+        await refreshReactionsForCurrentConversation()
       } finally {
         convLoadingMore.value = false
       }
@@ -667,6 +813,7 @@ export default {
         convHasMore.value = rows.length >= 80
         showScrollDown.value = false
 
+        await refreshReactionsForCurrentConversation()
         await scrollBottom()
       } finally {
         convLoading.value = false
@@ -850,6 +997,7 @@ export default {
         if (data) {
           const appended = appendMessageUnique(data)
           if (appended) await scrollBottom()
+          await refreshReactionsForCurrentConversation()
 
           const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
           if (idx !== -1) {
@@ -875,6 +1023,8 @@ export default {
 
         const nextMessages = messages.value.filter((x) => String(x?.id || '') !== id)
         messages.value = nextMessages
+        delete reactionsByMessage.value[id]
+        reactionPickerMessageId.value = reactionPickerMessageId.value === id ? '' : reactionPickerMessageId.value
 
         if (selectedOtherId.value) {
           const idx = threads.value.findIndex((t) => t.otherUserId === selectedOtherId.value)
@@ -948,6 +1098,7 @@ export default {
           } else {
             showScrollDown.value = true
           }
+          await refreshReactionsForCurrentConversation()
         }
         await markThreadAsRead(otherId)
       }
@@ -965,6 +1116,17 @@ export default {
         })
         if (error) return
         rtChannel = channel
+
+        reactionsChannel = supabase
+          .channel(`rt:message_reactions:${user.id}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, async (payload) => {
+            const messageId = String(payload?.new?.message_id || payload?.old?.message_id || '')
+            if (!messageId) return
+            const hasMessage = messages.value.some((m) => String(m?.id || '') === messageId)
+            if (!hasMessage) return
+            await loadReactionsForMessages([messageId])
+          })
+          .subscribe()
       } catch {
         // игнор
       }
@@ -1069,6 +1231,13 @@ export default {
       }
       rtChannel = null
 
+      try {
+        if (reactionsChannel) supabase.removeChannel(reactionsChannel)
+      } catch {
+        // ignore
+      }
+      reactionsChannel = null
+
       teardownTypingRealtime()
       stopTypingPresence()
 
@@ -1087,6 +1256,8 @@ export default {
       peerLastSeenAt.value = ''
       peerOnline.value = false
       messages.value = []
+      reactionsByMessage.value = {}
+      reactionPickerMessageId.value = ''
       oldestLoadedAt.value = ''
       convHasMore.value = true
       showScrollDown.value = false
@@ -1117,6 +1288,8 @@ export default {
           peerLastSeenAt.value = ''
           peerOnline.value = false
           messages.value = []
+          reactionsByMessage.value = {}
+          reactionPickerMessageId.value = ''
           oldestLoadedAt.value = ''
           convHasMore.value = true
           showScrollDown.value = false
@@ -1156,6 +1329,8 @@ export default {
       peer,
       peerStatusText,
       messages,
+      reactionOptions,
+      reactionPickerMessageId,
       draft,
 
       replyTo,
@@ -1178,6 +1353,10 @@ export default {
       setReply,
       clearReply,
       removeMessage,
+      getMessageReactions,
+      myReactionByMessage,
+      toggleReactionPicker,
+      setMessageReaction,
 
       parseBody,
       threadPreview,
@@ -1647,6 +1826,52 @@ export default {
   overflow-wrap: anywhere;
   word-break: break-word;
   font-size: 14px;
+}
+
+.msg-reactions {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.msg-reaction-chip,
+.msg-reaction-add,
+.msg-reaction-picker-item {
+  border: 1px solid #e8e8e8;
+  background: #fff;
+  border-radius: 999px;
+  height: 28px;
+  padding: 0 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.msg.mine .msg-reaction-chip,
+.msg.mine .msg-reaction-add,
+.msg.mine .msg-reaction-picker-item {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.18);
+  color: #fff;
+}
+.msg-reaction-chip.mine,
+.msg-reaction-picker-item.active {
+  border-color: #2a5bff;
+  box-shadow: inset 0 0 0 1px rgba(42,91,255,0.2);
+}
+.msg-reaction-add {
+  width: 28px;
+  justify-content: center;
+  padding: 0;
+  font-weight: 900;
+}
+.msg-reaction-picker {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .msg-meta {
   margin-top: 6px;
