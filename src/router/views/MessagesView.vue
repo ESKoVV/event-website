@@ -1499,6 +1499,11 @@ export default {
   min-height: 0;
 }
 
+.mv-right,
+.mv-right.mv-right-open {
+  overflow-x: hidden;
+}
+
 .mv-head {
   display: flex;
   align-items: center;
@@ -1801,6 +1806,7 @@ export default {
   min-height: 0;
   padding: 14px;
   overflow: auto;
+  overflow-x: hidden;
   background: #fbfbfb;
 }
 .scroll-down-btn {
