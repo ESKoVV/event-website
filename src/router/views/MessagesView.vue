@@ -1879,7 +1879,7 @@ export default {
 .msg-top-actions {
   position: absolute;
   top: 8px;
-  right: 8px;
+  right: -74px;
   display: flex;
   gap: 6px;
   opacity: 0;
@@ -1915,7 +1915,7 @@ export default {
   width: 220px;
   position: absolute;
   top: 42px;
-  right: 8px;
+  right: -228px;
   border: 1px solid #fff;
   border-radius: 12px;
   background: #fff;
