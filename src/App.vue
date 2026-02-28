@@ -589,7 +589,11 @@ export default {
     const saveProfile = async (form) => {
       saving.value = true
       try {
-        const { error } = await updateMyPublicUser(form)
+        const payload = {
+          ...form,
+          description: String(form?.description || '').trim().slice(0, 200) || null
+        }
+        const { error } = await updateMyPublicUser(payload)
         if (error) throw error
         await loadSessionAndProfile()
         showProfileEdit.value = false

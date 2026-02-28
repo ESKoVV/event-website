@@ -105,6 +105,17 @@
             <option value="female">Женский</option>
           </select>
         </label>
+
+        <label class="pm-field pm-field-full">
+          <span>О себе (до 200 символов)</span>
+          <textarea
+            v-model="form.description"
+            rows="4"
+            maxlength="200"
+            placeholder="Расскажите немного о себе"
+          ></textarea>
+          <small class="pm-help">Осталось {{ descriptionLeft }} символов</small>
+        </label>
       </div>
 
       <div class="pm-actions">
@@ -162,6 +173,7 @@ export default {
       phone: '',
       email: '',
       gender: '',
+      description: '',
       interests: []
     })
 
@@ -175,10 +187,13 @@ export default {
         form.phone = p?.phone || ''
         form.email = p?.email || ''
         form.gender = p?.gender || ''
+        form.description = p?.description || ''
         form.interests = Array.isArray(p?.interests) ? [...p.interests] : []
       },
       { immediate: true }
     )
+
+    const descriptionLeft = computed(() => Math.max(0, 200 - String(form.description || '').length))
 
     const isBusiness = computed(() => props.profile?.It_business === true)
 
@@ -269,7 +284,8 @@ export default {
       showProfileAvatar,
       onProfileImgError,
       avatarLetter,
-      avatarGradient
+      avatarGradient,
+      descriptionLeft
     }
   }
 }
@@ -394,6 +410,7 @@ export default {
 @media (max-width: 720px){ .pm-grid{ grid-template-columns: 1fr; } }
 
 .pm-field{ display:grid; gap: 6px; }
+.pm-field-full{ grid-column: 1 / -1; }
 .pm-field span{ font-size: 12px; opacity: .76; font-weight: 900; }
 .pm-field input, .pm-field select{
   border: 2px solid rgba(0,0,0,.10);
@@ -401,6 +418,16 @@ export default {
   padding: 10px 12px;
   outline:none;
   font-weight: 700;
+}
+.pm-field textarea{
+  border: 2px solid rgba(0,0,0,.10);
+  border-radius: 14px;
+  padding: 10px 12px;
+  outline:none;
+  font-weight: 700;
+  resize: vertical;
+  min-height: 88px;
+  font-family: inherit;
 }
 .pm-help{ font-size: 11px; opacity: .7; font-weight: 700; margin-top: -2px; }
 
