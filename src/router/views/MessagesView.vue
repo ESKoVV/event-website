@@ -186,6 +186,13 @@
         </div>
       </div>
     </div>
+
+
+  <UserProfileView
+    v-if="showPeerProfile && selectedOtherId"
+    :user-id="selectedOtherId"
+    @close="closePeerProfile"
+  />
   </div>
 </template>
 
@@ -194,6 +201,7 @@ import { ref, onMounted, watch, nextTick, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSupabase, supabase } from '../../composables/useSupabase.js'
 import { useUnreadMessages } from '../../composables/unreadMessages.js'
+import UserProfileView from './UserProfileView.vue'
 
 const normalizeStoragePublicUrl = (url) => {
   if (!url || typeof url !== 'string') return ''
@@ -250,6 +258,7 @@ const parseBody = (body) => {
 
 export default {
   name: 'MessagesView',
+  components: { UserProfileView },
   setup() {
     const router = useRouter()
     const route = useRoute()
@@ -276,6 +285,7 @@ export default {
 
     const threads = ref([]) // [{ otherUserId, lastMessage, unread, unreadCount, title, avatar }]
     const selectedOtherId = ref('')
+    const showPeerProfile = ref(false)
 
     const peer = ref(null)
     const messages = ref([])
@@ -1082,13 +1092,18 @@ export default {
       showScrollDown.value = false
       replyTo.value = null
       peerTyping.value = false
+      showPeerProfile.value = false
       stopTypingPresence()
     }
 
     const openPeerProfile = () => {
       const id = String(selectedOtherId.value || '').trim()
       if (!id) return
-      router.push({ name: 'user-profile', params: { id } })
+      showPeerProfile.value = true
+    }
+
+    const closePeerProfile = () => {
+      showPeerProfile.value = false
     }
 
     watch(
@@ -1107,6 +1122,7 @@ export default {
           showScrollDown.value = false
           replyTo.value = null
           peerTyping.value = false
+          showPeerProfile.value = false
           stopTypingPresence()
           return
         }
@@ -1115,6 +1131,7 @@ export default {
         selectedOtherId.value = nextId
         replyTo.value = null
         peerTyping.value = false
+        showPeerProfile.value = false
         peerLastSeenAt.value = ''
         peerOnline.value = false
         await loadPeer(nextId)
@@ -1155,6 +1172,8 @@ export default {
       scrollBottom,
       closeThread,
       openPeerProfile,
+      showPeerProfile,
+      closePeerProfile,
 
       setReply,
       clearReply,
