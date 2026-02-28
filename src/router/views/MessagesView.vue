@@ -116,21 +116,7 @@
                 class="msg"
                 :class="{ mine: m.sender_id === myId, their: m.sender_id !== myId, 'menu-open': messageMenuId === String(m.id) }"
               >
-                <div class="msg-bubble" @click.stop>
-                  <div class="msg-top-actions">
-                    <button
-                      class="msg-reply-trigger"
-                      type="button"
-                      aria-label="Ответить на сообщение"
-                      @click.stop="replyFromMenu(m)"
-                    >↩</button>
-                    <button
-                      class="msg-menu-trigger"
-                      type="button"
-                      aria-label="Открыть меню сообщения"
-                      @click.stop="toggleMessageMenu(m.id)"
-                    >⋯</button>
-                  </div>
+                <div class="msg-bubble" @click.stop @contextmenu.prevent.stop="openMessageMenuContext($event, m.id)">
 
                   <div v-if="messageMenuId === String(m.id)" class="msg-menu" @click.stop>
                     <div class="msg-menu-stickers">
@@ -145,6 +131,7 @@
                     </div>
 
                     <button class="msg-menu-item" type="button" @click="copyMessageFromMenu(m)">Копировать текст</button>
+                    <button class="msg-menu-item" type="button" @click="replyFromMenu(m)">Ответить</button>
                     <button class="msg-menu-item" type="button" @click="forwardMessageFromMenu(m)">Переслать сообщение</button>
                     <button
                       class="msg-menu-item msg-menu-item-danger"
@@ -636,13 +623,16 @@ export default {
       return users.length > 0 ? users.join(', ') : 'без имени'
     }
 
-    const toggleMessageMenu = (messageId) => {
-      const id = String(messageId || '')
-      messageMenuId.value = messageMenuId.value === id ? '' : id
-    }
-
     const closeMessageMenu = () => {
       messageMenuId.value = ''
+    }
+
+    const openMessageMenuContext = (event, messageId) => {
+      if (event?.preventDefault) event.preventDefault()
+      if (event?.stopPropagation) event.stopPropagation()
+      const id = String(messageId || '')
+      if (!id) return
+      messageMenuId.value = id
     }
 
     const pickReactionFromMenu = async (messageId, emoji) => {
@@ -1450,8 +1440,8 @@ export default {
       removeMessage,
       getMessageReactions,
       myReactionByMessage,
-      toggleMessageMenu,
       closeMessageMenu,
+      openMessageMenuContext,
       pickReactionFromMenu,
       replyFromMenu,
       copyMessageFromMenu,
@@ -1849,9 +1839,7 @@ export default {
   display: flex;
   transition: transform 0.22s ease, opacity 0.22s ease;
 }
-.msg.mine {
-  justify-content: flex-end;
-}
+.msg.mine,
 .msg.their {
   justify-content: flex-start;
 }
@@ -1867,55 +1855,20 @@ export default {
 }
 
 .msg.mine .msg-bubble {
-  background: #111;
-  color: #fff;
-  border-color: #111;
+  background: #e8f0ff;
+  border-color: #c9dcff;
+  color: #1d2a44;
 }
 
 .msg-bubble {
   pointer-events: auto;
 }
 
-.msg-top-actions {
-  position: absolute;
-  top: 8px;
-  right: -74px;
-  display: flex;
-  gap: 6px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.16s ease;
-  z-index: 3;
-}
-
-.msg:hover .msg-top-actions,
-.msg.menu-open .msg-top-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.msg-reply-trigger,
-.msg-menu-trigger {
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-  border: 1px solid #dcdcdc;
-  background: #fff;
-  color: #202020;
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.msg-menu-trigger {
-  font-size: 19px;
-}
-
 .msg-menu {
   width: 220px;
   position: absolute;
-  top: 42px;
-  right: -228px;
+  top: 38px;
+  right: 0;
   border: 1px solid #fff;
   border-radius: 12px;
   background: #fff;
@@ -2218,8 +2171,5 @@ export default {
     place-items: center;
   }
 
-  .msg-top-actions {
-    opacity: 1;
-  }
 }
 </style>
