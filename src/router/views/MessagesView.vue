@@ -1882,8 +1882,15 @@ export default {
   display: flex;
   gap: 6px;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   padding: 8px;
   border-bottom: 1px solid #ececec;
+}
+
+.msg-menu-stickers::-webkit-scrollbar {
+  display: none;
 }
 
 .msg.mine .msg-menu-stickers {

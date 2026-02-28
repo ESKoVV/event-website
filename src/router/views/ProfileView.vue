@@ -60,10 +60,10 @@
             </label>
 
             <label class="field field-full">
-              <span>Описание профиля (до 100 символов)</span>
+              <span>О себе (до 200 символов)</span>
               <textarea
                 v-model="form.description"
-                maxlength="100"
+                maxlength="200"
                 rows="3"
                 placeholder="Расскажите кратко о себе"
               ></textarea>
@@ -265,7 +265,7 @@ export default {
 
         const profileHasDescriptionField = profile.value && Object.prototype.hasOwnProperty.call(profile.value, 'description')
         if (profileHasDescriptionField) {
-          patch.description = String(form.description || '').trim().slice(0, 100) || null
+          patch.description = String(form.description || '').trim().slice(0, 200) || null
         }
 
         if (avatarUrl) patch.image_path = avatarUrl
@@ -292,7 +292,7 @@ export default {
     }
 
 
-    const descriptionLeft = computed(() => Math.max(0, 100 - String(form.description || '').length))
+    const descriptionLeft = computed(() => Math.max(0, 200 - String(form.description || '').length))
 
     const goToMyEvents = () => {
       router.push({ name: 'my-events' })
