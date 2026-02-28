@@ -82,7 +82,14 @@ import { useSupabase } from '@/composables/useSupabase'
 
 export default {
   name: 'UserProfileView',
-  setup() {
+  props: {
+    userId: {
+      type: String,
+      default: ''
+    }
+  },
+  emits: ['close'],
+  setup(props, { emit }) {
     const route = useRoute()
     const router = useRouter()
     const {
@@ -144,28 +151,43 @@ export default {
       }
     }
 
+    const targetId = computed(() => {
+      const fromProp = String(props.userId || '').trim()
+      if (fromProp) return fromProp
+      return String(route.params.id || '').trim()
+    })
+
     const load = async () => {
       loading.value = true
       error.value = ''
       try {
-        const targetId = String(route.params.id || '').trim()
+        const profileId = targetId.value
+        if (!profileId) {
+          profile.value = null
+          friends.value = []
+          publishedEvents.value = []
+          relation.value = 'none'
+          mutualFriendsCount.value = 0
+          return
+        }
+
         const { user } = await getUser()
         myId.value = user?.id || ''
 
-        const { data: p } = await getPublicUserById(targetId)
+        const { data: p } = await getPublicUserById(profileId)
         profile.value = p
         if (!p?.id) return
 
-        await loadEvents(targetId)
+        await loadEvents(profileId)
 
-        const { data: friendIds } = await getAcceptedFriendsOf(targetId)
+        const { data: friendIds } = await getAcceptedFriendsOf(profileId)
         const friendUsers = await Promise.all(friendIds.map(async (id) => (await getPublicUserById(id)).data))
         friends.value = friendUsers.filter((x) => x?.id)
 
         if (myId.value) {
           const { data: rows } = await getFriendships()
           const idx = buildRelationIndex(rows || [])
-          relation.value = idx.get(targetId) || 'none'
+          relation.value = idx.get(profileId) || 'none'
 
           const myFriends = new Set([...idx.entries()].filter((x) => x[1] === 'friend').map((x) => x[0]))
           let common = 0
@@ -199,11 +221,15 @@ export default {
     const goProfile = (id) => router.push({ name: 'user-profile', params: { id } })
     const openEvent = (id) => router.push({ name: 'event', params: { id } })
     const goBack = () => {
+      if (targetId.value && String(props.userId || '').trim()) {
+        emit('close')
+        return
+      }
       if (window.history.length > 1) router.back()
       else router.push({ name: 'home' })
     }
 
-    watch(() => route.params.id, load)
+    watch(targetId, load)
     onMounted(load)
 
     return {
