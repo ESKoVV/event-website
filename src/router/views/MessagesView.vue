@@ -162,7 +162,7 @@
                       @click="setMessageReaction(m.id, item.reaction)"
                     >
                       <span>{{ item.reaction }}</span>
-                      <span>{{ item.count }}</span>
+                      <span v-if="m.sender_id !== myId || item.count > 1">{{ item.count }}</span>
                     </button>
 
                     <div v-if="getMessageReactions(m.id).length > 0" class="msg-reactions-tooltip">
@@ -1868,7 +1868,6 @@ export default {
   width: 220px;
   position: absolute;
   top: 38px;
-  right: 0;
   border: 1px solid #fff;
   border-radius: 12px;
   background: #fff;
@@ -1984,7 +1983,7 @@ export default {
 .msg.mine .msg-reaction-chip {
   background: rgba(255,255,255,0.12);
   border-color: rgba(255,255,255,0.18);
-  color: #fff;
+  color: #000;
 }
 .msg-reaction-chip.mine {
   border-color: #2a5bff;
