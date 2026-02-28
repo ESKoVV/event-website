@@ -99,7 +99,7 @@
           </div>
         </div>
 
-        <div ref="chatBodyRef" class="chat-body" @scroll.passive="onChatScroll">
+        <div ref="chatBodyRef" class="chat-body" @scroll.passive="onChatScroll" @click="closeMessageMenu">
           <div v-if="convLoading" class="chat-skel">
             <div class="chat-skel-bubble" v-for="i in 8" :key="i"></div>
           </div>
@@ -116,16 +116,35 @@
                 class="msg"
                 :class="{ mine: m.sender_id === myId, their: m.sender_id !== myId }"
               >
-                <div class="msg-bubble">
-                  <div class="msg-actions">
-                    <button class="msg-action" type="button" @click="setReply(m)" aria-label="Ответить">↩︎</button>
+                <div class="msg-bubble" @click.stop>
+                  <div class="msg-top-actions">
                     <button
-                      v-if="m.sender_id === myId"
-                      class="msg-action msg-action-danger"
+                      class="msg-menu-trigger"
                       type="button"
-                      @click="removeMessage(m.id)"
-                      aria-label="Удалить сообщение"
-                    >🗑</button>
+                      aria-label="Открыть меню сообщения"
+                      @click.stop="toggleMessageMenu(m.id)"
+                    >⋯</button>
+                  </div>
+
+                  <div v-if="messageMenuId === String(m.id)" class="msg-menu" @click.stop>
+                    <div class="msg-menu-stickers">
+                      <button
+                        v-for="emoji in reactionOptions"
+                        :key="`${m.id}-menu-${emoji}`"
+                        class="msg-menu-sticker"
+                        type="button"
+                        :class="{ active: myReactionByMessage(m.id) === emoji }"
+                        @click="pickReactionFromMenu(m.id, emoji)"
+                      >{{ emoji }}</button>
+                    </div>
+
+                    <button class="msg-menu-item" type="button" @click="replyFromMenu(m)">Ответить</button>
+                    <button
+                      class="msg-menu-item msg-menu-item-danger"
+                      type="button"
+                      :disabled="m.sender_id !== myId"
+                      @click="deleteFromMenu(m)"
+                    >Удалить</button>
                   </div>
 
                   <!-- reply preview inside message -->
@@ -145,33 +164,20 @@
                       class="msg-reaction-chip"
                       :class="{ mine: item.mine }"
                       type="button"
+                      :title="reactionAuthorsText(item)"
                       @click="setMessageReaction(m.id, item.reaction)"
                     >
                       <span>{{ item.reaction }}</span>
                       <span>{{ item.count }}</span>
                     </button>
-
-                    <button
-                      class="msg-reaction-add"
-                      type="button"
-                      aria-label="Добавить реакцию"
-                      @click="toggleReactionPicker(m.id)"
-                    >
-                      +
-                    </button>
                   </div>
 
-                  <div v-if="reactionPickerMessageId === String(m.id)" class="msg-reaction-picker">
-                    <button
-                      v-for="emoji in reactionOptions"
-                      :key="`${m.id}-${emoji}`"
-                      class="msg-reaction-picker-item"
-                      type="button"
-                      :class="{ active: myReactionByMessage(m.id) === emoji }"
-                      @click="setMessageReaction(m.id, emoji)"
-                    >
-                      {{ emoji }}
-                    </button>
+                  <div v-if="getMessageReactions(m.id).length > 0" class="msg-reactions-authors">
+                    <div
+                      v-for="item in getMessageReactions(m.id)"
+                      :key="`${m.id}-${item.reaction}-authors`"
+                      class="msg-reactions-authors-item"
+                    >{{ item.reaction }} {{ reactionAuthorsText(item) }}</div>
                   </div>
 
                   <div class="msg-meta">
@@ -327,7 +333,7 @@ export default {
     const peer = ref(null)
     const messages = ref([])
     const reactionsByMessage = ref({})
-    const reactionPickerMessageId = ref('')
+    const messageMenuId = ref('')
     const draft = ref('')
     const peerOnline = ref(false)
     const peerLastSeenAt = ref('')
@@ -508,6 +514,14 @@ export default {
     }
 
 
+    const reactionAuthorName = (userId) => {
+      const uid = String(userId || '')
+      if (!uid) return 'Пользователь'
+      if (uid === myId.value) return 'Вы'
+      if (uid === String(selectedOtherId.value || '')) return String(peer.value?.title || 'Собеседник')
+      return 'Пользователь'
+    }
+
     const groupReactions = (rows) => {
       const grouped = {}
       for (const row of (rows || [])) {
@@ -516,9 +530,10 @@ export default {
         if (!messageId || !reaction) continue
 
         if (!grouped[messageId]) grouped[messageId] = { myReaction: '', byEmoji: {} }
-        if (!grouped[messageId].byEmoji[reaction]) grouped[messageId].byEmoji[reaction] = { reaction, count: 0, mine: false }
+        if (!grouped[messageId].byEmoji[reaction]) grouped[messageId].byEmoji[reaction] = { reaction, count: 0, mine: false, users: [] }
 
         grouped[messageId].byEmoji[reaction].count += 1
+        grouped[messageId].byEmoji[reaction].users.push(reactionAuthorName(row?.user_id))
         if (String(row?.user_id || '') === myId.value) {
           grouped[messageId].myReaction = reaction
           grouped[messageId].byEmoji[reaction].mine = true
@@ -580,9 +595,34 @@ export default {
       return String(reactionsByMessage.value?.[key]?.myReaction || '')
     }
 
-    const toggleReactionPicker = (messageId) => {
+    const reactionAuthorsText = (item) => {
+      const users = Array.isArray(item?.users) ? item.users : []
+      return users.length > 0 ? users.join(', ') : 'без имени'
+    }
+
+    const toggleMessageMenu = (messageId) => {
       const id = String(messageId || '')
-      reactionPickerMessageId.value = reactionPickerMessageId.value === id ? '' : id
+      messageMenuId.value = messageMenuId.value === id ? '' : id
+    }
+
+    const closeMessageMenu = () => {
+      messageMenuId.value = ''
+    }
+
+    const pickReactionFromMenu = async (messageId, emoji) => {
+      await setMessageReaction(messageId, emoji)
+      messageMenuId.value = ''
+    }
+
+    const replyFromMenu = async (m) => {
+      await setReply(m)
+      messageMenuId.value = ''
+    }
+
+    const deleteFromMenu = async (m) => {
+      if (String(m?.sender_id || '') !== myId.value) return
+      await removeMessage(m.id)
+      messageMenuId.value = ''
     }
 
     const setMessageReaction = async (messageId, reaction) => {
@@ -605,7 +645,7 @@ export default {
         if (error) throw error
       }
 
-      reactionPickerMessageId.value = ''
+      messageMenuId.value = ''
       await loadReactionsForMessages([messageKey])
     }
 
@@ -1024,7 +1064,7 @@ export default {
         const nextMessages = messages.value.filter((x) => String(x?.id || '') !== id)
         messages.value = nextMessages
         delete reactionsByMessage.value[id]
-        reactionPickerMessageId.value = reactionPickerMessageId.value === id ? '' : reactionPickerMessageId.value
+        messageMenuId.value = messageMenuId.value === id ? '' : messageMenuId.value
 
         if (selectedOtherId.value) {
           const idx = threads.value.findIndex((t) => t.otherUserId === selectedOtherId.value)
@@ -1257,7 +1297,7 @@ export default {
       peerOnline.value = false
       messages.value = []
       reactionsByMessage.value = {}
-      reactionPickerMessageId.value = ''
+      messageMenuId.value = ''
       oldestLoadedAt.value = ''
       convHasMore.value = true
       showScrollDown.value = false
@@ -1289,7 +1329,7 @@ export default {
           peerOnline.value = false
           messages.value = []
           reactionsByMessage.value = {}
-          reactionPickerMessageId.value = ''
+          messageMenuId.value = ''
           oldestLoadedAt.value = ''
           convHasMore.value = true
           showScrollDown.value = false
@@ -1330,7 +1370,7 @@ export default {
       peerStatusText,
       messages,
       reactionOptions,
-      reactionPickerMessageId,
+      messageMenuId,
       draft,
 
       replyTo,
@@ -1355,7 +1395,12 @@ export default {
       removeMessage,
       getMessageReactions,
       myReactionByMessage,
-      toggleReactionPicker,
+      toggleMessageMenu,
+      closeMessageMenu,
+      pickReactionFromMenu,
+      replyFromMenu,
+      deleteFromMenu,
+      reactionAuthorsText,
       setMessageReaction,
 
       parseBody,
@@ -1764,35 +1809,101 @@ export default {
   border-color: #111;
 }
 
-/* reply button */
-.msg-actions {
-  position: static;
-  margin-top: 8px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
 .msg-bubble {
   pointer-events: auto;
 }
-.msg-action {
-  width: 30px;
-  height: 30px;
-  border-radius: 12px;
+
+.msg-top-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.msg-menu-trigger {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
   border: 1px solid rgba(0,0,0,0.08);
   background: rgba(255,255,255,0.9);
   cursor: pointer;
-  font-weight: 900;
-  display: grid;
-  place-items: center;
+  font-size: 18px;
+  line-height: 1;
 }
-.msg-action-danger {
-  color: #d9534f;
-}
-.msg.mine .msg-action {
-  border-color: rgba(255,255,255,0.18);
+
+.msg.mine .msg-menu-trigger {
+  border-color: rgba(255,255,255,0.22);
   background: rgba(255,255,255,0.12);
   color: #fff;
+}
+
+.msg-menu {
+  width: 200px;
+  margin-left: auto;
+  margin-bottom: 8px;
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.msg.mine .msg-menu {
+  border-color: rgba(255,255,255,0.2);
+  background: #1d1d1d;
+}
+
+.msg-menu-stickers {
+  width: 200px;
+  box-sizing: border-box;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px;
+  border-bottom: 1px solid #ececec;
+}
+
+.msg.mine .msg-menu-stickers {
+  border-bottom-color: rgba(255,255,255,0.16);
+}
+
+.msg-menu-sticker {
+  flex: 0 0 auto;
+  min-width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid #e8e8e8;
+  background: #fff;
+  cursor: pointer;
+}
+
+.msg-menu-item {
+  width: 100%;
+  border: none;
+  border-top: 1px solid #f2f2f2;
+  background: transparent;
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.msg-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.msg-menu-item-danger {
+  color: #d9534f;
+}
+
+.msg.mine .msg-menu-sticker,
+.msg.mine .msg-menu-item {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.16);
+  color: #fff;
+}
+
+.msg-menu-sticker.active {
+  border-color: #2a5bff;
+  box-shadow: inset 0 0 0 1px rgba(42,91,255,0.2);
 }
 
 /* reply preview inside message */
@@ -1835,9 +1946,7 @@ export default {
   gap: 6px;
   align-items: center;
 }
-.msg-reaction-chip,
-.msg-reaction-add,
-.msg-reaction-picker-item {
+.msg-reaction-chip {
   border: 1px solid #e8e8e8;
   background: #fff;
   border-radius: 999px;
@@ -1849,29 +1958,25 @@ export default {
   gap: 4px;
   font-size: 13px;
 }
-.msg.mine .msg-reaction-chip,
-.msg.mine .msg-reaction-add,
-.msg.mine .msg-reaction-picker-item {
+.msg.mine .msg-reaction-chip {
   background: rgba(255,255,255,0.12);
   border-color: rgba(255,255,255,0.18);
   color: #fff;
 }
-.msg-reaction-chip.mine,
-.msg-reaction-picker-item.active {
+.msg-reaction-chip.mine {
   border-color: #2a5bff;
   box-shadow: inset 0 0 0 1px rgba(42,91,255,0.2);
 }
-.msg-reaction-add {
-  width: 28px;
-  justify-content: center;
-  padding: 0;
-  font-weight: 900;
-}
-.msg-reaction-picker {
+.msg-reactions-authors {
   margin-top: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.msg-reactions-authors-item {
+  overflow-wrap: anywhere;
 }
 .msg-meta {
   margin-top: 6px;
@@ -2022,8 +2127,7 @@ export default {
     place-items: center;
   }
 
-  /* кнопки действий всегда видны на мобилке */
-  .msg-actions {
+  .msg-top-actions {
     opacity: 1;
   }
 }
