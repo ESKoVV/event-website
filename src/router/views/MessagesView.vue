@@ -114,10 +114,16 @@
                 v-for="m in messages"
                 :key="m.id"
                 class="msg"
-                :class="{ mine: m.sender_id === myId, their: m.sender_id !== myId }"
+                :class="{ mine: m.sender_id === myId, their: m.sender_id !== myId, 'menu-open': messageMenuId === String(m.id) }"
               >
                 <div class="msg-bubble" @click.stop>
                   <div class="msg-top-actions">
+                    <button
+                      class="msg-reply-trigger"
+                      type="button"
+                      aria-label="Ответить на сообщение"
+                      @click.stop="replyFromMenu(m)"
+                    >↩</button>
                     <button
                       class="msg-menu-trigger"
                       type="button"
@@ -138,7 +144,8 @@
                       >{{ emoji }}</button>
                     </div>
 
-                    <button class="msg-menu-item" type="button" @click="replyFromMenu(m)">Ответить</button>
+                    <button class="msg-menu-item" type="button" @click="copyMessageFromMenu(m)">Копировать текст</button>
+                    <button class="msg-menu-item" type="button" @click="forwardMessageFromMenu(m)">Переслать сообщение</button>
                     <button
                       class="msg-menu-item msg-menu-item-danger"
                       type="button"
@@ -170,14 +177,14 @@
                       <span>{{ item.reaction }}</span>
                       <span>{{ item.count }}</span>
                     </button>
-                  </div>
 
-                  <div v-if="getMessageReactions(m.id).length > 0" class="msg-reactions-authors">
-                    <div
-                      v-for="item in getMessageReactions(m.id)"
-                      :key="`${m.id}-${item.reaction}-authors`"
-                      class="msg-reactions-authors-item"
-                    >{{ item.reaction }} {{ reactionAuthorsText(item) }}</div>
+                    <div v-if="getMessageReactions(m.id).length > 0" class="msg-reactions-tooltip">
+                      <div
+                        v-for="item in getMessageReactions(m.id)"
+                        :key="`${m.id}-${item.reaction}-authors`"
+                        class="msg-reactions-tooltip-row"
+                      >{{ item.reaction }} {{ reactionAuthorsText(item) }}</div>
+                    </div>
                   </div>
 
                   <div class="msg-meta">
@@ -403,6 +410,35 @@ export default {
       return t || (p.reply ? 'Ответ' : '')
     }
 
+    const copyText = async (text) => {
+      const value = String(text || '')
+      if (!value) return false
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(value)
+          return true
+        }
+      } catch {
+        // fallback
+      }
+
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = value
+        ta.setAttribute('readonly', '')
+        ta.style.position = 'fixed'
+        ta.style.top = '-9999px'
+        document.body.appendChild(ta)
+        ta.focus()
+        ta.select()
+        const ok = document.execCommand('copy')
+        document.body.removeChild(ta)
+        return !!ok
+      } catch {
+        return false
+      }
+    }
+
     const formatLastSeen = (iso) => {
       if (!iso) return ''
       const dt = new Date(iso)
@@ -619,6 +655,25 @@ export default {
       messageMenuId.value = ''
     }
 
+    const copyMessageFromMenu = async (m) => {
+      const text = String(parseBody(m?.body).text || '').trim()
+      const ok = await copyText(text)
+      messageMenuId.value = ''
+      if (!ok) alert('Не удалось скопировать текст')
+    }
+
+    const forwardMessageFromMenu = async (m) => {
+      const text = String(parseBody(m?.body).text || '').trim()
+      if (!text) {
+        messageMenuId.value = ''
+        return
+      }
+      draft.value = text
+      messageMenuId.value = ''
+      await nextTick()
+      chatInputRef.value?.focus?.()
+    }
+
     const deleteFromMenu = async (m) => {
       if (String(m?.sender_id || '') !== myId.value) return
       await removeMessage(m.id)
@@ -646,7 +701,7 @@ export default {
       }
 
       messageMenuId.value = ''
-      await loadReactionsForMessages([messageKey])
+      await refreshReactionsForCurrentConversation()
     }
 
     const ensureThreadsUsers = async (rows) => {
@@ -1164,7 +1219,7 @@ export default {
             if (!messageId) return
             const hasMessage = messages.value.some((m) => String(m?.id || '') === messageId)
             if (!hasMessage) return
-            await loadReactionsForMessages([messageId])
+            await refreshReactionsForCurrentConversation()
           })
           .subscribe()
       } catch {
@@ -1399,6 +1454,8 @@ export default {
       closeMessageMenu,
       pickReactionFromMenu,
       replyFromMenu,
+      copyMessageFromMenu,
+      forwardMessageFromMenu,
       deleteFromMenu,
       reactionAuthorsText,
       setMessageReaction,
@@ -1795,7 +1852,7 @@ export default {
 
 .msg-bubble {
   max-width: min(560px, 84%);
-  overflow: hidden;
+  overflow: visible;
   border-radius: 18px;
   padding: 10px 12px 8px;
   border: 1px solid #efefef;
@@ -1814,41 +1871,51 @@ export default {
 }
 
 .msg-top-actions {
+  position: absolute;
+  top: 8px;
+  right: -74px;
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 6px;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+  z-index: 3;
 }
 
+.msg:hover .msg-top-actions,
+.msg.menu-open .msg-top-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.msg-reply-trigger,
 .msg-menu-trigger {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 10px;
-  border: 1px solid rgba(0,0,0,0.08);
-  background: rgba(255,255,255,0.9);
+  border: 1px solid #dcdcdc;
+  background: #fff;
+  color: #202020;
   cursor: pointer;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
 }
 
-.msg.mine .msg-menu-trigger {
-  border-color: rgba(255,255,255,0.22);
-  background: rgba(255,255,255,0.12);
-  color: #fff;
+.msg-menu-trigger {
+  font-size: 19px;
 }
 
 .msg-menu {
-  width: 200px;
-  margin-left: auto;
-  margin-bottom: 8px;
-  border: 1px solid #e8e8e8;
+  width: 220px;
+  position: absolute;
+  top: 42px;
+  right: -228px;
+  border: 1px solid #fff;
   border-radius: 12px;
   background: #fff;
+  box-shadow: 0 10px 24px rgba(0,0,0,0.16);
   overflow: hidden;
-}
-
-.msg.mine .msg-menu {
-  border-color: rgba(255,255,255,0.2);
-  background: #1d1d1d;
+  z-index: 4;
 }
 
 .msg-menu-stickers {
@@ -1885,6 +1952,10 @@ export default {
   cursor: pointer;
 }
 
+.msg-menu-item:hover {
+  background: #f7f7f7;
+}
+
 .msg-menu-item:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -1892,13 +1963,6 @@ export default {
 
 .msg-menu-item-danger {
   color: #d9534f;
-}
-
-.msg.mine .msg-menu-sticker,
-.msg.mine .msg-menu-item {
-  background: rgba(255,255,255,0.06);
-  border-color: rgba(255,255,255,0.16);
-  color: #fff;
 }
 
 .msg-menu-sticker.active {
@@ -1967,15 +2031,36 @@ export default {
   border-color: #2a5bff;
   box-shadow: inset 0 0 0 1px rgba(42,91,255,0.2);
 }
-.msg-reactions-authors {
-  margin-top: 6px;
-  display: grid;
-  gap: 2px;
-  font-size: 12px;
-  opacity: 0.75;
+.msg-reactions {
+  position: relative;
+  width: fit-content;
 }
 
-.msg-reactions-authors-item {
+.msg-reactions-tooltip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  min-width: 200px;
+  max-width: 280px;
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid #fff;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.16);
+  padding: 8px;
+  display: none;
+  z-index: 3;
+}
+
+.msg-reactions:hover .msg-reactions-tooltip {
+  display: grid;
+  gap: 4px;
+}
+
+.msg-reactions-tooltip-row {
+  font-size: 12px;
+  color: #333;
   overflow-wrap: anywhere;
 }
 .msg-meta {
