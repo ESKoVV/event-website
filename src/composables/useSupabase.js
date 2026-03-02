@@ -47,8 +47,6 @@ export const useSupabase = () => {
   // Events
   // =======================
 
-  // ✅ НОВОЕ: пагинация вместо getEvents()
-  // from/to — индексы range (0-based)
   const getEventsPage = async ({ from = 0, to = 9, publishedOnly = true } = {}) => {
     let q = supabase.from('events').select('*').order('date_time_event', { ascending: true }).range(from, to)
     if (publishedOnly) q = q.eq('is_published', true)
@@ -56,7 +54,6 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
-  // Старое (оставляем если где-то используется)
   const getEvents = async () => {
     const { data, error } = await supabase.from('events').select('*').order('date_time_event', { ascending: true })
     return { data, error }
@@ -80,7 +77,6 @@ export const useSupabase = () => {
     return { data, error }
   }
 
-  // ids: number[]
   const getEventPhotos = async (eventIds) => {
     const ids = Array.isArray(eventIds) ? eventIds.filter((x) => x !== null && x !== undefined) : []
     if (!ids.length) return { data: [], error: null }
@@ -261,8 +257,6 @@ export const useSupabase = () => {
     const fromType = String(file.type || '').toLowerCase().includes('jpeg') ? 'jpg' : ''
     const ext = (fromName || fromType || 'png').toLowerCase()
 
-    // основной путь по требованию проекта:
-    // storage / avatars / ProfileImage / <userId> / <timestamp>.<ext>
     const preferredBucket = 'avatars'
     const preferredFolder = 'ProfileImage'
     const timestamp = Date.now()
@@ -279,7 +273,6 @@ export const useSupabase = () => {
 
     let { error: upErr } = await supabase.storage.from(uploadedBucket).upload(uploadedPath, file, uploadOptions)
 
-    // fallback на env-конфиг, если в окружении задан другой bucket/folder
     if (upErr) {
       const envBucket = String(import.meta.env.VITE_AVATAR_BUCKET || '').trim()
       const envFolder = String(import.meta.env.VITE_AVATAR_FOLDER || '').trim() || preferredFolder
@@ -446,7 +439,7 @@ export const useSupabase = () => {
   }
 
   // =======================
-  // Social: Messages
+  // Social: Messages (legacy DM)
   // =======================
   const getConversation = async (otherId, limit = 200) => {
     const { user } = await getUser()
@@ -507,8 +500,6 @@ export const useSupabase = () => {
       rpcErrorMessage.includes('not found') ||
       rpcErrorDetails.includes('delete_own_message')
 
-    // Fallback для окружений, где SQL-функция ещё не применена
-    // или PostgREST отвечает 404 на RPC.
     if (!rpcResult.error) return rpcResult
     if (!rpcMissingFn) return rpcResult
 
@@ -524,7 +515,6 @@ export const useSupabase = () => {
 
     return { data: data ?? null, error }
   }
-
 
   const markConversationRead = async (otherId) => {
     const { user } = await getUser()
@@ -561,6 +551,9 @@ export const useSupabase = () => {
     const out = []
 
     for (const m of rows) {
+      // ignore conversation messages here
+      if (m?.receiver_id == null) continue
+
       const otherUserId = m.sender_id === user.id ? m.receiver_id : m.sender_id
       if (!otherUserId) continue
       if (seen.has(otherUserId)) continue
@@ -572,6 +565,9 @@ export const useSupabase = () => {
     return { data: out, error: null }
   }
 
+  // =======================
+  // Conversations (group threads)
+  // =======================
   const getMyConversations = async (limit = 250) => {
     const { user } = await getUser()
     if (!user?.id) return { data: [], error: new Error('Not authorized') }
@@ -591,6 +587,7 @@ export const useSupabase = () => {
       .from('conversations')
       .select('id,title,created_at,updated_at')
       .in('id', conversationIds)
+      .order('updated_at', { ascending: false })
 
     if (conversationsError) return { data: [], error: conversationsError }
 
@@ -632,8 +629,46 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
+  // ✅ NEW: messages inside conversation
+  const getConversationMessages = async (conversationId, limit = 200) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: [], error: new Error('Not authorized') }
+
+    const cid = String(conversationId || '').trim()
+    if (!cid) return { data: [], error: new Error('No conversationId') }
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', cid)
+      .order('created_at', { ascending: true })
+      .limit(limit)
+
+    return { data: data ?? [], error }
+  }
+
+  // ✅ NEW: send message into conversation (receiver_id is NULL)
+  const sendMessageToConversation = async (conversationId, body) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: null, error: new Error('Not authorized') }
+
+    const cid = String(conversationId || '').trim()
+    if (!cid) return { data: null, error: new Error('No conversationId') }
+
+    const text = String(body || '').trim()
+    if (!text) return { data: null, error: new Error('Empty message') }
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert([{ conversation_id: cid, sender_id: user.id, receiver_id: null, body: text }])
+      .select('*')
+      .maybeSingle()
+
+    return { data: data ?? null, error }
+  }
+
   // =======================
-  // Realtime: new messages
+  // Realtime
   // =======================
   const subscribeToMyMessages = async ({ onInsert, onUpdate } = {}) => {
     const { user } = await getUser()
@@ -659,12 +694,35 @@ export const useSupabase = () => {
       (payload) => onUpdate?.(payload.new)
     )
 
-    // ✅ важно для "двух галочек": когда собеседник читает сообщение,
-    // обновляется read_at у сообщений, где *я* sender_id, а receiver_id = другой пользователь.
-    // Поэтому слушаем UPDATE и по sender_id.
     ch.on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
+      (payload) => onUpdate?.(payload.new)
+    )
+
+    const { error } = await ch.subscribe()
+    return { channel: ch, error }
+  }
+
+  // ✅ NEW: realtime for one conversation
+  const subscribeToConversation = async (conversationId, { onInsert, onUpdate } = {}) => {
+    const { user } = await getUser()
+    if (!user?.id) return { channel: null, error: new Error('Not authorized') }
+
+    const cid = String(conversationId || '').trim()
+    if (!cid) return { channel: null, error: new Error('No conversationId') }
+
+    const ch = supabase.channel(`rt:conversation:${cid}`)
+
+    ch.on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${cid}` },
+      (payload) => onInsert?.(payload.new)
+    )
+
+    ch.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${cid}` },
       (payload) => onUpdate?.(payload.new)
     )
 
@@ -710,7 +768,7 @@ export const useSupabase = () => {
 
   return {
     // events
-    getEventsPage, // ✅ новое
+    getEventsPage,
     getEvents,
     searchEvents,
     getCategories,
@@ -739,25 +797,30 @@ export const useSupabase = () => {
 
     // social
     searchUsers,
-
     getFriendships,
     getAcceptedFriendsOf,
     sendFriendRequest,
     acceptFriendRequest,
     removeFriendOrRequest,
 
+    // legacy DM
     getInboxThreads,
-    getMyConversations,
-    createConversation,
-    addParticipantsToConversation,
     getConversation,
     sendMessage,
     deleteMessage,
     markConversationRead,
     getMyUnreadMessagesCount,
 
+    // conversations
+    getMyConversations,
+    createConversation,
+    addParticipantsToConversation,
+    getConversationMessages,
+    sendMessageToConversation,
+
     // realtime
     subscribeToMyMessages,
+    subscribeToConversation,
     joinTypingChannel,
     sendTyping
   }
