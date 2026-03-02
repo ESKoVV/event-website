@@ -576,29 +576,25 @@ export const useSupabase = () => {
     const { user } = await getUser()
     if (!user?.id) return { data: [], error: new Error('Not authorized') }
 
-    const { data, error } = await supabase
+    const { data: memberships, error: membershipError } = await supabase
       .from('conversation_participants')
-      .select('conversation_id,conversations!inner(id,title,created_at,updated_at)')
+      .select('conversation_id')
       .eq('user_id', user.id)
-      .order('joined_at', { ascending: false })
       .limit(limit)
 
-    if (error) return { data: [], error }
+    if (membershipError) return { data: [], error: membershipError }
 
-    const unique = new Map()
-    for (const row of (data || [])) {
-      const conv = row?.conversations
-      const id = String(conv?.id || row?.conversation_id || '')
-      if (!id || unique.has(id)) continue
-      unique.set(id, {
-        id,
-        title: String(conv?.title || '').trim(),
-        created_at: conv?.created_at || null,
-        updated_at: conv?.updated_at || null
-      })
-    }
+    const conversationIds = [...new Set((memberships || []).map((x) => String(x?.conversation_id || '')).filter(Boolean))]
+    if (conversationIds.length === 0) return { data: [], error: null }
 
-    return { data: Array.from(unique.values()), error: null }
+    const { data: conversations, error: conversationsError } = await supabase
+      .from('conversations')
+      .select('id,title,created_at,updated_at')
+      .in('id', conversationIds)
+
+    if (conversationsError) return { data: [], error: conversationsError }
+
+    return { data: conversations ?? [], error: null }
   }
 
   const createConversation = async ({ title = '', participantIds = [] } = {}) => {
