@@ -206,8 +206,9 @@ export const useSupabase = () => {
         if (e2) return { data: created, error: e2 }
       }
     }
+  }
 
-    return { data: created, error: null }
+  return { data: data.data, error: null }
   }
 
   // =======================
