@@ -108,13 +108,12 @@ export default {
 .tg { margin-top: 14px; padding-top: 14px; border-top: 1px solid #efefef; }
 .tg-title { font-weight: 700; margin-bottom: 10px; }
 
-.tg-mount { min-height: 48px; }
+.tg-mount { min-height: 48px; max-height: 220px; overflow-y: auto; border: 1px solid #efefef; border-radius: 12px; padding: 8px; background: #fafafa; }
 
-@media (min-width: 981px) {
-  .tg-mount :deep(iframe.bis_skin_checked) {
-    height: 44px !important;
-    max-height: 44px !important;
-  }
+.tg-mount :deep(iframe.bis_skin_checked) {
+  width: 100% !important;
+  min-height: 160px !important;
+  border: 0;
 }
 
 .warn { color: #b45309; font-size: 13px; margin-bottom: 10px; }
