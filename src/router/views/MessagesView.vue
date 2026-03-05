@@ -403,7 +403,6 @@
               <img v-if="conversationAvatarPreview" :src="conversationAvatarPreview" alt="avatar" class="conv-avatar-preview" />
               <div v-else class="conv-avatar-ph">👥</div>
             </template>
-            <button v-if="isConversationOwner" type="button" class="conv-avatar-pick" @click="triggerConversationAvatarPick">Изменить аватар</button>
             <input ref="conversationAvatarInput" type="file" accept="image/*" class="conv-avatar-input" @change="onConversationAvatarPicked" />
           </div>
 
@@ -414,9 +413,9 @@
         </div>
 
         <div v-if="isConversationOwner" class="conv-actions-row">
-          <button class="chat-send conv-action-btn" type="button" @click="showAddParticipantsPanel = !showAddParticipantsPanel">Добавить участников</button>
-          <button class="chat-send conv-action-btn" type="button" @click="showRolePermissionsPanel = !showRolePermissionsPanel">Разрешения ролей</button>
-          <button class="chat-send conv-action-btn" type="button" @click="copyConversationJoinLink">Ссылка-приглашение</button>
+          <button class="chat-send conv-action-btn" type="button" @click="openAddParticipantsModal">Добавить участников</button>
+          <button class="chat-send conv-action-btn" type="button" @click="openRolePermissionsModal">Разрешения ролей</button>
+          <button class="chat-send conv-action-btn" type="button" @click="openInviteLinkModal">Ссылка-приглашение</button>
         </div>
 
         <div class="conv-members-block">
@@ -433,47 +432,70 @@
                 </div>
               </div>
 
-              <div v-if="item.role === 'owner'" class="conv-role-owner">Создатель</div>
-              <select
-                v-else
-                class="conv-role-select"
-                :disabled="!isConversationOwner || roleSaving"
-                :value="item.role"
-                @change="updateParticipantRole(item, $event.target.value)"
-              >
-                <option v-for="role in EDITABLE_ROLE_OPTIONS" :key="`${item.user_id}-${role}`" :value="role">{{ roleTitle(role) }}</option>
-              </select>
+              <div class="conv-member-actions">
+                <div v-if="item.role === 'owner'" class="conv-role-owner">Создатель</div>
+                <select
+                  v-else
+                  class="conv-role-select"
+                  :disabled="!isConversationOwner || roleSaving"
+                  :value="item.role"
+                  @change="updateParticipantRole(item, $event.target.value)"
+                >
+                  <option v-for="role in EDITABLE_ROLE_OPTIONS" :key="`${item.user_id}-${role}`" :value="role">{{ roleTitle(role) }}</option>
+                </select>
+                <button v-if="canRemoveParticipant(item)" type="button" class="conv-more-btn" @click="removeParticipant(item)">⋯</button>
+              </div>
             </div>
           </div>
         </div>
 
-        <div v-if="isConversationOwner && showAddParticipantsPanel" class="conv-members-block">
-          <div class="conv-title-label">Добавить участников</div>
-          <input v-model="addParticipantsSearch" class="chat-input" type="text" placeholder="Поиск среди друзей" />
-          <div class="conv-friends-list">
-            <label v-for="f in friendsForAddFiltered" :key="`conv-add-${f.id}`" class="conv-friend-row">
-              <input v-model="selectedParticipantsToAdd" :value="f.id" type="checkbox" />
-              <img v-if="f.avatar" :src="f.avatar" class="fwd-chat-ava" alt="avatar" />
-              <div v-else class="fwd-chat-ava fwd-chat-ava-ph">👤</div>
-              <div class="conv-friend-name">{{ f.title }}</div>
-            </label>
+        <div v-if="isConversationOwner && showAddParticipantsPanel" class="conv-submodal-overlay" @click.self="showAddParticipantsPanel = false">
+          <div class="conv-submodal-card">
+            <div class="fwd-modal-head">
+              <div class="fwd-modal-title">Добавить участников</div>
+              <button class="fwd-modal-close" type="button" @click="showAddParticipantsPanel = false">✕</button>
+            </div>
+            <input v-model="addParticipantsSearch" class="chat-input" type="text" placeholder="Поиск среди друзей" />
+            <div class="conv-friends-list">
+              <label v-for="f in friendsForAddFiltered" :key="`conv-add-${f.id}`" class="conv-friend-row conv-friend-row-pick">
+                <span class="conv-radio" :class="{ active: selectedParticipantsToAdd.includes(f.id) }"></span>
+                <input v-model="selectedParticipantsToAdd" :value="f.id" type="checkbox" />
+                <img v-if="f.avatar" :src="f.avatar" class="fwd-chat-ava" alt="avatar" />
+                <div v-else class="fwd-chat-ava fwd-chat-ava-ph">👤</div>
+                <div class="conv-friend-name">{{ f.title }}</div>
+              </label>
+            </div>
+            <button class="chat-send" type="button" :disabled="selectedParticipantsToAdd.length === 0" @click="addSelectedParticipants">Добавить участника</button>
           </div>
-          <button class="chat-send" type="button" :disabled="selectedParticipantsToAdd.length === 0" @click="addSelectedParticipants">Добавить выбранных</button>
         </div>
 
-        <div v-if="isConversationOwner && showRolePermissionsPanel" class="conv-members-block">
-          <div class="conv-title-label">Разрешения по ролям</div>
-          <div class="role-grid" v-for="role in ROLE_OPTIONS" :key="`perm-${role}`">
-            <div class="role-grid-title">{{ roleTitle(role) }}</div>
-            <label v-for="(value, key) in rolePermissions?.[role] || {}" :key="`${role}-${key}`" class="perm-row">
-              <span>{{ permissionLabel(key) }}</span>
-              <input
-                type="checkbox"
-                :checked="value"
-                :disabled="!isConversationOwner || role === 'owner'"
-                @change="toggleRolePermission(role, key)"
-              />
-            </label>
+        <div v-if="isConversationOwner && showRolePermissionsPanel" class="conv-submodal-overlay" @click.self="showRolePermissionsPanel = false">
+          <div class="conv-submodal-card">
+            <div class="fwd-modal-head">
+              <div class="fwd-modal-title">Разрешения по ролям</div>
+              <button class="fwd-modal-close" type="button" @click="showRolePermissionsPanel = false">✕</button>
+            </div>
+            <div class="role-grid" v-for="role in EDITABLE_ROLE_OPTIONS" :key="`perm-${role}`">
+              <div class="role-grid-title">{{ roleTitle(role) }}</div>
+              <label v-for="(value, key) in rolePermissions?.[role] || {}" :key="`${role}-${key}`" class="perm-row">
+                <span>{{ permissionLabel(key) }}</span>
+                <input type="checkbox" :checked="value" :disabled="!isConversationOwner" @change="toggleRolePermission(role, key)" />
+              </label>
+            </div>
+            <button class="chat-send" type="button" @click="showRolePermissionsPanel = false">Вернуться в настройки беседы</button>
+          </div>
+        </div>
+
+        <div v-if="inviteLinkModalOpen" class="conv-submodal-overlay" @click.self="inviteLinkModalOpen = false">
+          <div class="conv-submodal-card">
+            <div class="fwd-modal-head">
+              <div class="fwd-modal-title">Приглашение</div>
+              <button class="fwd-modal-close" type="button" @click="inviteLinkModalOpen = false">✕</button>
+            </div>
+            <div class="conv-qr">QR</div>
+            <div class="conv-link-text">{{ conversationInviteLink }}</div>
+            <button class="chat-send" type="button" @click="copyConversationJoinLink">Скопировать ссылку</button>
+            <button class="chat-send conv-action-btn" type="button" @click="inviteLinkModalOpen = false">Вернуться в настройки беседы</button>
           </div>
         </div>
 
@@ -709,6 +731,7 @@ export default {
       addParticipantsToConversation,
       getConversationParticipants,
       updateConversationParticipantRole,
+      removeParticipantFromConversation,
       updateConversationDetails,
       uploadConversationAvatar,
       leaveConversation,
@@ -794,6 +817,7 @@ export default {
 
     const flashMessage = ref('')
     const flashTone = ref('info')
+    const inviteLinkModalOpen = ref(false)
     let flashTimer = null
 
     let rtChannel = null
@@ -884,6 +908,11 @@ export default {
     const selectedConversationId = computed(() => conversationIdFromThreadId(selectedOtherId.value))
     const isConversationOwner = computed(() => conversationParticipants.value.some((x) => x.user_id === myId.value && x.role === 'owner'))
 
+    const conversationInviteLink = computed(() => {
+      if (!selectedConversationId.value) return ''
+      return `${window.location.origin}/messages?join=${encodeURIComponent(selectedConversationId.value)}`
+    })
+
     const roleTitle = (role) => {
       if (role === 'owner') return 'Создатель'
       if (role === 'admin') return 'Администратор'
@@ -972,10 +1001,50 @@ export default {
 
     const copyConversationJoinLink = async () => {
       if (!selectedConversationId.value) return
-      const href = `${window.location.origin}/messages?join=${encodeURIComponent(selectedConversationId.value)}`
+      const href = conversationInviteLink.value
       const ok = await copyText(href)
       if (ok) showFlash('Ссылка-приглашение скопирована', 'success')
       else showFlash(`Не удалось скопировать. Ссылка: ${href}`, 'error', 5000)
+    }
+
+    const openAddParticipantsModal = () => {
+      if (!isConversationOwner.value) return
+      showAddParticipantsPanel.value = true
+    }
+
+    const openRolePermissionsModal = () => {
+      if (!isConversationOwner.value) return
+      showRolePermissionsPanel.value = true
+    }
+
+    const openInviteLinkModal = () => {
+      if (!isConversationOwner.value) return
+      inviteLinkModalOpen.value = true
+    }
+
+    const canRemoveParticipant = (item) => {
+      if (!isConversationOwner.value) return false
+      if (!item?.user_id || item.user_id === myId.value || item.role === 'owner') return false
+      return true
+    }
+
+    const removeParticipant = async (item) => {
+      if (!canRemoveParticipant(item) || !selectedConversationId.value) return
+      if (!window.confirm(`Удалить ${item.title || 'участника'} из беседы?`)) return
+      try {
+        const { error } = await removeParticipantFromConversation({
+          conversationId: selectedConversationId.value,
+          userId: item.user_id
+        })
+        if (error) throw error
+        conversationParticipants.value = conversationParticipants.value.filter((x) => x.user_id !== item.user_id)
+        const actorName = String(peer.value?.title || 'Администратор').trim()
+        const { error: evErr } = await supabase.from('conversation_system_events').insert([{ conversation_id: selectedConversationId.value, actor_id: myId.value, event_type: 'member_removed', body: `Вы были удалены из беседы пользователем ${actorName}`, meta: { user_id: item.user_id } }])
+        if (evErr) throw evErr
+        showFlash('Участник удален', 'success')
+      } catch (e) {
+        showFlash(String(e?.message || 'Не удалось удалить участника'), 'error', 4200)
+      }
     }
 
     const onConversationAvatarCropped = (file) => {
@@ -1050,6 +1119,7 @@ export default {
       selectedParticipantsToAdd.value = []
       showAddParticipantsPanel.value = false
       showRolePermissionsPanel.value = false
+      inviteLinkModalOpen.value = false
       try {
         const currentTitle = String(peer.value?.title || threads.value.find((t) => t.otherUserId === selectedOtherId.value)?.title || 'Беседа').trim()
         const currentAvatar = normalizeStoragePublicUrl(peer.value?.avatar || threads.value.find((t) => t.otherUserId === selectedOtherId.value)?.avatar || '')
@@ -1094,6 +1164,7 @@ export default {
         const { error } = await addParticipantsToConversation(selectedConversationId.value, selectedParticipantsToAdd.value)
         if (error) throw error
         await openConversationSettings()
+        showAddParticipantsPanel.value = false
       } catch (e) {
         showFlash(String(e?.message || 'Не удалось добавить участников'), 'error', 4200)
       }
@@ -1225,7 +1296,7 @@ export default {
     const loadPeerPresence = async () => {
       const uid = myId.value
       const otherId = selectedOtherId.value
-      if (!uid || !otherId || !typingFeatureEnabled.value) {
+      if (!uid || !otherId || isConversationThreadId(otherId) || !typingFeatureEnabled.value) {
         peerLastSeenAt.value = ''
         peerOnline.value = false
         return
@@ -1824,9 +1895,14 @@ export default {
         const qWith = String(route.query.with || '').trim()
         if (qWith && enriched.some((t) => t.otherUserId === qWith)) {
           selectedOtherId.value = qWith
-          await loadPeer(qWith)
+          if (isConversationThreadId(qWith)) {
+            const thread = threads.value.find((t) => t.otherUserId === qWith)
+            peer.value = { id: qWith, title: thread?.title || 'Беседа', sub: 'групповой чат', avatar: thread?.avatar || '' }
+          } else {
+            await loadPeer(qWith)
+            await markThreadAsRead(qWith)
+          }
           await reloadConversation()
-          await markThreadAsRead(qWith)
         }
       } finally {
         loading.value = false
@@ -2010,7 +2086,7 @@ export default {
     }
 
     const markThreadAsRead = async (otherId) => {
-      if (!otherId) return
+      if (!otherId || isConversationThreadId(otherId)) return
       try {
         const idx = threads.value.findIndex((t) => t.otherUserId === otherId)
         if (idx !== -1) {
@@ -2114,7 +2190,7 @@ export default {
       if (!typingFeatureEnabled.value) return
       const uid = myId.value
       const otherId = selectedOtherId.value
-      if (!uid || !otherId) return
+      if (!uid || !otherId || isConversationThreadId(otherId)) return
 
       try {
         const { error } = await supabase.from('typing').upsert(
@@ -2170,7 +2246,7 @@ export default {
     const startTypingPresence = async () => {
       if (typingPresenceTimer) clearInterval(typingPresenceTimer)
       typingPresenceTimer = null
-      if (!selectedOtherId.value || !typingFeatureEnabled.value) return
+      if (!selectedOtherId.value || isConversationThreadId(selectedOtherId.value) || !typingFeatureEnabled.value) return
 
       await setTyping(false)
       typingPresenceTimer = setInterval(() => {
@@ -2790,7 +2866,9 @@ export default {
       selectedParticipantsToAdd,
       showAddParticipantsPanel,
       showRolePermissionsPanel,
+      inviteLinkModalOpen,
       friendsForAddFiltered,
+      conversationInviteLink,
       roleSaving,
       conversationSaveLoading,
       conversationActionLoading,
@@ -2826,6 +2904,11 @@ export default {
       updateParticipantRole,
       addSelectedParticipants,
       copyConversationJoinLink,
+      openAddParticipantsModal,
+      openRolePermissionsModal,
+      openInviteLinkModal,
+      canRemoveParticipant,
+      removeParticipant,
       roleTitle,
       permissionLabel,
       toggleRolePermission,
@@ -2976,6 +3059,7 @@ export default {
 }
 
 .mv-list {
+  scrollbar-width: none;
   flex: 1 1 auto;
   min-height: auto;
   height: auto;
@@ -2989,6 +3073,10 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.mv-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .thread {
@@ -3081,12 +3169,15 @@ export default {
 }
 
 .thread-sub {
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 .thread-preview {
+  flex: 1 1 auto;
+  max-width: 100%;
   font-size: 13px;
   opacity: 0.8;
   white-space: nowrap;
@@ -3195,6 +3286,10 @@ export default {
   align-items: center;
   gap: 8px;
 }
+.mv-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
 .typing-pill{
   opacity: 1;
   font-weight: 900;
@@ -3222,6 +3317,10 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+.mv-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .chat-back {
   display: none;
@@ -3276,6 +3375,10 @@ export default {
 .chat-msgs {
   display: grid;
   gap: 8px;
+}
+.mv-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .msg {
   display: flex;
@@ -3834,7 +3937,11 @@ export default {
   justify-content: space-between;
   gap: 8px;
 }
-.fwd-modal-title { font-size: 16px; font-weight: 950; }
+.mv-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.fwd-modal-title { flex: 1; text-align: center; font-size: 16px; font-weight: 950; }
 .fwd-modal-close {
   width: 34px; height: 34px; border-radius: 12px; border: 1px solid #efefef; background: #fff; cursor: pointer;
 }
@@ -3863,6 +3970,10 @@ export default {
   overflow: auto;
   display: grid;
   gap: 8px;
+}
+.mv-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .conv-friend-row {
   border: 1px solid #efefef;
@@ -3962,9 +4073,11 @@ export default {
 
 
 .conv-settings-card {
+  position: relative;
   width: min(920px, 100%);
   max-height: min(94vh, 920px);
   overflow-y: auto;
+  padding: 0 20px 20px;
 }
 
 .conv-settings-top {
@@ -3982,7 +4095,7 @@ export default {
 .conv-avatar-ph {
   width: 100px;
   height: 100px;
-  border-radius: 16px;
+  border-radius: 999px;
   background: #f2f4f8;
   display: flex;
   align-items: center;
@@ -4002,6 +4115,10 @@ export default {
 .conv-avatar-input { display: none; }
 
 .conv-avatar-trigger {
+  width: 100px;
+  height: 100px;
+  border-radius: 999px;
+  overflow: hidden;
   border: 0;
   background: transparent;
   padding: 0;
@@ -4032,14 +4149,25 @@ export default {
 }
 
 .grow { flex: 1; }
-.conv-members-block { margin-top: 12px; }
+.conv-members-block { margin-top: 12px; border: 1px solid #e8edf7; border-radius: 16px; padding: 12px; background: linear-gradient(180deg,#ffffff,#fbfcff); }
 .conv-members-list { max-height: 220px; overflow: auto; margin-top: 8px; }
-.conv-member-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 6px 0; }
+.conv-member-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px dashed #edf1f7; }
 .conv-member-main { display: flex; align-items: center; gap: 8px; }
 .conv-member-sub { font-size: 12px; opacity: .7; }
 .conv-role-select { border: 1px solid #d6dae3; border-radius: 10px; padding: 6px 8px; }
 .role-grid { border: 1px solid #eceff4; border-radius: 12px; padding: 10px; margin-top: 8px; }
 .role-grid-title { font-weight: 700; margin-bottom: 6px; }
 .perm-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 14px; }
+.conv-member-actions{ display:flex; align-items:center; gap:8px; }
+.conv-more-btn{ width:32px; height:32px; border-radius:10px; border:1px solid #dfe5f3; background:#fff; cursor:pointer; font-size:20px; line-height:1; }
+.conv-submodal-overlay{ position:absolute; inset:0; background:rgba(8,14,28,.35); display:grid; place-items:center; padding:12px; z-index:3; }
+.conv-submodal-card{ width:min(920px,100%); max-height:min(94vh,920px); background:#fff; border:1px solid #e5ebf8; border-radius:16px; box-shadow:0 20px 48px rgba(7,14,40,.22); padding:14px; display:grid; gap:10px; overflow:auto; }
+.conv-friend-row-pick input{ display:none; }
+.conv-friend-row-pick{ grid-template-columns:20px 20px 40px 1fr; }
+.conv-radio{ width:16px; height:16px; border-radius:999px; border:2px solid #97a4c0; position:relative; }
+.conv-radio.active::after{ content:""; position:absolute; inset:3px; border-radius:999px; background:#2a5bff; }
+.conv-qr{ width:180px; height:180px; border:2px dashed #c9d5f5; border-radius:14px; display:grid; place-items:center; margin:0 auto; font-weight:900; color:#4a5a84; }
+.conv-link-text{ font-size:12px; color:#4a5775; word-break:break-all; background:#f6f8ff; border:1px solid #e3e9fb; border-radius:10px; padding:10px; }
+
 
 </style>

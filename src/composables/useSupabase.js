@@ -771,6 +771,22 @@ export const useSupabase = () => {
     return { data: data ?? null, error }
   }
 
+  const removeParticipantFromConversation = async ({ conversationId, userId }) => {
+    const cid = String(conversationId || '').trim()
+    const uid = String(userId || '').trim()
+    if (!cid || !uid) return { data: null, error: new Error('Missing params') }
+
+    const { data, error } = await supabase
+      .from('conversation_participants')
+      .delete()
+      .eq('conversation_id', cid)
+      .eq('user_id', uid)
+      .select('id,conversation_id,user_id')
+      .maybeSingle()
+
+    return { data: data ?? null, error }
+  }
+
   const updateConversationDetails = async (conversationId, patch = {}) => {
     const cid = String(conversationId || '').trim()
     if (!cid) return { data: null, error: new Error('No conversationId') }
@@ -1021,6 +1037,7 @@ export const useSupabase = () => {
     addParticipantsToConversation,
     getConversationParticipants,
     updateConversationParticipantRole,
+    removeParticipantFromConversation,
     updateConversationDetails,
     leaveConversation,
     deleteConversationById,
