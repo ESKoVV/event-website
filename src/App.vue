@@ -801,7 +801,7 @@ export default {
 .menu-button {
   width: 42px;
   height: 42px;
-  border-radius: 14px;
+  border-radius: 50%;
   border: 1px solid #efefef;
   background: #fff;
   cursor: pointer;
@@ -938,7 +938,7 @@ export default {
   object-position: center;
   border-radius: 50%;
   display: block;
-  transform: scale(1.22);
+  transform: none;
 }
 .header-placeholder {
   font-size: 18px;
