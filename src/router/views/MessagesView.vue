@@ -710,6 +710,7 @@ export default {
       getConversationParticipants,
       updateConversationParticipantRole,
       updateConversationDetails,
+      uploadConversationAvatar,
       leaveConversation,
       deleteConversationById,
       getConversation,
@@ -1051,7 +1052,10 @@ export default {
       showRolePermissionsPanel.value = false
       try {
         const currentTitle = String(peer.value?.title || threads.value.find((t) => t.otherUserId === selectedOtherId.value)?.title || 'Беседа').trim()
+        const currentAvatar = normalizeStoragePublicUrl(peer.value?.avatar || threads.value.find((t) => t.otherUserId === selectedOtherId.value)?.avatar || '')
         conversationTitleDraft.value = currentTitle
+        conversationAvatarPreview.value = currentAvatar
+        conversationAvatarFile.value = null
         loadRolePermissions()
 
         const { data: participants, error } = await getConversationParticipants(selectedConversationId.value)
@@ -1100,8 +1104,18 @@ export default {
       conversationSaveLoading.value = true
       try {
         const patch = { title: String(conversationTitleDraft.value || '').trim() || null }
+        if (conversationAvatarFile.value) {
+          const { publicUrl, error: uploadError } = await uploadConversationAvatar({
+            file: conversationAvatarFile.value,
+            conversationId: selectedConversationId.value
+          })
+          if (uploadError) throw uploadError
+          patch.avatar_url = publicUrl || null
+        }
         const { data, error } = await updateConversationDetails(selectedConversationId.value, patch)
         if (error) throw error
+        conversationAvatarPreview.value = normalizeStoragePublicUrl(data?.avatar_url || data?.image_path || conversationAvatarPreview.value)
+        conversationAvatarFile.value = null
         copyConversationTitleToThread(String(data?.title || conversationTitleDraft.value || '').trim())
         copyConversationAvatarToThread()
         conversationSettingsOpen.value = false
@@ -1594,7 +1608,7 @@ export default {
             unread: false,
             unreadCount: 0,
             title,
-            avatar: String(existing.avatar || '').trim(),
+            avatar: normalizeStoragePublicUrl(String(data?.avatar_url || data?.image_path || '')),
             isConversation: true,
             conversationId
           }
