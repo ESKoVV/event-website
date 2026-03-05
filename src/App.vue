@@ -932,7 +932,7 @@ export default {
   overflow: hidden;
 }
 .header-avatar {
-  width: 100%;
+  width: 135%;
   height: 100%;
   object-fit: cover;
   object-position: center;
