@@ -2562,17 +2562,23 @@ export default {
 }
 
 .mv-list {
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: auto;
+  height: auto;
+  max-height: none;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   padding: 10px;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
 .thread {
+  flex: 0 0 auto;
   width: 100%;
+  min-height: 76px;
   overflow: hidden;
   border: 1px solid #efefef;
   background: #fff;
