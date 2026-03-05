@@ -456,15 +456,30 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
-  const sendMessage = async (otherId, body) => {
+  const sendMessage = async (otherId, body, options = {}) => {
     const { user } = await getUser()
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
     const text = String(body || '').trim()
-    if (!text) return { data: null, error: new Error('Empty message') }
+    const messageType = String(options?.message_type || '').trim() || 'text'
+    const hasFileMeta =
+      typeof options?.file_url === 'string' &&
+      options.file_url.trim().length > 0
+    if (!text && !hasFileMeta) return { data: null, error: new Error('Empty message') }
 
     const { data, error } = await supabase
       .from('messages')
-      .insert([{ sender_id: user.id, receiver_id: otherId, body: text }])
+      .insert([
+        compact({
+          sender_id: user.id,
+          receiver_id: otherId,
+          body: text,
+          message_type: messageType,
+          file_url: options?.file_url,
+          file_name: options?.file_name,
+          file_size: options?.file_size,
+          file_type: options?.file_type
+        })
+      ])
       .select('*')
       .maybeSingle()
 
@@ -758,16 +773,31 @@ export const useSupabase = () => {
   }
 
   // ✅ NEW: send message into conversation (receiver_id is NULL)
-  const sendMessageToConversation = async (conversationId, body) => {
+  const sendMessageToConversation = async (conversationId, body, options = {}) => {
     const { user } = await getUser()
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
 
     const text = String(body || '').trim()
-    if (!text) return { data: null, error: new Error('Empty message') }
+    const messageType = String(options?.message_type || '').trim() || 'text'
+    const hasFileMeta =
+      typeof options?.file_url === 'string' &&
+      options.file_url.trim().length > 0
+    if (!text && !hasFileMeta) return { data: null, error: new Error('Empty message') }
 
     const { data, error } = await supabase
       .from('messages')
-      .insert([{ conversation_id: conversationId, sender_id: user.id, body: text }])
+      .insert([
+        compact({
+          conversation_id: conversationId,
+          sender_id: user.id,
+          body: text,
+          message_type: messageType,
+          file_url: options?.file_url,
+          file_name: options?.file_name,
+          file_size: options?.file_size,
+          file_type: options?.file_type
+        })
+      ])
       .select('*')
       .maybeSingle()
 
