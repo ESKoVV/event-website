@@ -331,6 +331,106 @@
       >Создать беседу</button>
     </div>
   </div>
+
+  <div v-if="conversationSettingsOpen" class="fwd-modal" @click.self="closeConversationSettings">
+    <div class="fwd-modal-card conv-settings-card">
+      <div class="fwd-modal-head">
+        <div class="fwd-modal-title">Настройки беседы</div>
+        <button class="fwd-modal-close" type="button" @click="closeConversationSettings" aria-label="Закрыть">✕</button>
+      </div>
+
+      <div v-if="conversationSettingsLoading" class="fwd-modal-empty">Загрузка...</div>
+      <template v-else>
+        <div class="conv-settings-top">
+          <div class="conv-avatar-box">
+            <img v-if="conversationAvatarPreview" :src="conversationAvatarPreview" alt="avatar" class="conv-avatar-preview" />
+            <div v-else class="conv-avatar-ph">👥</div>
+            <label v-if="isConversationOwner" class="conv-avatar-pick">
+              Выбрать аватар
+              <input type="file" accept="image/*" class="conv-avatar-input" @change="onConversationAvatarPicked" />
+            </label>
+          </div>
+
+          <div class="conv-title-block grow">
+            <div class="conv-title-label">Название беседы</div>
+            <input v-model="conversationTitleDraft" class="chat-input" type="text" :disabled="!isConversationOwner || conversationSaveLoading" />
+          </div>
+        </div>
+
+        <div class="conv-members-block">
+          <div class="conv-title-label">Участники</div>
+          <input v-model="conversationParticipantsSearch" class="chat-input" type="text" placeholder="Поиск по участникам" />
+          <div class="conv-members-list">
+            <div v-for="item in conversationParticipantsFiltered" :key="`member-${item.user_id}`" class="conv-member-row">
+              <div class="conv-member-main">
+                <img v-if="item.avatar" :src="item.avatar" class="fwd-chat-ava" alt="avatar" />
+                <div v-else class="fwd-chat-ava fwd-chat-ava-ph">👤</div>
+                <div>
+                  <div class="conv-friend-name">{{ item.title }}</div>
+                  <div class="conv-member-sub">{{ item.username ? `@${item.username}` : 'без username' }}</div>
+                </div>
+              </div>
+
+              <select
+                class="conv-role-select"
+                :disabled="!isConversationOwner || item.role === 'owner' || roleSaving"
+                :value="item.role"
+                @change="updateParticipantRole(item, $event.target.value)"
+              >
+                <option v-for="role in ROLE_OPTIONS" :key="`${item.user_id}-${role}`" :value="role">{{ roleTitle(role) }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="isConversationOwner" class="conv-members-block">
+          <div class="conv-title-label">Добавить участников</div>
+          <input v-model="addParticipantsSearch" class="chat-input" type="text" placeholder="Поиск среди друзей" />
+          <div class="conv-friends-list">
+            <label v-for="f in friendsForAddFiltered" :key="`conv-add-${f.id}`" class="conv-friend-row">
+              <input v-model="selectedParticipantsToAdd" :value="f.id" type="checkbox" />
+              <img v-if="f.avatar" :src="f.avatar" class="fwd-chat-ava" alt="avatar" />
+              <div v-else class="fwd-chat-ava fwd-chat-ava-ph">👤</div>
+              <div class="conv-friend-name">{{ f.title }}</div>
+            </label>
+          </div>
+          <button class="chat-send" type="button" :disabled="selectedParticipantsToAdd.length === 0" @click="addSelectedParticipants">Добавить выбранных</button>
+        </div>
+
+        <div class="conv-members-block">
+          <div class="conv-title-label">Разрешения по ролям</div>
+          <div class="role-grid" v-for="role in ROLE_OPTIONS" :key="`perm-${role}`">
+            <div class="role-grid-title">{{ roleTitle(role) }}</div>
+            <label v-for="(value, key) in rolePermissions?.[role] || {}" :key="`${role}-${key}`" class="perm-row">
+              <span>{{ permissionLabel(key) }}</span>
+              <input
+                type="checkbox"
+                :checked="value"
+                :disabled="!isConversationOwner || role === 'owner'"
+                @change="toggleRolePermission(role, key)"
+              />
+            </label>
+          </div>
+        </div>
+
+        <button
+          v-if="isConversationOwner"
+          class="chat-send conv-create-btn"
+          type="button"
+          :disabled="conversationSaveLoading"
+          @click="saveConversationSettings"
+        >Сохранить настройки</button>
+      </template>
+    </div>
+  </div>
+
+  <AvatarCropModal
+    v-if="conversationAvatarCropOpen && pendingConversationAvatarFile"
+    :file="pendingConversationAvatarFile"
+    @done="onConversationAvatarCropped"
+    @close="conversationAvatarCropOpen = false; pendingConversationAvatarFile = null"
+  />
+
   </div>
 </template>
 
@@ -340,6 +440,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useSupabase, supabase } from '../../composables/useSupabase.js'
 import { useUnreadMessages } from '../../composables/unreadMessages.js'
 import UserProfileView from './UserProfileView.vue'
+import AvatarCropModal from '../../components/AvatarCropModal.vue'
 
 const normalizeStoragePublicUrl = (url) => {
   if (!url || typeof url !== 'string') return ''
@@ -360,6 +461,33 @@ const FORWARD_PREFIX = '__FORWARD__'
 const FORWARD_SUFFIX = '__FORWARD__'
 const REACTION_OPTIONS = ['❤️', '🫡', '👌', '👍', '😡', '🥲', '😭']
 const CONVERSATION_THREAD_PREFIX = 'conversation:'
+const ROLE_OPTIONS = ['owner', 'admin', 'member']
+const DEFAULT_ROLE_PERMISSIONS = {
+  owner: {
+    send_messages: true,
+    send_media: true,
+    add_participants: true,
+    create_topics: true,
+    pin_messages: true,
+    edit_group: true
+  },
+  admin: {
+    send_messages: true,
+    send_media: true,
+    add_participants: true,
+    create_topics: true,
+    pin_messages: true,
+    edit_group: true
+  },
+  member: {
+    send_messages: true,
+    send_media: true,
+    add_participants: false,
+    create_topics: false,
+    pin_messages: false,
+    edit_group: false
+  }
+}
 
 const isConversationThreadId = (id) => String(id || '').startsWith(CONVERSATION_THREAD_PREFIX)
 const conversationIdFromThreadId = (id) => {
@@ -439,7 +567,7 @@ const parseBody = (body) => {
 
 export default {
   name: 'MessagesView',
-  components: { UserProfileView },
+  components: { UserProfileView, AvatarCropModal },
   setup() {
     const router = useRouter()
     const route = useRoute()
@@ -451,6 +579,10 @@ export default {
       getMyConversations,
       getFriendships,
       createConversation,
+      addParticipantsToConversation,
+      getConversationParticipants,
+      updateConversationParticipantRole,
+      updateConversationDetails,
       getConversation,
       sendMessage,
       deleteMessage,
@@ -476,6 +608,21 @@ export default {
     const friendsForConversation = ref([])
     const selectedConversationFriends = ref([])
     const newConversationTitle = ref('')
+
+    const conversationSettingsOpen = ref(false)
+    const conversationSettingsLoading = ref(false)
+    const conversationParticipants = ref([])
+    const conversationParticipantsSearch = ref('')
+    const conversationTitleDraft = ref('')
+    const conversationAvatarPreview = ref('')
+    const conversationAvatarFile = ref(null)
+    const conversationAvatarCropOpen = ref(false)
+    const pendingConversationAvatarFile = ref(null)
+    const rolePermissions = ref({})
+    const roleSaving = ref(false)
+    const conversationSaveLoading = ref(false)
+    const addParticipantsSearch = ref('')
+    const selectedParticipantsToAdd = ref([])
 
     const peer = ref(null)
     const messages = ref([])
@@ -587,6 +734,228 @@ export default {
       const p = parseBody(body)
       const t = String(p.text || '').trim()
       return t || (p.reply ? 'Ответ' : '')
+    }
+
+    const selectedConversationId = computed(() => conversationIdFromThreadId(selectedOtherId.value))
+    const isConversationOwner = computed(() => conversationParticipants.value.some((x) => x.user_id === myId.value && x.role === 'owner'))
+
+    const roleTitle = (role) => {
+      if (role === 'owner') return 'Создатель'
+      if (role === 'admin') return 'Администратор'
+      return 'Участник'
+    }
+
+    const permissionLabel = (key) => {
+      const map = {
+        send_messages: 'Отправка сообщений',
+        send_media: 'Отправка медиафайлов',
+        add_participants: 'Добавление участников',
+        create_topics: 'Создание тем',
+        pin_messages: 'Закрепление сообщений',
+        edit_group: 'Изменение профиля группы'
+      }
+      return map[key] || key
+    }
+
+    const localConversationStorageKey = (suffix) => `conversation:${selectedConversationId.value || 'none'}:${suffix}`
+
+    const loadRolePermissions = () => {
+      const fallback = JSON.parse(JSON.stringify(DEFAULT_ROLE_PERMISSIONS))
+      try {
+        const raw = localStorage.getItem(localConversationStorageKey('role_permissions'))
+        if (!raw) {
+          rolePermissions.value = fallback
+          return
+        }
+        const parsed = safeJsonParse(raw)
+        rolePermissions.value = {
+          ...fallback,
+          ...(parsed && typeof parsed === 'object' ? parsed : {})
+        }
+      } catch {
+        rolePermissions.value = fallback
+      }
+    }
+
+    const persistRolePermissions = () => {
+      try {
+        localStorage.setItem(localConversationStorageKey('role_permissions'), JSON.stringify(rolePermissions.value || {}))
+      } catch {
+        // ignore
+      }
+    }
+
+    const conversationParticipantsFiltered = computed(() => {
+      const q = String(conversationParticipantsSearch.value || '').trim().toLowerCase()
+      if (!q) return conversationParticipants.value
+      return conversationParticipants.value.filter((p) => {
+        const text = `${p.title || ''} ${p.username || ''} ${p.role || ''}`.toLowerCase()
+        return text.includes(q)
+      })
+    })
+
+    const friendsForAddFiltered = computed(() => {
+      const q = String(addParticipantsSearch.value || '').trim().toLowerCase()
+      const members = new Set(conversationParticipants.value.map((x) => x.user_id))
+      const base = (friendsForConversation.value || []).filter((f) => !members.has(f.id))
+      if (!q) return base
+      return base.filter((f) => String(f.title || '').toLowerCase().includes(q))
+    })
+
+    const onConversationAvatarPicked = (event) => {
+      const file = event?.target?.files?.[0]
+      if (!file) return
+      pendingConversationAvatarFile.value = file
+      conversationAvatarCropOpen.value = true
+      try { event.target.value = '' } catch {}
+    }
+
+    const onConversationAvatarCropped = (file) => {
+      if (!file) return
+      conversationAvatarFile.value = file
+      conversationAvatarPreview.value = URL.createObjectURL(file)
+      conversationAvatarCropOpen.value = false
+      pendingConversationAvatarFile.value = null
+    }
+
+    const updateParticipantRole = async (participant, nextRole) => {
+      if (!participant?.user_id || !selectedConversationId.value || !isConversationOwner.value || participant.role === 'owner') return
+      roleSaving.value = true
+      try {
+        const { data, error } = await updateConversationParticipantRole({
+          conversationId: selectedConversationId.value,
+          userId: participant.user_id,
+          role: nextRole
+        })
+        if (error) throw error
+        conversationParticipants.value = conversationParticipants.value.map((row) => row.user_id === participant.user_id ? { ...row, role: data?.role || nextRole } : row)
+      } catch (e) {
+        alert(String(e?.message || 'Не удалось изменить роль'))
+      } finally {
+        roleSaving.value = false
+      }
+    }
+
+    const toggleRolePermission = (role, key) => {
+      if (!isConversationOwner.value || role === 'owner') return
+      rolePermissions.value = {
+        ...rolePermissions.value,
+        [role]: {
+          ...(rolePermissions.value?.[role] || {}),
+          [key]: !(rolePermissions.value?.[role]?.[key])
+        }
+      }
+      persistRolePermissions()
+    }
+
+    const copyConversationAvatarToThread = () => {
+      if (!selectedConversationId.value) return
+      const threadId = `${CONVERSATION_THREAD_PREFIX}${selectedConversationId.value}`
+      const idx = threads.value.findIndex((t) => t.otherUserId === threadId)
+      if (idx !== -1) {
+        threads.value[idx] = { ...threads.value[idx], avatar: conversationAvatarPreview.value || '' }
+      }
+      if (peer.value && isConversationThreadId(peer.value.id)) {
+        peer.value = { ...peer.value, avatar: conversationAvatarPreview.value || '' }
+      }
+      try {
+        localStorage.setItem(localConversationStorageKey('avatar'), conversationAvatarPreview.value || '')
+      } catch {
+        // ignore
+      }
+    }
+
+    const copyConversationTitleToThread = (title) => {
+      if (!selectedConversationId.value) return
+      const nextTitle = String(title || '').trim() || 'Беседа'
+      const threadId = `${CONVERSATION_THREAD_PREFIX}${selectedConversationId.value}`
+      const idx = threads.value.findIndex((t) => t.otherUserId === threadId)
+      if (idx !== -1) {
+        threads.value[idx] = { ...threads.value[idx], title: nextTitle }
+      }
+      if (peer.value && isConversationThreadId(peer.value.id)) {
+        peer.value = { ...peer.value, title: nextTitle }
+      }
+    }
+
+    const copyConversationAvatarFromStorage = () => {
+      if (!selectedConversationId.value) return
+      try {
+        const avatar = localStorage.getItem(localConversationStorageKey('avatar')) || ''
+        if (!avatar) return
+        conversationAvatarPreview.value = avatar
+      } catch {
+        // ignore
+      }
+    }
+
+    const openConversationSettings = async () => {
+      if (!selectedConversationId.value) return
+      conversationSettingsLoading.value = true
+      conversationSettingsOpen.value = true
+      conversationParticipantsSearch.value = ''
+      addParticipantsSearch.value = ''
+      selectedParticipantsToAdd.value = []
+      try {
+        const currentTitle = String(peer.value?.title || threads.value.find((t) => t.otherUserId === selectedOtherId.value)?.title || 'Беседа').trim()
+        conversationTitleDraft.value = currentTitle
+        copyConversationAvatarFromStorage()
+        loadRolePermissions()
+
+        const { data: participants, error } = await getConversationParticipants(selectedConversationId.value)
+        if (error) throw error
+
+        const users = await Promise.all((participants || []).map(async (row) => {
+          const { data: u } = await getPublicUserById(row.user_id)
+          return {
+            ...row,
+            title: safeTitleFromUser(u),
+            username: String(u?.username || '').trim(),
+            avatar: normalizeStoragePublicUrl(u?.image_path || '')
+          }
+        }))
+
+        conversationParticipants.value = users
+        await loadFriendsForConversation()
+      } catch (e) {
+        alert(String(e?.message || 'Не удалось открыть настройки беседы'))
+      } finally {
+        conversationSettingsLoading.value = false
+      }
+    }
+
+    const closeConversationSettings = () => {
+      conversationSettingsOpen.value = false
+      conversationAvatarCropOpen.value = false
+      pendingConversationAvatarFile.value = null
+    }
+
+    const addSelectedParticipants = async () => {
+      if (!selectedConversationId.value || selectedParticipantsToAdd.value.length === 0) return
+      try {
+        const { error } = await addParticipantsToConversation(selectedConversationId.value, selectedParticipantsToAdd.value)
+        if (error) throw error
+        await openConversationSettings()
+      } catch (e) {
+        alert(String(e?.message || 'Не удалось добавить участников'))
+      }
+    }
+
+    const saveConversationSettings = async () => {
+      if (!selectedConversationId.value || !isConversationOwner.value) return
+      conversationSaveLoading.value = true
+      try {
+        const patch = { title: String(conversationTitleDraft.value || '').trim() || null }
+        const { data, error } = await updateConversationDetails(selectedConversationId.value, patch)
+        if (error) throw error
+        copyConversationTitleToThread(String(data?.title || conversationTitleDraft.value || '').trim())
+        copyConversationAvatarToThread()
+        conversationSettingsOpen.value = false
+      } catch (e) {
+        alert(String(e?.message || 'Не удалось сохранить настройки беседы'))
+      } finally {
+        conversationSaveLoading.value = false
+      }
     }
 
     const copyText = async (text) => {
@@ -1360,12 +1729,17 @@ export default {
 
       const conversationId = conversationIdFromThreadId(otherId)
       if (conversationId) {
-        const title = threads.value.find((t) => t.otherUserId === otherId)?.title || 'Беседа'
+        const thread = threads.value.find((t) => t.otherUserId === otherId)
+        const title = thread?.title || 'Беседа'
         peer.value = {
           id: otherId,
           title,
           sub: 'групповая беседа',
-          avatar: ''
+          avatar: thread?.avatar || ''
+        }
+        copyConversationAvatarFromStorage()
+        if (conversationAvatarPreview.value) {
+          peer.value = { ...peer.value, avatar: conversationAvatarPreview.value }
         }
       } else {
         await loadPeer(otherId)
@@ -1825,12 +2199,17 @@ export default {
 
       if (selectedOtherId.value) {
         if (isConversationThreadId(selectedOtherId.value)) {
-          const title = threads.value.find((t) => t.otherUserId === selectedOtherId.value)?.title || 'Беседа'
+          const thread = threads.value.find((t) => t.otherUserId === selectedOtherId.value)
+          const title = thread?.title || 'Беседа'
           peer.value = {
             id: selectedOtherId.value,
             title,
             sub: 'групповая беседа',
-            avatar: ''
+            avatar: thread?.avatar || ''
+          }
+          copyConversationAvatarFromStorage()
+          if (conversationAvatarPreview.value) {
+            peer.value = { ...peer.value, avatar: conversationAvatarPreview.value }
           }
         } else {
           await loadPeer(selectedOtherId.value)
@@ -1898,12 +2277,17 @@ export default {
       forwardTo.value = null
       peerTyping.value = false
       showPeerProfile.value = false
+      conversationSettingsOpen.value = false
       stopTypingPresence()
     }
 
-    const openPeerProfile = () => {
+    const openPeerProfile = async () => {
       const id = String(selectedOtherId.value || '').trim()
       if (!id) return
+      if (isConversationThreadId(id)) {
+        await openConversationSettings()
+        return
+      }
       showPeerProfile.value = true
     }
 
@@ -1931,6 +2315,7 @@ export default {
           forwardTo.value = null
           peerTyping.value = false
           showPeerProfile.value = false
+          conversationSettingsOpen.value = false
           stopTypingPresence()
           return
         }
@@ -1943,12 +2328,30 @@ export default {
         showPeerProfile.value = false
         peerLastSeenAt.value = ''
         peerOnline.value = false
-        await loadPeer(nextId)
-        await loadPeerPresence()
-        await startTypingPresence()
+        const conversationId = conversationIdFromThreadId(nextId)
+        if (conversationId) {
+          const thread = threads.value.find((t) => t.otherUserId === nextId)
+          peer.value = {
+            id: nextId,
+            title: thread?.title || 'Беседа',
+            sub: 'групповая беседа',
+            avatar: thread?.avatar || ''
+          }
+          copyConversationAvatarFromStorage()
+          if (conversationAvatarPreview.value) {
+            peer.value = { ...peer.value, avatar: conversationAvatarPreview.value }
+          }
+          stopTypingPresence()
+        } else {
+          await loadPeer(nextId)
+          await loadPeerPresence()
+          await startTypingPresence()
+        }
         await reloadConversation()
         await jumpToLatestOnOpen()
-        await markThreadAsRead(nextId)
+        if (!conversationId) {
+          await markThreadAsRead(nextId)
+        }
       }
     )
 
@@ -1978,6 +2381,23 @@ export default {
       friendsForConversation,
       selectedConversationFriends,
       newConversationTitle,
+      conversationSettingsOpen,
+      conversationSettingsLoading,
+      conversationParticipants,
+      conversationParticipantsSearch,
+      conversationParticipantsFiltered,
+      conversationTitleDraft,
+      conversationAvatarPreview,
+      conversationAvatarCropOpen,
+      pendingConversationAvatarFile,
+      rolePermissions,
+      ROLE_OPTIONS,
+      isConversationOwner,
+      addParticipantsSearch,
+      selectedParticipantsToAdd,
+      friendsForAddFiltered,
+      roleSaving,
+      conversationSaveLoading,
 
       chatBodyRef,
       chatInputRef,
@@ -2002,6 +2422,16 @@ export default {
       openCreateConversationModal,
       closeCreateConversationModal,
       createConversationSubmit,
+      openConversationSettings,
+      closeConversationSettings,
+      onConversationAvatarPicked,
+      onConversationAvatarCropped,
+      updateParticipantRole,
+      addSelectedParticipants,
+      roleTitle,
+      permissionLabel,
+      toggleRolePermission,
+      saveConversationSettings,
       removeMessage,
       getMessageReactions,
       myReactionByMessage,
@@ -2899,4 +3329,54 @@ export default {
   }
 
 }
+
+
+.conv-settings-card {
+  max-width: 760px;
+}
+
+.conv-settings-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.conv-avatar-box {
+  width: 130px;
+}
+
+.conv-avatar-preview,
+.conv-avatar-ph {
+  width: 100px;
+  height: 100px;
+  border-radius: 16px;
+  background: #f2f4f8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  object-fit: cover;
+  font-size: 36px;
+}
+
+.conv-avatar-pick {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #3b82f6;
+  cursor: pointer;
+}
+
+.conv-avatar-input { display: none; }
+.grow { flex: 1; }
+.conv-members-block { margin-top: 12px; }
+.conv-members-list { max-height: 220px; overflow: auto; margin-top: 8px; }
+.conv-member-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 6px 0; }
+.conv-member-main { display: flex; align-items: center; gap: 8px; }
+.conv-member-sub { font-size: 12px; opacity: .7; }
+.conv-role-select { border: 1px solid #d6dae3; border-radius: 10px; padding: 6px 8px; }
+.role-grid { border: 1px solid #eceff4; border-radius: 12px; padding: 10px; margin-top: 8px; }
+.role-grid-title { font-weight: 700; margin-bottom: 6px; }
+.perm-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 14px; }
+
 </style>
