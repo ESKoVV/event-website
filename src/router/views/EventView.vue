@@ -108,13 +108,13 @@
           </div>
         </div>
 
-        <div v-if="signupUrl" class="signup-wrap">
+        <div class="signup-wrap">
           <a
             class="signup-btn"
-            :href="signupUrl"
+            :href="signupAction.href"
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="Записаться на мероприятие"
+            :aria-label="signupAction.ariaLabel"
           >
             ✨ Записаться
           </a>
@@ -309,6 +309,25 @@ export default {
       if (!raw) return ''
       if (/^https?:\/\//i.test(raw)) return raw
       return `https://${raw}`
+    })
+
+    const organizerProfileUrl = computed(() => {
+      const organizerId = String(event.value?.user_id || '').trim()
+      return organizerId ? `/organizer/${organizerId}` : '/'
+    })
+
+    const signupAction = computed(() => {
+      if (signupUrl.value) {
+        return {
+          href: signupUrl.value,
+          ariaLabel: 'Записаться на мероприятие'
+        }
+      }
+
+      return {
+        href: organizerProfileUrl.value,
+        ariaLabel: 'Перейти в профиль организатора'
+      }
     })
 
     const priceText = computed(() => {
@@ -688,6 +707,7 @@ export default {
       nextPhoto,
 
       signupUrl,
+      signupAction,
       priceText,
       formatDate,
 
