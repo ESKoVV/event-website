@@ -164,6 +164,9 @@ export default {
   },
   setup(props, { emit }) {
     const showBizInfo = ref(false)
+    const syncingFromProfile = ref(false)
+    const lastAutosavedSnapshot = ref('')
+    let autosaveTimer = null
 
     const form = reactive({
       username: '',
@@ -180,6 +183,7 @@ export default {
     watch(
       () => props.profile,
       (p) => {
+        syncingFromProfile.value = true
         form.username = p?.username || ''
         form.first_name = p?.first_name || ''
         form.last_name = p?.last_name || ''
@@ -189,8 +193,23 @@ export default {
         form.gender = p?.gender || ''
         form.description = p?.description || ''
         form.interests = Array.isArray(p?.interests) ? [...p.interests] : []
+        lastAutosavedSnapshot.value = JSON.stringify(form)
+        syncingFromProfile.value = false
       },
       { immediate: true }
+    )
+
+    watch(
+      () => JSON.stringify(form),
+      (snapshot) => {
+        if (syncingFromProfile.value) return
+        if (snapshot === lastAutosavedSnapshot.value) return
+        if (autosaveTimer) clearTimeout(autosaveTimer)
+        autosaveTimer = setTimeout(() => {
+          lastAutosavedSnapshot.value = snapshot
+          emit('save', { ...form })
+        }, 450)
+      }
     )
 
     const descriptionLeft = computed(() => Math.max(0, 200 - String(form.description || '').length))
@@ -256,6 +275,7 @@ export default {
 
     onBeforeUnmount(() => {
       clearLocalAvatarPreview()
+      if (autosaveTimer) clearTimeout(autosaveTimer)
     })
 
     const avatarLetter = computed(() => {
