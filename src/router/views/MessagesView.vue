@@ -89,7 +89,7 @@
               <div class="chat-peer-name">{{ peer?.title || 'Пользователь' }}</div>
               <div class="chat-peer-sub">
                 {{ peerStatusText }}
-                <span v-if="isConversationThreadId(selectedOtherId) && conversationMembersCount > 0" class="chat-peer-members"> · {{ conversationMembersCount }} участников</span>
+                <span v-if="selectedIsConversationThread && conversationMembersCount > 0" class="chat-peer-members"> · {{ conversationMembersCount }} участников</span>
                 <span v-if="peerTyping" class="typing-pill" aria-label="Печатает">печатает…</span>
               </div>
             </div>
@@ -912,6 +912,7 @@ export default {
     }
 
     const selectedConversationId = computed(() => conversationIdFromThreadId(selectedOtherId.value))
+    const selectedIsConversationThread = computed(() => isConversationThreadId(selectedOtherId.value))
     const isConversationOwner = computed(() => conversationParticipants.value.some((x) => x.user_id === myId.value && x.role === 'owner'))
 
     const conversationInviteLink = computed(() => {
@@ -2876,6 +2877,7 @@ export default {
       conversationSettingsLoading,
       conversationParticipants,
       conversationMembersCount,
+      selectedIsConversationThread,
       conversationParticipantsSearch,
       conversationParticipantsFiltered,
       conversationTitleDraft,
