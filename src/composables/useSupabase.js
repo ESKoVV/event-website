@@ -609,7 +609,11 @@ export const useSupabase = () => {
     if (convError) return { data: null, error: convError }
     if (!conversation?.id) return { data: null, error: new Error('Conversation not created') }
 
-    const rows = allParticipants.map((userId) => ({ conversation_id: conversation.id, user_id: userId }))
+    const rows = allParticipants.map((userId) => ({
+      conversation_id: conversation.id,
+      user_id: userId,
+      role: userId === user.id ? 'owner' : 'member'
+    }))
     const { error: participantsError } = await supabase.from('conversation_participants').insert(rows)
     if (participantsError) return { data: null, error: participantsError }
 
@@ -650,9 +654,53 @@ export const useSupabase = () => {
     const uniqueIds = [...new Set((userIds || []).map((id) => String(id || '').trim()).filter(Boolean))]
     if (uniqueIds.length === 0) return { data: [], error: null }
 
-    const rows = uniqueIds.map((userId) => ({ conversation_id: cid, user_id: userId }))
+    const rows = uniqueIds.map((userId) => ({ conversation_id: cid, user_id: userId, role: 'member' }))
     const { data, error } = await supabase.from('conversation_participants').insert(rows).select('*')
     return { data: data ?? [], error }
+  }
+
+  const getConversationParticipants = async (conversationId) => {
+    const cid = String(conversationId || '').trim()
+    if (!cid) return { data: [], error: new Error('No conversationId') }
+
+    const { data, error } = await supabase
+      .from('conversation_participants')
+      .select('id,conversation_id,user_id,role,joined_at')
+      .eq('conversation_id', cid)
+      .order('joined_at', { ascending: true })
+
+    return { data: data ?? [], error }
+  }
+
+  const updateConversationParticipantRole = async ({ conversationId, userId, role }) => {
+    const cid = String(conversationId || '').trim()
+    const uid = String(userId || '').trim()
+    const nextRole = String(role || '').trim()
+    if (!cid || !uid || !nextRole) return { data: null, error: new Error('Missing params') }
+
+    const { data, error } = await supabase
+      .from('conversation_participants')
+      .update({ role: nextRole })
+      .eq('conversation_id', cid)
+      .eq('user_id', uid)
+      .select('id,conversation_id,user_id,role,joined_at')
+      .maybeSingle()
+
+    return { data: data ?? null, error }
+  }
+
+  const updateConversationDetails = async (conversationId, patch = {}) => {
+    const cid = String(conversationId || '').trim()
+    if (!cid) return { data: null, error: new Error('No conversationId') }
+
+    const { data, error } = await supabase
+      .from('conversations')
+      .update(compact(patch))
+      .eq('id', cid)
+      .select('*')
+      .maybeSingle()
+
+    return { data: data ?? null, error }
   }
 
   // ✅ NEW: messages inside conversation
@@ -835,6 +883,9 @@ export const useSupabase = () => {
     getMyConversations,
     createConversation,
     addParticipantsToConversation,
+    getConversationParticipants,
+    updateConversationParticipantRole,
+    updateConversationDetails,
     getConversationMessages,
     sendMessageToConversation,
 
