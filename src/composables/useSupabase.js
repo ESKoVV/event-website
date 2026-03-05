@@ -42,6 +42,24 @@ const convoKey = (a, b) => {
   return [A, B].sort().join(':')
 }
 
+const authProfileFromMetadata = (authUser) => {
+  const meta = authUser?.user_metadata || {}
+  const fullName = String(meta.full_name || meta.name || '').trim()
+  const givenName = String(meta.given_name || '').trim()
+  const familyName = String(meta.family_name || '').trim()
+
+  const firstName = givenName || (fullName ? fullName.split(' ')[0] : '')
+  const lastName = familyName || (fullName ? fullName.split(' ').slice(1).join(' ') : '')
+  const avatarUrl = normalizeStoragePublicUrl(String(meta.avatar_url || meta.picture || '').trim())
+
+  return {
+    email: String(authUser?.email || '').trim(),
+    first_name: firstName,
+    last_name: lastName,
+    image_path: avatarUrl
+  }
+}
+
 export const useSupabase = () => {
   // =======================
   // Events
@@ -203,19 +221,36 @@ export const useSupabase = () => {
     if (e1 && e1.code !== 'PGRST116') {
       // ignore
     }
-    if (existing) return { data: existing, error: null }
+    const authProfile = authProfileFromMetadata(authUser)
 
-    const email = authUser.email || ''
-    const name = (authUser.user_metadata?.full_name || authUser.user_metadata?.name || '').trim()
+    if (existing) {
+      const patch = {}
+      if (authProfile.email && authProfile.email !== String(existing.email || '').trim()) patch.email = authProfile.email
+      if (authProfile.first_name && authProfile.first_name !== String(existing.first_name || '').trim()) patch.first_name = authProfile.first_name
+      if (authProfile.last_name && authProfile.last_name !== String(existing.last_name || '').trim()) patch.last_name = authProfile.last_name
+      if (authProfile.image_path && authProfile.image_path !== String(existing.image_path || '').trim()) patch.image_path = authProfile.image_path
+
+      if (Object.keys(patch).length === 0) return { data: existing, error: null }
+
+      const { data, error } = await supabase
+        .from('users')
+        .update(patch)
+        .eq('id', authUser.id)
+        .select('*')
+        .maybeSingle()
+
+      return { data: data ?? existing, error }
+    }
 
     const { data, error } = await supabase
       .from('users')
       .insert([
         {
           id: authUser.id,
-          email,
-          first_name: name ? name.split(' ')[0] : '',
-          last_name: name ? name.split(' ').slice(1).join(' ') : '',
+          email: authProfile.email,
+          first_name: authProfile.first_name,
+          last_name: authProfile.last_name,
+          image_path: authProfile.image_path || null,
           It_business: false,
           interests: []
         }
@@ -290,6 +325,37 @@ export const useSupabase = () => {
     if (upErr) return { publicUrl: '', error: upErr }
 
     const { data } = supabase.storage.from(uploadedBucket).getPublicUrl(uploadedPath)
+    const basePublicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
+    const publicUrl = basePublicUrl ? `${basePublicUrl}${basePublicUrl.includes('?') ? '&' : '?'}v=${timestamp}` : ''
+    return { publicUrl, error: null, data: { publicUrl } }
+  }
+
+  const uploadConversationAvatar = async ({ file, conversationId }) => {
+    const { user } = await getUser()
+    if (!user?.id) return { publicUrl: '', error: new Error('Not authorized') }
+    if (!file) return { publicUrl: '', error: new Error('No file') }
+
+    const cid = String(conversationId || '').trim()
+    if (!cid) return { publicUrl: '', error: new Error('No conversationId') }
+
+    const fileName = typeof file.name === 'string' ? file.name : ''
+    const fromName = fileName.includes('.') ? fileName.split('.').pop() : ''
+    const fromType = String(file.type || '').toLowerCase().includes('jpeg') ? 'jpg' : ''
+    const ext = (fromName || fromType || 'png').toLowerCase()
+
+    const timestamp = Date.now()
+    const bucket = 'avatars'
+    const path = `ConversationImage/${cid}/${timestamp}.${ext}`
+
+    const { error } = await supabase.storage.from(bucket).upload(path, file, {
+      upsert: true,
+      cacheControl: '3600',
+      contentType: file.type || 'image/png'
+    })
+
+    if (error) return { publicUrl: '', error }
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
     const basePublicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
     const publicUrl = basePublicUrl ? `${basePublicUrl}${basePublicUrl.includes('?') ? '&' : '?'}v=${timestamp}` : ''
     return { publicUrl, error: null, data: { publicUrl } }
@@ -927,6 +993,7 @@ export const useSupabase = () => {
     getPublicUserById,
     updateMyPublicUser,
     uploadAvatar,
+    uploadConversationAvatar,
 
     // telegram
     linkTelegramViaEdgeFunction,
