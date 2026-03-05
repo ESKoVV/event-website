@@ -596,7 +596,6 @@ export default {
         const { error } = await updateMyPublicUser(payload)
         if (error) throw error
         await loadSessionAndProfile()
-        showProfileEdit.value = false
       } finally {
         saving.value = false
       }
