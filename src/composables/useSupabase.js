@@ -150,7 +150,8 @@ export const useSupabase = () => {
       is_online,
       is_free,
       selectCategory,
-      photo_file
+      signup_url,
+      photo_files
     } = payload || {}
 
     const { data: created, error: e1 } = await supabase
@@ -167,6 +168,7 @@ export const useSupabase = () => {
           is_free,
           user_id: user.id,
           selectCategory,
+          signup_url,
           is_published: false
         })
       ])
@@ -176,10 +178,17 @@ export const useSupabase = () => {
     if (e1) return { data: null, error: e1 }
     if (!created?.id) return { data: null, error: new Error('Event not created') }
 
-    if (photo_file) {
-      const dataUrl = await readFileAsDataUrl(photo_file)
-      const { error: e2 } = await supabase.from('event_photos').insert([{ event_id: created.id, photo_url: dataUrl }])
-      if (e2) return { data: created, error: e2 }
+    const files = Array.isArray(photo_files) ? photo_files : []
+    if (files.length) {
+      const rows = []
+      for (const file of files) {
+        const dataUrl = await readFileAsDataUrl(file)
+        rows.push({ event_id: created.id, photo_url: dataUrl })
+      }
+      if (rows.length) {
+        const { error: e2 } = await supabase.from('event_photos').insert(rows)
+        if (e2) return { data: created, error: e2 }
+      }
     }
 
     return { data: created, error: null }
