@@ -861,6 +861,32 @@ export default {
       try {
         const { data, error } = await createConversation({ title: newConversationTitle.value, participantIds: selectedConversationFriends.value })
         if (error) throw error
+        const conversationId = String(data?.id || '').trim()
+
+        if (conversationId) {
+          const title = String(data?.title || newConversationTitle.value || '').trim() || `Беседа #${conversationId}`
+          const threadId = `${CONVERSATION_THREAD_PREFIX}${conversationId}`
+          const nowIso = new Date().toISOString()
+
+          const idx = threads.value.findIndex((t) => t.otherUserId === threadId)
+          const conversationThread = {
+            otherUserId: threadId,
+            lastMessage: { body: '', created_at: data?.updated_at || data?.created_at || nowIso },
+            unread: false,
+            unreadCount: 0,
+            title,
+            avatar: '',
+            isConversation: true,
+            conversationId
+          }
+
+          if (idx === -1) threads.value.unshift(conversationThread)
+          else threads.value[idx] = { ...threads.value[idx], ...conversationThread }
+
+          threads.value = [...threads.value].sort((a, b) => new Date(b?.lastMessage?.created_at || 0) - new Date(a?.lastMessage?.created_at || 0))
+          await openThread(threadId)
+        }
+
         closeCreateConversationModal()
         await reload()
         if (data?.id) alert('Беседа создана')
