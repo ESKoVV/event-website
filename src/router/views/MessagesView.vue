@@ -174,27 +174,27 @@
 
                   <div v-if="parseBody(m.body).text" class="msg-text">{{ parseBody(m.body).text }}</div>
 
-                  <div v-if="parseBody(m.body).attachment" class="msg-attachment">
-                    <div class="msg-attachment-title">📎 {{ parseBody(m.body).attachment.name || 'Вложение' }}</div>
+                  <div v-if="messageAttachment(m)" class="msg-attachment">
+                    <div class="msg-attachment-title">📎 {{ messageAttachment(m).name || 'Вложение' }}</div>
 
                     <img
-                      v-if="parseBody(m.body).attachment.kind === 'media' && parseBody(m.body).attachment.type.startsWith('image/')"
-                      :src="parseBody(m.body).attachment.dataUrl"
+                      v-if="messageAttachment(m).kind === 'media' && messageAttachment(m).type.startsWith('image/')"
+                      :src="messageAttachment(m).url"
                       class="msg-attachment-image"
-                      :alt="parseBody(m.body).attachment.name || 'Фото'"
+                      :alt="messageAttachment(m).name || 'Фото'"
                     />
 
                     <video
-                      v-else-if="parseBody(m.body).attachment.kind === 'media' && parseBody(m.body).attachment.type.startsWith('video/')"
+                      v-else-if="messageAttachment(m).kind === 'media' && messageAttachment(m).type.startsWith('video/')"
                       class="msg-attachment-video"
                       controls
-                      :src="parseBody(m.body).attachment.dataUrl"
+                      :src="messageAttachment(m).url"
                     ></video>
 
                     <a
                       class="msg-attachment-link"
-                      :href="parseBody(m.body).attachment.dataUrl"
-                      :download="parseBody(m.body).attachment.name || 'file'"
+                      :href="messageAttachment(m).url"
+                      :download="messageAttachment(m).name || 'file'"
                       target="_blank"
                       rel="noopener noreferrer"
                     >Скачать файл</a>
@@ -576,18 +576,6 @@ const safeJsonParse = (s) => {
   try { return JSON.parse(s) } catch { return null }
 }
 
-const readFileAsDataUrl = (file) =>
-  new Promise((resolve, reject) => {
-    try {
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result || ''))
-      reader.onerror = () => reject(new Error('Не удалось прочитать файл'))
-      reader.readAsDataURL(file)
-    } catch (e) {
-      reject(e)
-    }
-  })
-
 const buildBodyWithMeta = ({ replyTo, forwardTo, attachment, text }) => {
   let body = String(text || '')
 
@@ -679,6 +667,29 @@ const parseBody = (body) => {
   }
 
   return { reply, forward, attachment, text: cursor }
+}
+
+const messageAttachment = (message) => {
+  const fileUrl = normalizeStoragePublicUrl(String(message?.file_url || ''))
+  if (fileUrl) {
+    const fileType = String(message?.file_type || 'application/octet-stream')
+    return {
+      kind: fileType.startsWith('image/') || fileType.startsWith('video/') ? 'media' : 'file',
+      name: String(message?.file_name || 'Вложение'),
+      type: fileType,
+      url: fileUrl
+    }
+  }
+
+  const legacyAttachment = parseBody(message?.body).attachment
+  if (!legacyAttachment?.dataUrl) return null
+
+  return {
+    kind: String(legacyAttachment.kind || 'file'),
+    name: String(legacyAttachment.name || 'Вложение'),
+    type: String(legacyAttachment.type || 'application/octet-stream'),
+    url: String(legacyAttachment.dataUrl || '')
+  }
 }
 
 export default {
@@ -1443,17 +1454,41 @@ export default {
       try { event.target.value = '' } catch {}
       if (!file) return
 
-      try {
-        const dataUrl = await readFileAsDataUrl(file)
-        pendingAttachment.value = {
-          kind: kind === 'media' ? 'media' : 'file',
-          name: String(file.name || 'Вложение'),
-          type: String(file.type || 'application/octet-stream'),
-          dataUrl
-        }
-      } catch (e) {
-        showFlash('Не удалось добавить файл', 'error')
+      pendingAttachment.value = {
+        kind: kind === 'media' ? 'media' : 'file',
+        name: String(file.name || 'Вложение'),
+        type: String(file.type || 'application/octet-stream'),
+        size: Number(file.size || 0),
+        file
       }
+    }
+
+    const uploadChatAttachment = async (attachment) => {
+      const file = attachment?.file
+      if (!file) return { fileUrl: '', error: new Error('No file') }
+
+      const uid = String(myId.value || '').trim()
+      if (!uid) return { fileUrl: '', error: new Error('Not authorized') }
+
+      const originalName = String(attachment?.name || file.name || 'file').trim() || 'file'
+      const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const path = `${uid}/${Date.now()}-${safeName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('chat-files')
+        .upload(path, file, {
+          upsert: false,
+          cacheControl: '3600',
+          contentType: attachment?.type || file.type || 'application/octet-stream'
+        })
+
+      if (uploadError) return { fileUrl: '', error: uploadError }
+
+      const { data } = supabase.storage.from('chat-files').getPublicUrl(path)
+      const fileUrl = normalizeStoragePublicUrl(String(data?.publicUrl || ''))
+      if (!fileUrl) return { fileUrl: '', error: new Error('Empty public url') }
+
+      return { fileUrl, error: null }
     }
 
     const openMessageMenuContext = (event, messageId) => {
@@ -2148,24 +2183,50 @@ export default {
       try {
         await stopTyping()
 
+        let uploadedFileUrl = ''
+        if (pendingAttachment.value?.file) {
+          const { fileUrl, error: uploadError } = await uploadChatAttachment(pendingAttachment.value)
+          if (uploadError) throw uploadError
+          uploadedFileUrl = fileUrl
+        }
+
         const finalBody = buildBodyWithMeta({
           replyTo: replyTo.value,
           forwardTo: forwardTo.value,
-          attachment: pendingAttachment.value,
+          attachment: pendingAttachment.value?.file ? null : pendingAttachment.value,
           text
         })
+
+        const messagePayload = uploadedFileUrl
+          ? {
+              message_type: pendingAttachment.value?.kind === 'media' ? 'image' : 'file',
+              file_url: uploadedFileUrl,
+              file_name: String(pendingAttachment.value?.name || 'Вложение'),
+              file_size: Number(pendingAttachment.value?.size || 0),
+              file_type: String(pendingAttachment.value?.type || 'application/octet-stream')
+            }
+          : {}
+
         let data = null
         let error = null
         if (conversationId) {
           const response = await supabase
             .from('messages')
-            .insert([{ sender_id: myId.value, receiver_id: null, conversation_id: conversationId, body: finalBody }])
+            .insert([
+              {
+                sender_id: myId.value,
+                receiver_id: null,
+                conversation_id: conversationId,
+                body: finalBody,
+                ...messagePayload
+              }
+            ])
             .select('*')
             .maybeSingle()
           data = response.data
           error = response.error
         } else {
-          const response = await sendMessage(otherId, finalBody)
+          const response = await sendMessage(otherId, finalBody, messagePayload)
           data = response.data
           error = response.error
         }
@@ -2774,6 +2835,7 @@ export default {
       showSenderName,
 
       parseBody,
+      messageAttachment,
       threadPreview,
 
       formatTime,
