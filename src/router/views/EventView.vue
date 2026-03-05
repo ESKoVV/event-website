@@ -622,6 +622,17 @@ export default {
 
         if (fromCache) {
           event.value = fromCache
+
+          // В кэше могли остаться устаревшие данные без signup_url.
+          // Для страницы мероприятия добираем актуальную запись по id,
+          // чтобы кнопка "Записаться" корректно отображалась.
+          if (!String(event.value?.signup_url || '').trim()) {
+            const { data: freshEvent, error: freshError } = await getEventById(id)
+            if (!freshError && freshEvent) {
+              event.value = { ...event.value, ...freshEvent }
+            }
+          }
+
           const ph = cachedPhotosByEventId.value && cachedPhotosByEventId.value[id]
           eventPhotos.value = Array.isArray(ph) ? ph.filter((x) => x?.photo_url) : []
         } else {
