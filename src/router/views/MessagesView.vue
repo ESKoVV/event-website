@@ -788,6 +788,7 @@ export default {
     const showRolePermissionsPanel = ref(false)
 
     const peer = ref(null)
+    const myAvatar = ref('')
     const senderProfiles = ref({})
     const messages = ref([])
     const reactionsByMessage = ref({})
@@ -1398,11 +1399,22 @@ export default {
     const cacheSenderProfile = (userId, data) => {
       const uid = String(userId || '').trim()
       if (!uid) return
+      const profileAvatar = normalizeStoragePublicUrl(
+        data?.image_path
+        || data?.avatar_url
+        || data?.avatar
+        || data?.user_metadata?.avatar_url
+        || data?.user_metadata?.picture
+        || data?.raw_user_meta_data?.avatar_url
+        || data?.raw_user_meta_data?.picture
+        || ''
+      )
       const next = {
         title: safeTitleFromUser(data),
-        avatar: normalizeStoragePublicUrl(data?.image_path || data?.avatar_url || '')
+        avatar: profileAvatar
       }
       senderProfiles.value = { ...senderProfiles.value, [uid]: next }
+      if (uid === myId.value && profileAvatar) myAvatar.value = profileAvatar
     }
 
     const ensureSenderProfiles = async (userIds = []) => {
@@ -1428,6 +1440,7 @@ export default {
       const uid = String(userId || '').trim()
       if (!uid) return ''
       if (senderProfiles.value[uid]?.avatar) return senderProfiles.value[uid].avatar
+      if (uid === myId.value) return String(myAvatar.value || '')
       if (!isConversationThreadId(selectedOtherId.value) && uid === String(peer.value?.id || '')) return String(peer.value?.avatar || '')
       return ''
     }
@@ -1805,6 +1818,8 @@ export default {
         authRequired.value = false
         myId.value = user.id
         cacheSenderProfile(user.id, user)
+        const { data: myPublicUser } = await getPublicUserById(user.id)
+        if (myPublicUser) cacheSenderProfile(user.id, myPublicUser)
 
         const { data, error } = await getInboxThreads(60)
         if (error) {

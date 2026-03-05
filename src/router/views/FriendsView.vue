@@ -26,7 +26,10 @@
             <div v-else class="list">
               <div v-for="r in incomingRequests" :key="r.other.id" class="row">
                 <div class="u">
-                  <div class="ava">{{ letter(r.other) }}</div>
+                  <div class="ava">
+                    <img v-if="avatar(r.other)" :src="avatar(r.other)" alt="avatar" @error="clearAvatar(r.other)" />
+                    <span v-else>{{ letter(r.other) }}</span>
+                  </div>
                   <div class="meta">
                     <div class="name">{{ displayName(r.other) }}</div>
                     <div class="sub">@{{ r.other.username || '—' }}</div>
@@ -48,7 +51,10 @@
             <div v-else class="list">
               <div v-for="u in friends" :key="u.id" class="row">
                 <div class="u">
-                  <div class="ava">{{ letter(u) }}</div>
+                  <div class="ava">
+                    <img v-if="avatar(u)" :src="avatar(u)" alt="avatar" @error="clearAvatar(u)" />
+                    <span v-else>{{ letter(u) }}</span>
+                  </div>
                   <div class="meta">
                     <div class="name">{{ displayName(u) }}</div>
                     <div class="sub">@{{ u.username || '—' }}</div>
@@ -89,7 +95,10 @@
             <div v-else class="list">
               <div v-for="fu in friendsOfList" :key="fu.id" class="row">
                 <div class="u">
-                  <div class="ava">{{ letter(fu) }}</div>
+                  <div class="ava">
+                    <img v-if="avatar(fu)" :src="avatar(fu)" alt="avatar" @error="clearAvatar(fu)" />
+                    <span v-else>{{ letter(fu) }}</span>
+                  </div>
                   <div class="meta">
                     <div class="name">{{ displayName(fu) }}</div>
                     <div class="sub">@{{ fu.username || '—' }}</div>
@@ -118,7 +127,10 @@
             <div v-else class="list">
               <div v-for="u in suggestedFriends" :key="u.id" class="row">
                 <div class="u">
-                  <div class="ava">{{ letter(u) }}</div>
+                  <div class="ava">
+                    <img v-if="avatar(u)" :src="avatar(u)" alt="avatar" @error="clearAvatar(u)" />
+                    <span v-else>{{ letter(u) }}</span>
+                  </div>
                   <div class="meta">
                     <div class="name">{{ displayName(u) }}</div>
                     <div class="sub">@{{ u.username || '—' }} · {{ u.mutualCount }} общих друзей</div>
@@ -215,6 +227,20 @@ export default {
     }
 
     const letter = (u) => (displayName(u)[0] || 'П').toUpperCase()
+
+    const normalizeStoragePublicUrl = (url) => {
+      if (!url || typeof url !== 'string') return ''
+      const u = url.trim()
+      if (!u) return ''
+      if (u.includes('/storage/v1/object/public/')) return u
+      if (u.includes('/storage/v1/object/')) return u.replace('/storage/v1/object/', '/storage/v1/object/public/')
+      return u
+    }
+
+    const avatar = (u) => normalizeStoragePublicUrl(u?.image_path || u?.avatar_url || u?.avatar || '')
+    const clearAvatar = (u) => {
+      if (u && typeof u === 'object') u.image_path = ''
+    }
 
     const rebuildFromFriendships = async () => {
       const list = friendships.value || []
@@ -490,6 +516,8 @@ return {
 
       displayName,
       letter,
+      avatar,
+      clearAvatar,
 
       isMe,
 
@@ -556,6 +584,13 @@ return {
   background: #f2f2f2;
   font-weight: 900;
   flex: 0 0 auto;
+  overflow: hidden;
+}
+.ava img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
 }
 .meta{ min-width: 0; }
 .name{ font-weight: 900; font-size: 13px; white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
