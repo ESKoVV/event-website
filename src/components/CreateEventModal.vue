@@ -36,7 +36,7 @@
             </div>
 
             <div class="field">
-              <div class="label">Ссылка для записи *</div>
+              <div class="label">Ссылка для записи</div>
               <input class="input" v-model="form.signup_url" placeholder="https://example.com/signup" />
             </div>
 
@@ -290,7 +290,6 @@ export default {
       if (!title) return (this.error = 'Укажи название.')
       if (!dt) return (this.error = 'Укажи дату и время.')
       if (!description) return (this.error = 'Укажи описание.')
-      if (!signupUrl) return (this.error = 'Укажи ссылку для записи.')
 
       const priceNum = Number(this.form.price)
       const price = Number.isFinite(priceNum) ? priceNum : 0
