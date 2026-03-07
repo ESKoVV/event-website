@@ -473,15 +473,22 @@ export const useSupabase = () => {
       .eq('status', 'accepted')
       .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`)
 
-    const out = []
+    const outgoing = new Set()
+    const incoming = new Set()
     for (const row of (data || [])) {
       const requester = String(row?.requester_id || '')
       const addressee = String(row?.addressee_id || '')
-      const other = requester === uid ? addressee : requester
-      if (other) out.push(other)
+      if (!requester || !addressee) continue
+      if (requester === uid) outgoing.add(addressee)
+      if (addressee === uid) incoming.add(requester)
     }
 
-    return { data: [...new Set(out)], error }
+    const out = []
+    for (const id of outgoing) {
+      if (incoming.has(id)) out.push(id)
+    }
+
+    return { data: out, error }
   }
 
   const sendFriendRequest = async (otherId) => {
@@ -492,7 +499,7 @@ export const useSupabase = () => {
 
     const { data, error } = await supabase
       .from('friendships')
-      .upsert([{ requester_id: user.id, addressee_id: otherId, status: 'pending' }], { onConflict: 'requester_id,addressee_id' })
+      .upsert([{ requester_id: user.id, addressee_id: otherId, status: 'accepted' }], { onConflict: 'requester_id,addressee_id' })
       .select('*')
       .maybeSingle()
 
@@ -504,14 +511,7 @@ export const useSupabase = () => {
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
     if (!otherId) return { data: null, error: new Error('No otherId') }
 
-    const { data, error } = await supabase
-      .from('friendships')
-      .update({ status: 'accepted' })
-      .eq('requester_id', otherId)
-      .eq('addressee_id', user.id)
-      .eq('status', 'pending')
-      .select('*')
-      .maybeSingle()
+    const { data, error } = await sendFriendRequest(otherId)
 
     return { data: data ?? null, error }
   }
@@ -524,9 +524,8 @@ export const useSupabase = () => {
     const q = supabase
       .from('friendships')
       .delete()
-      .or(
-        `and(requester_id.eq.${user.id},addressee_id.eq.${otherId}),and(requester_id.eq.${otherId},addressee_id.eq.${user.id})`
-      )
+      .eq('requester_id', user.id)
+      .eq('addressee_id', otherId)
 
     const { data, error } = await q.select('*')
     return { data: data ?? [], error }

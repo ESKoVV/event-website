@@ -2,7 +2,7 @@
   <div class="page">
     <div class="container">
       <div class="head">
-        <div class="h-title">Друзья</div>
+        <div class="h-title">Подписки</div>
 
         <div class="h-actions">
           <button class="btn" @click="reloadAll" :disabled="loading">
@@ -20,59 +20,94 @@
         <!-- LEFT: заявки + друзья -->
         <aside class="left">
           <div class="block">
-            <div class="b-title">Заявки в друзья</div>
-            <div v-if="incomingRequests.length === 0" class="muted">Нет заявок</div>
+            <div class="tabs-row">
+              <button type="button" class="tab-btn" :class="{ on: activeTab === 'friends' }" @click="activeTab = 'friends'">Друзья</button>
+              <button type="button" class="tab-btn" :class="{ on: activeTab === 'followers' }" @click="activeTab = 'followers'">Подписчики</button>
+              <button type="button" class="tab-btn" :class="{ on: activeTab === 'subscriptions' }" @click="activeTab = 'subscriptions'">Подписки</button>
+            </div>
 
-            <div v-else class="list">
-              <div v-for="r in incomingRequests" :key="r.other.id" class="row">
-                <div class="u">
-                  <div class="ava">
-                    <img v-if="avatar(r.other)" :src="avatar(r.other)" alt="avatar" @error="clearAvatar(r.other)" />
-                    <span v-else>{{ letter(r.other) }}</span>
-                  </div>
-                  <div class="meta">
-                    <div class="name">{{ displayName(r.other) }}</div>
-                    <div class="sub">@{{ r.other.username || '—' }}</div>
-                  </div>
-                </div>
+            <div v-if="activeTab === 'friends'">
+              <div class="b-title">Друзья</div>
+              <div v-if="friends.length === 0" class="muted">Пока нет друзей</div>
 
-                <div class="actions">
-                  <button class="btn small" @click="accept(r.other.id)">Принять</button>
-                  <button class="btn small ghost" @click="removeFriendOrReq(r.other.id)">Отклонить</button>
+              <div v-else class="list">
+                <div v-for="u in friends" :key="u.id" class="row">
+                  <div class="u">
+                    <div class="ava">
+                      <img v-if="avatar(u)" :src="avatar(u)" alt="avatar" @error="clearAvatar(u)" />
+                      <span v-else>{{ letter(u) }}</span>
+                    </div>
+                    <div class="meta">
+                      <div class="name">{{ displayName(u) }}</div>
+                      <div class="sub">@{{ u.username || '—' }}</div>
+                    </div>
+                  </div>
+
+                  <div class="actions">
+                    <button class="btn small ghost" @click="openUserProfile(u.id)">Профиль</button>
+                    <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
+
+                    <button class="btn small more-btn" type="button" @click.stop="toggleMenu(u.id)" aria-label="Меню">⋯</button>
+
+                    <div v-if="openMenuId === u.id" class="menu" @click.stop>
+                      <button class="menu-item" type="button" @click="openFriendsOf(u.id)">Посмотреть друзей</button>
+
+                      <button class="menu-item danger" type="button" @click="openDeleteModal(u)">
+                        Удалить из друзей
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class="block">
-            <div class="b-title">Друзья</div>
-            <div v-if="friends.length === 0" class="muted">Пока нет друзей</div>
+            <div v-else-if="activeTab === 'followers'">
+              <div class="b-title">Подписчики</div>
+              <div v-if="followers.length === 0" class="muted">Пока нет подписчиков</div>
 
-            <div v-else class="list">
-              <div v-for="u in friends" :key="u.id" class="row">
-                <div class="u">
-                  <div class="ava">
-                    <img v-if="avatar(u)" :src="avatar(u)" alt="avatar" @error="clearAvatar(u)" />
-                    <span v-else>{{ letter(u) }}</span>
+              <div v-else class="list">
+                <div v-for="u in followers" :key="u.id" class="row">
+                  <div class="u">
+                    <div class="ava">
+                      <img v-if="avatar(u)" :src="avatar(u)" alt="avatar" @error="clearAvatar(u)" />
+                      <span v-else>{{ letter(u) }}</span>
+                    </div>
+                    <div class="meta">
+                      <div class="name">{{ displayName(u) }}</div>
+                      <div class="sub">@{{ u.username || '—' }}</div>
+                    </div>
                   </div>
-                  <div class="meta">
-                    <div class="name">{{ displayName(u) }}</div>
-                    <div class="sub">@{{ u.username || '—' }}</div>
+
+                  <div class="actions">
+                    <button class="btn small ghost" @click="openUserProfile(u.id)">Профиль</button>
+                    <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
+                    <button class="btn small" @click="accept(u.id)">Добавить в друзья</button>
                   </div>
                 </div>
+              </div>
+            </div>
 
-                <div class="actions">
-                  <button class="btn small ghost" @click="openUserProfile(u.id)">Профиль</button>
-                  <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
+            <div v-else>
+              <div class="b-title">Подписки</div>
+              <div v-if="subscriptions.length === 0" class="muted">Пока нет подписок</div>
 
-                  <button class="btn small more-btn" type="button" @click.stop="toggleMenu(u.id)" aria-label="Меню">⋯</button>
+              <div v-else class="list">
+                <div v-for="u in subscriptions" :key="u.id" class="row">
+                  <div class="u">
+                    <div class="ava">
+                      <img v-if="avatar(u)" :src="avatar(u)" alt="avatar" @error="clearAvatar(u)" />
+                      <span v-else>{{ letter(u) }}</span>
+                    </div>
+                    <div class="meta">
+                      <div class="name">{{ displayName(u) }}</div>
+                      <div class="sub">@{{ u.username || '—' }}</div>
+                    </div>
+                  </div>
 
-                  <div v-if="openMenuId === u.id" class="menu" @click.stop>
-                    <button class="menu-item" type="button" @click="openFriendsOf(u.id)">Посмотреть друзей</button>
-
-                    <button class="menu-item danger" type="button" @click="openDeleteModal(u)">
-                      Удалить из друзей
-                    </button>
+                  <div class="actions">
+                    <button class="btn small ghost" @click="openUserProfile(u.id)">Профиль</button>
+                    <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
+                    <button class="btn small ghost" @click="removeFriendOrReq(u.id)">Отписаться</button>
                   </div>
                 </div>
               </div>
@@ -116,7 +151,7 @@
           </div>
 
           <div class="block">
-            <div class="b-title">Предложка знакомых друзей</div>
+            <div class="b-title">Рекомендации друзей</div>
 
             <div v-if="suggestionsLoading" class="muted">Подбираем знакомых друзей…</div>
 
@@ -140,7 +175,7 @@
                 <div class="actions">
                   <button class="btn small ghost" @click="openUserProfile(u.id)">Профиль</button>
                   <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
-                  <button class="btn small" @click="addFriend(u.id)">В друзья</button>
+                  <button class="btn small" @click="addFriend(u.id)">Подписаться</button>
                 </div>
               </div>
             </div>
@@ -159,7 +194,7 @@
         <div class="confirm-modal" role="dialog" aria-modal="true" aria-label="Подтверждение удаления">
           <div class="confirm-title">Удалить из друзей?</div>
           <div class="confirm-text">
-            Пользователь {{ displayName(deleteCandidate) }} будет удалён из списка друзей.
+            Пользователь {{ displayName(deleteCandidate) }} будет удалён из друзей и останется у вас в подписчиках, если подписан на вас.
           </div>
           <div class="confirm-actions">
             <button class="btn small ghost" type="button" @click="closeDeleteModal">Отмена</button>
@@ -187,6 +222,7 @@ export default {
       getMyPublicUser,
       getPublicUserById,
       getFriendships,
+      getAcceptedFriendsOf,
       sendFriendRequest,
       acceptFriendRequest,
       removeFriendOrRequest
@@ -199,8 +235,10 @@ export default {
 
     const friendships = ref([])
 
+    const activeTab = ref('friends')
     const friends = ref([])
-    const incomingRequests = ref([])
+    const followers = ref([])
+    const subscriptions = ref([])
     const suggestionsLoading = ref(false)
     const suggestedFriends = ref([])
 
@@ -245,27 +283,57 @@ export default {
     const rebuildFromFriendships = async () => {
       const list = friendships.value || []
 
-      const acceptedOtherIds = []
-      const incomingOtherIds = []
-
+      const outgoingAccepted = new Set()
+      const incomingAccepted = new Set()
+      const pendingOutgoing = new Set()
+      const pendingIncoming = new Set()
       const idx = new Map()
 
       for (const f of list) {
-        const isRequesterMe = f.requester_id === myId.value
-        const otherId = isRequesterMe ? f.addressee_id : f.requester_id
+        const requester = String(f?.requester_id || '')
+        const addressee = String(f?.addressee_id || '')
+        if (!requester || !addressee) continue
 
         if (f.status === 'accepted') {
-          idx.set(otherId, 'friend')
-          acceptedOtherIds.push(otherId)
+          if (requester === myId.value) outgoingAccepted.add(addressee)
+          if (addressee === myId.value) incomingAccepted.add(requester)
+          continue
         }
 
         if (f.status === 'pending') {
-          if (isRequesterMe) idx.set(otherId, 'outgoing')
-          else {
-            idx.set(otherId, 'incoming')
-            incomingOtherIds.push(otherId)
-          }
+          if (requester === myId.value) pendingOutgoing.add(addressee)
+          if (addressee === myId.value) pendingIncoming.add(requester)
         }
+      }
+
+      const friendIds = []
+      const followerIds = []
+      const subscriptionIds = []
+
+      const allAcceptedIds = new Set([...outgoingAccepted, ...incomingAccepted])
+      for (const otherId of allAcceptedIds) {
+        const isFriend = outgoingAccepted.has(otherId) && incomingAccepted.has(otherId)
+        if (isFriend) {
+          idx.set(otherId, 'friend')
+          friendIds.push(otherId)
+        } else if (incomingAccepted.has(otherId)) {
+          idx.set(otherId, 'incoming')
+          followerIds.push(otherId)
+        } else {
+          idx.set(otherId, 'outgoing')
+          subscriptionIds.push(otherId)
+        }
+      }
+
+      for (const otherId of pendingIncoming) {
+        if (idx.has(otherId)) continue
+        idx.set(otherId, 'incoming')
+        followerIds.push(otherId)
+      }
+      for (const otherId of pendingOutgoing) {
+        if (idx.has(otherId)) continue
+        idx.set(otherId, 'outgoing')
+        subscriptionIds.push(otherId)
       }
 
       relationIndex.value = idx
@@ -279,9 +347,9 @@ export default {
         return out
       }
 
-      friends.value = await loadUsersByIds(acceptedOtherIds)
-      const incomingUsers = await loadUsersByIds(incomingOtherIds)
-      incomingRequests.value = incomingUsers.map((u) => ({ other: u }))
+      friends.value = await loadUsersByIds(friendIds)
+      followers.value = await loadUsersByIds(followerIds)
+      subscriptions.value = await loadUsersByIds(subscriptionIds)
     }
 
     const isMe = (userId) => String(userId || '') === String(myId.value || '')
@@ -295,8 +363,7 @@ export default {
     const loadSuggestedFriends = async () => {
       suggestionsLoading.value = true
       try {
-        const acceptedRows = (friendships.value || []).filter((x) => x.status === 'accepted')
-        const myFriendIds = acceptedRows.map((x) => (x.requester_id === myId.value ? x.addressee_id : x.requester_id))
+        const myFriendIds = friends.value.map((u) => u.id).filter(Boolean)
 
         if (myFriendIds.length === 0) {
           suggestedFriends.value = []
@@ -311,12 +378,13 @@ export default {
         if (e1) throw e1
 
         const relationMap = relationIndex.value
+        const friendSet = new Set(myFriendIds)
         const byCandidate = new Map()
         for (const row of data || []) {
           const a = row.requester_id
           const b = row.addressee_id
-          const aIsMineFriend = myFriendIds.includes(a)
-          const bIsMineFriend = myFriendIds.includes(b)
+          const aIsMineFriend = friendSet.has(a)
+          const bIsMineFriend = friendSet.has(b)
           if (aIsMineFriend === bIsMineFriend) continue
 
           const candidateId = aIsMineFriend ? b : a
@@ -418,23 +486,11 @@ export default {
 
       friendsOfLoading.value = true
       try {
-        const { data, error: e1 } = await supabase
-          .from('friendships')
-          .select('*')
-          .eq('status', 'accepted')
-          .or(`requester_id.eq.${otherId},addressee_id.eq.${otherId}`)
-          .order('created_at', { ascending: false })
+        const { data: ids, error: e1 } = await getAcceptedFriendsOf(otherId)
         if (e1) throw e1
 
-        const rows = data || []
-        const ids = new Set()
-        for (const f of rows) {
-          const oid = f.requester_id === otherId ? f.addressee_id : f.requester_id
-          if (oid) ids.add(oid)
-        }
-
         const out = []
-        for (const id of ids) {
+        for (const id of (ids || [])) {
           const { data: u } = await getPublicUserById(id)
           if (u?.id) out.push(u)
         }
@@ -497,8 +553,10 @@ return {
       needAuth,
       myId,
 
+      activeTab,
       friends,
-      incomingRequests,
+      followers,
+      subscriptions,
       suggestionsLoading,
       suggestedFriends,
 
@@ -563,6 +621,23 @@ return {
   box-shadow: 0 8px 24px rgba(20,24,27,.04);
 }
 .b-title{ font-weight: 900; margin-bottom: 10px; }
+
+.tabs-row{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.tab-btn{
+  border:1px solid #efefef;
+  background:#fafafa;
+  color:#14181b;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-weight: 900;
+  font-size: 12px;
+  cursor:pointer;
+}
+.tab-btn.on{
+  background:#8a75e3;
+  color:#fff;
+  border-color:#8a75e3;
+}
 .muted{ font-size: 12px; opacity: .7; font-weight: 700; }
 
 .list{ display:flex; flex-direction: column; gap: 0; }

@@ -74,10 +74,10 @@
           <span class="ni-txt">Лента</span>
         </button>
 
-        <!-- 2: Друзья (поиск друзей) -->
+        <!-- 2: Подписки -->
         <button class="nav-item" :class="{ active: isActiveRoute('friends') }" type="button" @click="go('friends')">
           <span class="ni-ico">👥</span>
-          <span class="ni-txt">Друзья</span>
+          <span class="ni-txt">Подписки</span>
         </button>
 
         <!-- 3: Сообщения (центральная на мобилке) -->
@@ -132,7 +132,7 @@
 
           <div class="menu-body">
             <button class="menu-item" @click="go('home'); closeMenu()">📰 Лента</button>
-            <button class="menu-item" @click="go('friends'); closeMenu()">👥 Друзья</button>
+            <button class="menu-item" @click="go('friends'); closeMenu()">👥 Подписки</button>
 
             <button class="menu-item menu-item-with-badge" @click="go('messages'); closeMenu()">
               <span class="mib-left">💬 Сообщения</span>
@@ -359,36 +359,62 @@ export default {
         .eq('status', 'accepted')
         .or(`requester_id.eq.${id},addressee_id.eq.${id}`)
 
-      const set = new Set()
+      const outgoing = new Set()
+      const incoming = new Set()
       for (const row of (data || [])) {
         const requester = String(row?.requester_id || '')
         const addressee = String(row?.addressee_id || '')
-        if (requester === id && addressee) set.add(addressee)
-        if (addressee === id && requester) set.add(requester)
+        if (requester === id && addressee) outgoing.add(addressee)
+        if (addressee === id && requester) incoming.add(requester)
       }
-      return set
+
+      const mutual = new Set()
+      for (const otherId of outgoing) {
+        if (incoming.has(otherId)) mutual.add(otherId)
+      }
+      return mutual
     }
 
     const loadMyFriendsSet = async () => {
       const { data } = await getFriendships()
       const me = String(profile.value?.id || session.value?.user?.id || '')
-      const set = new Set()
+      const mutualSet = new Set()
       const idx = new Map()
+      const outgoingAccepted = new Set()
+      const incomingAccepted = new Set()
+
       for (const row of (data || [])) {
         const requester = String(row?.requester_id || '')
         const addressee = String(row?.addressee_id || '')
-        const isRequesterMe = requester === me
-        const otherId = isRequesterMe ? addressee : requester
-        if (!otherId) continue
+        if (!requester || !addressee) continue
 
         if (row?.status === 'accepted') {
-          set.add(otherId)
-          idx.set(otherId, 'friend')
-        } else if (row?.status === 'pending') {
-          idx.set(otherId, isRequesterMe ? 'outgoing' : 'incoming')
+          if (requester === me) outgoingAccepted.add(addressee)
+          if (addressee === me) incomingAccepted.add(requester)
+          continue
+        }
+
+        if (row?.status === 'pending') {
+          const isRequesterMe = requester === me
+          const otherId = isRequesterMe ? addressee : requester
+          if (otherId) idx.set(otherId, isRequesterMe ? 'outgoing' : 'incoming')
         }
       }
-      myFriendsSet.value = set
+
+      const allIds = new Set([...outgoingAccepted, ...incomingAccepted])
+      for (const otherId of allIds) {
+        const isMutual = outgoingAccepted.has(otherId) && incomingAccepted.has(otherId)
+        if (isMutual) {
+          mutualSet.add(otherId)
+          idx.set(otherId, 'friend')
+        } else if (outgoingAccepted.has(otherId)) {
+          idx.set(otherId, 'outgoing')
+        } else {
+          idx.set(otherId, 'incoming')
+        }
+      }
+
+      myFriendsSet.value = mutualSet
       friendshipIndex.value = idx
       mutualFriendsCache.clear()
     }
@@ -419,16 +445,16 @@ export default {
         const actionLabel = state === 'friend'
           ? 'В друзьях'
           : state === 'incoming'
-            ? 'Принять заявку'
+            ? 'Подписаться в ответ'
             : state === 'outgoing'
-              ? 'Заявка отправлена'
-              : 'Добавить в друзья'
+              ? 'Вы подписаны'
+              : 'Подписаться'
         return {
           ...u,
           title: userTitle(u),
           avatar: pickUserAvatar(u),
           friendActionLabel: actionLabel,
-          friendActionDisabled: state === 'friend',
+          friendActionDisabled: state === 'friend' || state === 'outgoing',
           mutualFriendsCount: null
         }
       })
@@ -526,11 +552,10 @@ export default {
         return
       }
       const state = friendshipState(otherId)
+      if (state === 'friend' || state === 'outgoing') return
       const action = state === 'incoming'
         ? acceptFriendRequest(otherId)
-        : state === 'outgoing'
-          ? removeFriendOrRequest(otherId)
-          : sendFriendRequest(otherId)
+        : sendFriendRequest(otherId)
 
       const { error } = await action
       if (error) return
