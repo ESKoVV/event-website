@@ -97,10 +97,13 @@ export const useSupabase = () => {
     const q = String(query || '').trim()
     if (!q) return getEvents()
 
+    const escaped = q.replace(/[%_,]/g, (m) => `\\${m}`)
+    const like = `%${escaped}%`
+
     const { data, error } = await supabase
       .from('events')
       .select('*')
-      .ilike('title', `%${q}%`)
+      .or(`title.ilike.${like},description.ilike.${like},address.ilike.${like},organizer.ilike.${like}`)
       .order('date_time_event', { ascending: true })
 
     return { data, error }
