@@ -106,6 +106,14 @@
           </select>
         </label>
 
+        <label class="pm-field">
+          <span>Город</span>
+          <select v-model="form.city_id">
+            <option :value="null">Не выбран</option>
+            <option v-for="city in cityOptions" :key="city.id" :value="city.id">{{ city.label }}</option>
+          </select>
+        </label>
+
         <label class="pm-field pm-field-full">
           <span>О себе (до 200 символов)</span>
           <textarea
@@ -159,7 +167,8 @@ export default {
     profile: { type: Object, default: null },
     telegramLink: { type: Object, default: null },
     saving: { type: Boolean, default: false },
-    categories: { type: Array, default: () => [] }
+    categories: { type: Array, default: () => [] },
+    cities: { type: Array, default: () => [] }
   },
   setup(props, { emit }) {
     const showBizInfo = ref(false)
@@ -175,6 +184,7 @@ export default {
       phone: '',
       email: '',
       gender: '',
+      city_id: null,
       description: '',
       interests: []
     })
@@ -190,6 +200,7 @@ export default {
         form.phone = p?.phone || ''
         form.email = p?.email || ''
         form.gender = p?.gender || ''
+        form.city_id = p?.city_id ?? null
         form.description = p?.description || ''
         form.interests = Array.isArray(p?.interests) ? [...p.interests] : []
         lastAutosavedSnapshot.value = JSON.stringify(form)
@@ -214,6 +225,18 @@ export default {
     const descriptionLeft = computed(() => Math.max(0, 200 - String(form.description || '').length))
 
     const isBusiness = computed(() => props.profile?.It_business === true)
+
+    const cityOptions = computed(() => {
+      const rows = Array.isArray(props.cities) ? props.cities : []
+      return rows
+        .map((row) => {
+          const id = Number(row?.id)
+          if (!Number.isFinite(id)) return null
+          const label = String(row?.name || row?.city || row?.title || '').trim() || `Город #${id}`
+          return { id, label }
+        })
+        .filter(Boolean)
+    })
 
     const norm = (s) => String(s || '').trim()
     const isInterestSelected = (name) => form.interests.includes(norm(name))
@@ -304,7 +327,8 @@ export default {
       onProfileImgError,
       avatarLetter,
       avatarGradient,
-      descriptionLeft
+      descriptionLeft,
+      cityOptions
     }
   }
 }
