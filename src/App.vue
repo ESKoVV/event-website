@@ -74,10 +74,10 @@
           <span class="ni-txt">Лента</span>
         </button>
 
-        <!-- 2: Друзья (поиск друзей) -->
+        <!-- 2: Подписки -->
         <button class="nav-item" :class="{ active: isActiveRoute('friends') }" type="button" @click="go('friends')">
           <span class="ni-ico">👥</span>
-          <span class="ni-txt">Друзья</span>
+          <span class="ni-txt">Подписки</span>
         </button>
 
         <!-- 3: Сообщения (центральная на мобилке) -->
@@ -132,7 +132,7 @@
 
           <div class="menu-body">
             <button class="menu-item" @click="go('home'); closeMenu()">📰 Лента</button>
-            <button class="menu-item" @click="go('friends'); closeMenu()">👥 Друзья</button>
+            <button class="menu-item" @click="go('friends'); closeMenu()">👥 Подписки</button>
 
             <button class="menu-item menu-item-with-badge" @click="go('messages'); closeMenu()">
               <span class="mib-left">💬 Сообщения</span>
@@ -207,16 +207,13 @@ import AuthModal from './components/AuthModal.vue'
 import ProfileModal from './components/ProfileModal.vue'
 import CreateEventModal from './components/CreateEventModal.vue'
 import AvatarCropModal from './components/AvatarCropModal.vue'
-import { useSupabase, supabase } from './composables/useSupabase.js'
+import { useSupabase, supabase, toAvatarPublicUrl } from './composables/useSupabase.js'
 import { useUnreadMessages } from './composables/unreadMessages.js'
 
-const normalizeStoragePublicUrl = (url) => {
-  if (!url || typeof url !== 'string') return ''
-  const u = url.trim()
-  if (!u) return ''
-  if (u.includes('/storage/v1/object/public/')) return u
-  if (u.includes('/storage/v1/object/')) return u.replace('/storage/v1/object/', '/storage/v1/object/public/')
-  return u
+const pickUserAvatar = (user) => {
+  const custom = toAvatarPublicUrl(user?.image_path)
+  if (custom) return custom
+  return toAvatarPublicUrl(user?.avatar_url)
 }
 
 const userTitle = (u) => {
@@ -291,7 +288,7 @@ export default {
 
     const menuOpen = ref(false)
 
-    const headerAvatarUrl = computed(() => normalizeStoragePublicUrl(profile.value?.image_path || ''))
+    const headerAvatarUrl = computed(() => pickUserAvatar(profile.value))
     const showHeaderAvatar = ref(false)
 
     const badgeText = computed(() => {
@@ -362,36 +359,62 @@ export default {
         .eq('status', 'accepted')
         .or(`requester_id.eq.${id},addressee_id.eq.${id}`)
 
-      const set = new Set()
+      const outgoing = new Set()
+      const incoming = new Set()
       for (const row of (data || [])) {
         const requester = String(row?.requester_id || '')
         const addressee = String(row?.addressee_id || '')
-        if (requester === id && addressee) set.add(addressee)
-        if (addressee === id && requester) set.add(requester)
+        if (requester === id && addressee) outgoing.add(addressee)
+        if (addressee === id && requester) incoming.add(requester)
       }
-      return set
+
+      const mutual = new Set()
+      for (const otherId of outgoing) {
+        if (incoming.has(otherId)) mutual.add(otherId)
+      }
+      return mutual
     }
 
     const loadMyFriendsSet = async () => {
       const { data } = await getFriendships()
       const me = String(profile.value?.id || session.value?.user?.id || '')
-      const set = new Set()
+      const mutualSet = new Set()
       const idx = new Map()
+      const outgoingAccepted = new Set()
+      const incomingAccepted = new Set()
+
       for (const row of (data || [])) {
         const requester = String(row?.requester_id || '')
         const addressee = String(row?.addressee_id || '')
-        const isRequesterMe = requester === me
-        const otherId = isRequesterMe ? addressee : requester
-        if (!otherId) continue
+        if (!requester || !addressee) continue
 
         if (row?.status === 'accepted') {
-          set.add(otherId)
-          idx.set(otherId, 'friend')
-        } else if (row?.status === 'pending') {
-          idx.set(otherId, isRequesterMe ? 'outgoing' : 'incoming')
+          if (requester === me) outgoingAccepted.add(addressee)
+          if (addressee === me) incomingAccepted.add(requester)
+          continue
+        }
+
+        if (row?.status === 'pending') {
+          const isRequesterMe = requester === me
+          const otherId = isRequesterMe ? addressee : requester
+          if (otherId) idx.set(otherId, isRequesterMe ? 'outgoing' : 'incoming')
         }
       }
-      myFriendsSet.value = set
+
+      const allIds = new Set([...outgoingAccepted, ...incomingAccepted])
+      for (const otherId of allIds) {
+        const isMutual = outgoingAccepted.has(otherId) && incomingAccepted.has(otherId)
+        if (isMutual) {
+          mutualSet.add(otherId)
+          idx.set(otherId, 'friend')
+        } else if (outgoingAccepted.has(otherId)) {
+          idx.set(otherId, 'outgoing')
+        } else {
+          idx.set(otherId, 'incoming')
+        }
+      }
+
+      myFriendsSet.value = mutualSet
       friendshipIndex.value = idx
       mutualFriendsCache.clear()
     }
@@ -422,16 +445,16 @@ export default {
         const actionLabel = state === 'friend'
           ? 'В друзьях'
           : state === 'incoming'
-            ? 'Принять заявку'
+            ? 'Подписаться в ответ'
             : state === 'outgoing'
-              ? 'Заявка отправлена'
-              : 'Добавить в друзья'
+              ? 'Вы подписаны'
+              : 'Подписаться'
         return {
           ...u,
           title: userTitle(u),
-          avatar: normalizeStoragePublicUrl(u.image_path || ''),
+          avatar: pickUserAvatar(u),
           friendActionLabel: actionLabel,
-          friendActionDisabled: state === 'friend',
+          friendActionDisabled: state === 'friend' || state === 'outgoing',
           mutualFriendsCount: null
         }
       })
@@ -529,11 +552,10 @@ export default {
         return
       }
       const state = friendshipState(otherId)
+      if (state === 'friend' || state === 'outgoing') return
       const action = state === 'incoming'
         ? acceptFriendRequest(otherId)
-        : state === 'outgoing'
-          ? removeFriendOrRequest(otherId)
-          : sendFriendRequest(otherId)
+        : sendFriendRequest(otherId)
 
       const { error } = await action
       if (error) return
@@ -593,10 +615,11 @@ export default {
           ...form,
           description: String(form?.description || '').trim().slice(0, 200) || null
         }
-        const { error } = await updateMyPublicUser(payload)
+        const { data, error } = await updateMyPublicUser(payload)
         if (error) throw error
-        await loadSessionAndProfile()
-        showProfileEdit.value = false
+        if (data) {
+          profile.value = data
+        }
       } finally {
         saving.value = false
       }
@@ -619,8 +642,8 @@ export default {
       try {
         const { data, error } = await uploadAvatar(croppedFile)
         if (error) throw error
-        await updateMyPublicUser({ image_path: data?.publicUrl || data?.url || profile.value?.image_path })
-        await loadSessionAndProfile()
+        const { data: nextProfile } = await updateMyPublicUser({ image_path: data?.publicUrl || data?.url || profile.value?.image_path })
+        if (nextProfile) profile.value = nextProfile
       } finally {
         saving.value = false
         onAvatarCropClose()
@@ -801,7 +824,7 @@ export default {
 .menu-button {
   width: 42px;
   height: 42px;
-  border-radius: 14px;
+  border-radius: 50%;
   border: 1px solid #efefef;
   background: #fff;
   cursor: pointer;
@@ -923,7 +946,7 @@ export default {
 .profile-button {
   width: 42px;
   height: 42px;
-  border-radius: 14px;
+  border-radius: 50%;
   border: 1px solid #efefef;
   background: #fff;
   cursor: pointer;
@@ -932,13 +955,13 @@ export default {
   overflow: hidden;
 }
 .header-avatar {
-  width: 100%;
+  width: 135%;
   height: 100%;
   object-fit: cover;
   object-position: center;
   border-radius: 50%;
   display: block;
-  transform: scale(1.22);
+  transform: none;
 }
 .header-placeholder {
   font-size: 18px;

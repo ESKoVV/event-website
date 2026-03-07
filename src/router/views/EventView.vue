@@ -108,6 +108,18 @@
           </div>
         </div>
 
+        <div class="signup-wrap">
+          <a
+            class="signup-btn"
+            :href="signupAction.href"
+            target="_blank"
+            rel="noopener noreferrer"
+            :aria-label="signupAction.ariaLabel"
+          >
+            ✨ Записаться
+          </a>
+        </div>
+
         <!-- Организатор / Другие мероприятия -->
         <div class="tabs-wrap">
           <div class="tabs">
@@ -290,6 +302,32 @@ export default {
     const photoUrls = computed(() => {
       const list = Array.isArray(eventPhotos.value) ? eventPhotos.value : []
       return list.map((p) => String(p?.photo_url || '').trim()).filter(Boolean)
+    })
+
+    const signupUrl = computed(() => {
+      const raw = String(event.value?.signup_url || '').trim()
+      if (!raw) return ''
+      if (/^https?:\/\//i.test(raw)) return raw
+      return `https://${raw}`
+    })
+
+    const organizerProfileUrl = computed(() => {
+      const organizerId = String(event.value?.user_id || '').trim()
+      return organizerId ? `/organizer/${organizerId}` : '/'
+    })
+
+    const signupAction = computed(() => {
+      if (signupUrl.value) {
+        return {
+          href: signupUrl.value,
+          ariaLabel: 'Записаться на мероприятие'
+        }
+      }
+
+      return {
+        href: organizerProfileUrl.value,
+        ariaLabel: 'Перейти в профиль организатора'
+      }
     })
 
     const priceText = computed(() => {
@@ -603,6 +641,17 @@ export default {
 
         if (fromCache) {
           event.value = fromCache
+
+          // В кэше могли остаться устаревшие данные без signup_url.
+          // Для страницы мероприятия добираем актуальную запись по id,
+          // чтобы кнопка "Записаться" корректно отображалась.
+          if (!String(event.value?.signup_url || '').trim()) {
+            const { data: freshEvent, error: freshError } = await getEventById(id)
+            if (!freshError && freshEvent) {
+              event.value = { ...event.value, ...freshEvent }
+            }
+          }
+
           const ph = cachedPhotosByEventId.value && cachedPhotosByEventId.value[id]
           eventPhotos.value = Array.isArray(ph) ? ph.filter((x) => x?.photo_url) : []
         } else {
@@ -657,6 +706,8 @@ export default {
       prevPhoto,
       nextPhoto,
 
+      signupUrl,
+      signupAction,
       priceText,
       formatDate,
 
@@ -888,6 +939,34 @@ export default {
 .m span{ width: 18px; }
 
 .desc{ white-space: pre-line; line-height: 1.35; opacity:.9; }
+
+.signup-wrap{
+  margin-top: 14px;
+  display:flex;
+  justify-content: center;
+}
+
+.signup-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap: 8px;
+  min-width: 240px;
+  padding: 14px 22px;
+  border-radius: 16px;
+  text-decoration:none;
+  font-weight: 900;
+  color:#fff;
+  background: linear-gradient(135deg, #8a75e3 0%, #5f4cc6 55%, #3d2ea1 100%);
+  box-shadow: 0 14px 34px rgba(95, 76, 198, .28);
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+.signup-btn:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 18px 36px rgba(95, 76, 198, .34);
+  filter: brightness(1.02);
+}
+.signup-btn:active{ transform: translateY(0); }
 
 .tabs-wrap{
   margin-top: 12px;

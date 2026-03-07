@@ -119,9 +119,7 @@
       </div>
 
       <div class="pm-actions">
-        <button class="pm-btn" :disabled="saving" @click="$emit('save', form)">
-          {{ saving ? 'Сохранение...' : 'Сохранить' }}
-        </button>
+        <div class="pm-autosave-status">{{ saving ? 'Сохранение изменений…' : 'Изменения сохраняются автоматически' }}</div>
         <button class="pm-btn danger" @click="$emit('logout')">Выйти из аккаунта</button>
       </div>
     </div>
@@ -152,6 +150,7 @@
 
 <script>
 import { reactive, watch, ref, computed, onBeforeUnmount } from 'vue'
+import { toAvatarPublicUrl } from '../composables/useSupabase.js'
 
 export default {
   name: 'ProfileModal',
@@ -164,6 +163,9 @@ export default {
   },
   setup(props, { emit }) {
     const showBizInfo = ref(false)
+    const syncingFromProfile = ref(false)
+    const lastAutosavedSnapshot = ref('')
+    let autosaveTimer = null
 
     const form = reactive({
       username: '',
@@ -180,6 +182,7 @@ export default {
     watch(
       () => props.profile,
       (p) => {
+        syncingFromProfile.value = true
         form.username = p?.username || ''
         form.first_name = p?.first_name || ''
         form.last_name = p?.last_name || ''
@@ -189,8 +192,23 @@ export default {
         form.gender = p?.gender || ''
         form.description = p?.description || ''
         form.interests = Array.isArray(p?.interests) ? [...p.interests] : []
+        lastAutosavedSnapshot.value = JSON.stringify(form)
+        syncingFromProfile.value = false
       },
       { immediate: true }
+    )
+
+    watch(
+      () => JSON.stringify(form),
+      (snapshot) => {
+        if (syncingFromProfile.value) return
+        if (snapshot === lastAutosavedSnapshot.value) return
+        if (autosaveTimer) clearTimeout(autosaveTimer)
+        autosaveTimer = setTimeout(() => {
+          lastAutosavedSnapshot.value = snapshot
+          emit('save', { ...form })
+        }, 450)
+      }
     )
 
     const descriptionLeft = computed(() => Math.max(0, 200 - String(form.description || '').length))
@@ -235,9 +253,9 @@ export default {
     }
 
     const profileAvatarUrl = computed(() => {
-      const a = String(props.profile?.avatar_url || '').trim()
-      const b = String(props.profile?.image_path || '').trim()
-      return a || b
+      const custom = toAvatarPublicUrl(props.profile?.image_path)
+      const google = toAvatarPublicUrl(props.profile?.avatar_url)
+      return custom || google
     })
 
     const showLocalAvatar = computed(() => !!localAvatarUrl.value && !localErrored.value)
@@ -256,6 +274,7 @@ export default {
 
     onBeforeUnmount(() => {
       clearLocalAvatarPreview()
+      if (autosaveTimer) clearTimeout(autosaveTimer)
     })
 
     const avatarLetter = computed(() => {
@@ -431,7 +450,8 @@ export default {
 }
 .pm-help{ font-size: 11px; opacity: .7; font-weight: 700; margin-top: -2px; }
 
-.pm-actions{ margin-top: 14px; display:flex; gap: 10px; flex-wrap: wrap; }
+.pm-actions{ margin-top: 14px; display:flex; gap: 10px; flex-wrap: wrap; align-items:center; }
+.pm-autosave-status{ font-size:12px; opacity:.75; font-weight:800; margin-right:auto; }
 
 .pm-btn{
   border:none;

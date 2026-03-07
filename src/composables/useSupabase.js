@@ -5,13 +5,29 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseKey)
 
-const normalizeStoragePublicUrl = (url) => {
+export const normalizeStoragePublicUrl = (url) => {
   if (!url || typeof url !== 'string') return ''
   const u = url.trim()
   if (!u) return ''
   if (u.includes('/storage/v1/object/public/')) return u
   if (u.includes('/storage/v1/object/')) return u.replace('/storage/v1/object/', '/storage/v1/object/public/')
   return u
+}
+
+export const toAvatarPublicUrl = (value, { bucket = 'avatars' } = {}) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+
+  if (/^https?:\/\//i.test(raw) || raw.includes('/storage/v1/object/')) {
+    return normalizeStoragePublicUrl(raw)
+  }
+
+  const clean = raw.replace(/^\/+/, '')
+  const withNoBucketPrefix = clean.startsWith(`${bucket}/`) ? clean.slice(bucket.length + 1) : clean
+  if (!withNoBucketPrefix) return ''
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(withNoBucketPrefix)
+  return normalizeStoragePublicUrl(data?.publicUrl || '')
 }
 
 const compact = (obj) => {
@@ -56,7 +72,7 @@ const authProfileFromMetadata = (authUser) => {
     email: String(authUser?.email || '').trim(),
     first_name: firstName,
     last_name: lastName,
-    image_path: avatarUrl
+    avatar_url: avatarUrl
   }
 }
 
@@ -150,7 +166,8 @@ export const useSupabase = () => {
       is_online,
       is_free,
       selectCategory,
-      photo_file
+      signup_url,
+      photo_files
     } = payload || {}
 
     const { data: created, error: e1 } = await supabase
@@ -167,6 +184,7 @@ export const useSupabase = () => {
           is_free,
           user_id: user.id,
           selectCategory,
+          signup_url,
           is_published: false
         })
       ])
@@ -176,10 +194,17 @@ export const useSupabase = () => {
     if (e1) return { data: null, error: e1 }
     if (!created?.id) return { data: null, error: new Error('Event not created') }
 
-    if (photo_file) {
-      const dataUrl = await readFileAsDataUrl(photo_file)
-      const { error: e2 } = await supabase.from('event_photos').insert([{ event_id: created.id, photo_url: dataUrl }])
-      if (e2) return { data: created, error: e2 }
+    const files = Array.isArray(photo_files) ? photo_files : []
+    if (files.length) {
+      const rows = []
+      for (const file of files) {
+        const dataUrl = await readFileAsDataUrl(file)
+        rows.push({ event_id: created.id, photo_url: dataUrl })
+      }
+      if (rows.length) {
+        const { error: e2 } = await supabase.from('event_photos').insert(rows)
+        if (e2) return { data: created, error: e2 }
+      }
     }
 
     return { data: created, error: null }
@@ -228,7 +253,9 @@ export const useSupabase = () => {
       if (authProfile.email && authProfile.email !== String(existing.email || '').trim()) patch.email = authProfile.email
       if (authProfile.first_name && authProfile.first_name !== String(existing.first_name || '').trim()) patch.first_name = authProfile.first_name
       if (authProfile.last_name && authProfile.last_name !== String(existing.last_name || '').trim()) patch.last_name = authProfile.last_name
-      if (authProfile.image_path && authProfile.image_path !== String(existing.image_path || '').trim()) patch.image_path = authProfile.image_path
+      if (!String(existing.image_path || '').trim() && authProfile.avatar_url && authProfile.avatar_url !== String(existing.avatar_url || '').trim()) {
+        patch.avatar_url = authProfile.avatar_url
+      }
 
       if (Object.keys(patch).length === 0) return { data: existing, error: null }
 
@@ -250,7 +277,8 @@ export const useSupabase = () => {
           email: authProfile.email,
           first_name: authProfile.first_name,
           last_name: authProfile.last_name,
-          image_path: authProfile.image_path || null,
+          image_path: null,
+          avatar_url: authProfile.avatar_url || null,
           It_business: false,
           interests: []
         }
@@ -292,10 +320,10 @@ export const useSupabase = () => {
     const fromType = String(file.type || '').toLowerCase().includes('jpeg') ? 'jpg' : ''
     const ext = (fromName || fromType || 'png').toLowerCase()
 
-    const preferredBucket = 'avatars'
-    const preferredFolder = 'ProfileImage'
+    const bucket = 'avatars'
+    const folder = 'ProfileImage'
     const timestamp = Date.now()
-    const preferredPath = `${preferredFolder}/${user.id}/${timestamp}.${ext}`
+    const path = `${folder}/${user.id}/${timestamp}.${ext}`
 
     const uploadOptions = {
       upsert: true,
@@ -303,28 +331,11 @@ export const useSupabase = () => {
       contentType: file.type || 'image/png'
     }
 
-    let uploadedBucket = preferredBucket
-    let uploadedPath = preferredPath
-
-    let { error: upErr } = await supabase.storage.from(uploadedBucket).upload(uploadedPath, file, uploadOptions)
-
-    if (upErr) {
-      const envBucket = String(import.meta.env.VITE_AVATAR_BUCKET || '').trim()
-      const envFolder = String(import.meta.env.VITE_AVATAR_FOLDER || '').trim() || preferredFolder
-      if (envBucket && envBucket !== preferredBucket) {
-        const envPath = `${envFolder}/${user.id}/${timestamp}.${ext}`
-        const res = await supabase.storage.from(envBucket).upload(envPath, file, uploadOptions)
-        upErr = res.error
-        if (!upErr) {
-          uploadedBucket = envBucket
-          uploadedPath = envPath
-        }
-      }
-    }
+    const { error: upErr } = await supabase.storage.from(bucket).upload(path, file, uploadOptions)
 
     if (upErr) return { publicUrl: '', error: upErr }
 
-    const { data } = supabase.storage.from(uploadedBucket).getPublicUrl(uploadedPath)
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
     const basePublicUrl = normalizeStoragePublicUrl(data?.publicUrl || '')
     const publicUrl = basePublicUrl ? `${basePublicUrl}${basePublicUrl.includes('?') ? '&' : '?'}v=${timestamp}` : ''
     return { publicUrl, error: null, data: { publicUrl } }
@@ -419,6 +430,23 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
+
+  const getUsersForConversation = async ({ limit = 500, excludeSelf = true } = {}) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: [], error: new Error('Not authorized') }
+
+    let q = supabase
+      .from('users')
+      .select('id,first_name,last_name,email,username,image_path,avatar_url')
+      .order('first_name', { ascending: true })
+      .limit(Math.max(1, Number(limit) || 500))
+
+    if (excludeSelf) q = q.neq('id', user.id)
+
+    const { data, error } = await q
+    return { data: data ?? [], error }
+  }
+
   // =======================
   // Social: Friendships
   // =======================
@@ -445,15 +473,22 @@ export const useSupabase = () => {
       .eq('status', 'accepted')
       .or(`requester_id.eq.${uid},addressee_id.eq.${uid}`)
 
-    const out = []
+    const outgoing = new Set()
+    const incoming = new Set()
     for (const row of (data || [])) {
       const requester = String(row?.requester_id || '')
       const addressee = String(row?.addressee_id || '')
-      const other = requester === uid ? addressee : requester
-      if (other) out.push(other)
+      if (!requester || !addressee) continue
+      if (requester === uid) outgoing.add(addressee)
+      if (addressee === uid) incoming.add(requester)
     }
 
-    return { data: [...new Set(out)], error }
+    const out = []
+    for (const id of outgoing) {
+      if (incoming.has(id)) out.push(id)
+    }
+
+    return { data: out, error }
   }
 
   const sendFriendRequest = async (otherId) => {
@@ -464,7 +499,7 @@ export const useSupabase = () => {
 
     const { data, error } = await supabase
       .from('friendships')
-      .upsert([{ requester_id: user.id, addressee_id: otherId, status: 'pending' }], { onConflict: 'requester_id,addressee_id' })
+      .upsert([{ requester_id: user.id, addressee_id: otherId, status: 'accepted' }], { onConflict: 'requester_id,addressee_id' })
       .select('*')
       .maybeSingle()
 
@@ -476,14 +511,7 @@ export const useSupabase = () => {
     if (!user?.id) return { data: null, error: new Error('Not authorized') }
     if (!otherId) return { data: null, error: new Error('No otherId') }
 
-    const { data, error } = await supabase
-      .from('friendships')
-      .update({ status: 'accepted' })
-      .eq('requester_id', otherId)
-      .eq('addressee_id', user.id)
-      .eq('status', 'pending')
-      .select('*')
-      .maybeSingle()
+    const { data, error } = await sendFriendRequest(otherId)
 
     return { data: data ?? null, error }
   }
@@ -496,9 +524,8 @@ export const useSupabase = () => {
     const q = supabase
       .from('friendships')
       .delete()
-      .or(
-        `and(requester_id.eq.${user.id},addressee_id.eq.${otherId}),and(requester_id.eq.${otherId},addressee_id.eq.${user.id})`
-      )
+      .eq('requester_id', user.id)
+      .eq('addressee_id', otherId)
 
     const { data, error } = await q.select('*')
     return { data: data ?? [], error }
@@ -771,6 +798,22 @@ export const useSupabase = () => {
     return { data: data ?? null, error }
   }
 
+  const removeParticipantFromConversation = async ({ conversationId, userId }) => {
+    const cid = String(conversationId || '').trim()
+    const uid = String(userId || '').trim()
+    if (!cid || !uid) return { data: null, error: new Error('Missing params') }
+
+    const { data, error } = await supabase
+      .from('conversation_participants')
+      .delete()
+      .eq('conversation_id', cid)
+      .eq('user_id', uid)
+      .select('id,conversation_id,user_id')
+      .maybeSingle()
+
+    return { data: data ?? null, error }
+  }
+
   const updateConversationDetails = async (conversationId, patch = {}) => {
     const cid = String(conversationId || '').trim()
     if (!cid) return { data: null, error: new Error('No conversationId') }
@@ -903,6 +946,19 @@ export const useSupabase = () => {
       (payload) => onUpdate?.(payload.new)
     )
 
+    // group conversations: incoming messages may have receiver_id = NULL
+    ch.on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: 'conversation_id=not.is.null' },
+      (payload) => onInsert?.(payload.new)
+    )
+
+    ch.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter: 'conversation_id=not.is.null' },
+      (payload) => onUpdate?.(payload.new)
+    )
+
     const { error } = await ch.subscribe()
     return { channel: ch, error }
   }
@@ -1002,6 +1058,7 @@ export const useSupabase = () => {
     // social
     searchUsers,
     getFriendships,
+    getUsersForConversation,
     getAcceptedFriendsOf,
     sendFriendRequest,
     acceptFriendRequest,
@@ -1021,6 +1078,7 @@ export const useSupabase = () => {
     addParticipantsToConversation,
     getConversationParticipants,
     updateConversationParticipantRole,
+    removeParticipantFromConversation,
     updateConversationDetails,
     leaveConversation,
     deleteConversationById,

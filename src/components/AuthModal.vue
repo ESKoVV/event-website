@@ -113,6 +113,7 @@ export default {
   max-height: 240px;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid #efefef;
   border-radius: 12px;
   padding: 8px;
@@ -145,8 +146,15 @@ export default {
   max-height: 220px !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
+  touch-action: pan-y !important;
   display: block;
   border: 0;
+}
+
+@media (max-width: 980px) {
+  .tg-mount :deep(iframe.bis_skin_checked) {
+    -webkit-overflow-scrolling: touch !important;
+  }
 }
 
 .warn { color: #b45309; font-size: 13px; margin-bottom: 10px; }
