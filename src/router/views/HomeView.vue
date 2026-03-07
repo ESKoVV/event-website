@@ -281,6 +281,17 @@ const normalizeCategoryNames = (raw, categoryMap) => {
   return one ? [one] : []
 }
 
+const matchesSearchTerm = (event, rawTerm) => {
+  const term = String(rawTerm || '').trim().toLowerCase()
+  if (!term) return true
+
+  const fields = [event?.title, event?.description, event?.address, event?.organizer, event?.city]
+  if (fields.some((v) => String(v || '').toLowerCase().includes(term))) return true
+
+  // если пользователь вводит id города цифрами
+  return String(event?.city_id ?? '').toLowerCase() === term
+}
+
 const normalizeInterests = (raw) => {
   const out = []
   if (Array.isArray(raw)) {
@@ -543,9 +554,9 @@ export default {
     }
 
     const filteredEvents = computed(() => {
-      const term = String(titleQuery.value || '').trim().toLowerCase()
+      const term = String(titleQuery.value || '').trim()
       let list = basePublishedFeed.value
-      if (term) list = list.filter((e) => String(e?.title || '').toLowerCase().includes(term))
+      if (term) list = list.filter((e) => matchesSearchTerm(e, term))
       return applyFilters(list)
     })
 
