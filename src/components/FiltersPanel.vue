@@ -17,6 +17,14 @@
     </section>
 
     <section class="card">
+      <div class="h">Город</div>
+      <select class="input" :value="selectedCityId" @change="$emit('update:selectedCityId', $event.target.value)">
+        <option value="">Все города</option>
+        <option v-for="city in cities" :key="city.id" :value="String(city.id)">{{ city.name }}</option>
+      </select>
+    </section>
+
+    <section class="card">
       <div class="h">Категории</div>
 
       <div class="tags">
@@ -127,6 +135,7 @@ export default {
   emits: [
     'reset',
     'update:titleQuery',
+    'update:selectedCityId',
     'update:selectedCategoryNames',
     'update:onlineOnly',
     'update:priceMode',
@@ -140,7 +149,9 @@ export default {
   ],
   props: {
     categories: { type: Array, default: () => [] },
+    cities: { type: Array, default: () => [] },
     titleQuery: { type: String, default: '' },
+    selectedCityId: { type: String, default: '' },
     selectedCategoryNames: { type: Array, default: () => [] },
     onlineOnly: { type: Boolean, default: false },
     priceMode: { type: String, default: 'all' },

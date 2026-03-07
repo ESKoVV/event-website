@@ -59,6 +59,14 @@
               </select>
             </label>
 
+            <label class="field">
+              <span>Город</span>
+              <select v-model="form.city_id">
+                <option value="">Не выбран</option>
+                <option v-for="city in cities" :key="city.id" :value="String(city.id)">{{ city.name }}</option>
+              </select>
+            </label>
+
             <label class="field field-full">
               <span>О себе (до 1000 символов)</span>
               <textarea
@@ -139,7 +147,8 @@ export default {
       updateMyPublicUser,
       uploadAvatar,
       linkTelegramViaEdgeFunction,
-      getMyTelegramLink
+      getMyTelegramLink,
+      getCitiesRu
     } = useSupabase()
 
     const telegramBotUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || ''
@@ -150,6 +159,7 @@ export default {
     const session = ref(null)
     const profile = ref(null)
     const telegramLink = ref(null)
+    const cities = ref([])
 
     const showAuth = ref(false)
 
@@ -160,6 +170,7 @@ export default {
       phone: '',
       email: '',
       gender: '',
+      city_id: '',
       about: ''
     })
 
@@ -178,6 +189,7 @@ export default {
       form.phone = p?.phone ?? ''
       form.email = p?.email ?? ''
       form.gender = p?.gender ?? ''
+      form.city_id = p?.city_id ? String(p.city_id) : ''
       form.about = p?.about ?? ''
     }
 
@@ -200,6 +212,9 @@ export default {
         const { data: p } = await getMyPublicUser()
         profile.value = p
         fillFormFromProfile(p)
+
+        const { data: c } = await getCitiesRu()
+        cities.value = c || []
 
         const { data: tg } = await getMyTelegramLink()
         telegramLink.value = tg
@@ -261,7 +276,8 @@ export default {
           birth_day: form.birth_day || null,
           phone: form.phone || null,
           email: form.email || null,
-          gender: form.gender || null
+          gender: form.gender || null,
+          city_id: form.city_id ? Number(form.city_id) : null
         }
 
         patch.about = String(form.about || '').trim().slice(0, 1000) || null
@@ -310,6 +326,7 @@ export default {
       profile,
       profileAvatarUrl,
       telegramLink,
+      cities,
       showAuth,
       openAuth,
       loginGoogle,

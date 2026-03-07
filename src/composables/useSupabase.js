@@ -111,6 +111,11 @@ export const useSupabase = () => {
     return { data, error }
   }
 
+  const getCitiesRu = async () => {
+    const { data, error } = await supabase.from('cities_ru').select('id,name').order('name', { ascending: true })
+    return { data: data ?? [], error }
+  }
+
   const getEventPhotos = async (eventIds) => {
     const ids = Array.isArray(eventIds) ? eventIds.filter((x) => x !== null && x !== undefined) : []
     if (!ids.length) return { data: [], error: null }
@@ -165,6 +170,7 @@ export const useSupabase = () => {
       price,
       is_online,
       is_free,
+      city_id,
       selectCategory,
       signup_url,
       photo_files
@@ -182,6 +188,7 @@ export const useSupabase = () => {
           price,
           is_online,
           is_free,
+          city_id,
           user_id: user.id,
           selectCategory,
           signup_url,
@@ -1031,6 +1038,7 @@ export const useSupabase = () => {
     getEvents,
     searchEvents,
     getCategories,
+    getCitiesRu,
     getEventPhotos,
     getEventById,
     getOrganizerEvents,

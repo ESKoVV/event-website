@@ -94,7 +94,7 @@
 
         <div class="meta-item">
           <span class="k">📍</span>
-          <span class="v">{{ event.address || '—' }}</span>
+          <span class="v">{{ locationText }}</span>
         </div>
 
         <div class="meta-item">
@@ -224,6 +224,12 @@ export default {
       const p = Number(this.event.price ?? 0)
       if (!Number.isFinite(p) || p <= 0) return 'Бесплатно'
       return `${p} ₽`
+    },
+    locationText() {
+      const city = String(this.event?.city || this.event?.city_name || '').trim()
+      const address = String(this.event?.address || '').trim()
+      if (city && address) return `${city}, ${address}`
+      return city || address || '—'
     }
   },
   mounted() {
