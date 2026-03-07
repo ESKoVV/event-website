@@ -32,7 +32,7 @@
 
         <div class="up-actions">
           <button class="btn" @click="openChat" v-if="!isMe">Написать</button>
-          <button class="btn ghost" @click="toggleFriend" v-if="!isMe">{{ friendBtnText }}</button>
+          <button class="btn ghost" @click="toggleFriend" :disabled="relation === 'outgoing'" v-if="!isMe">{{ friendBtnText }}</button>
         </div>
 
         <div class="tabs">
@@ -132,12 +132,31 @@ export default {
 
     const buildRelationIndex = (rows = []) => {
       const idx = new Map()
+      const outgoingAccepted = new Set()
+      const incomingAccepted = new Set()
       for (const f of rows) {
-        const isRequesterMe = f.requester_id === myId.value
-        const otherId = isRequesterMe ? f.addressee_id : f.requester_id
-        if (!otherId) continue
-        if (f.status === 'accepted') idx.set(otherId, 'friend')
-        else if (f.status === 'pending') idx.set(otherId, isRequesterMe ? 'outgoing' : 'incoming')
+        const requester = String(f?.requester_id || '')
+        const addressee = String(f?.addressee_id || '')
+        if (!requester || !addressee) continue
+
+        if (f.status === 'accepted') {
+          if (requester === myId.value) outgoingAccepted.add(addressee)
+          if (addressee === myId.value) incomingAccepted.add(requester)
+          continue
+        }
+
+        if (f.status === 'pending') {
+          const isRequesterMe = requester === myId.value
+          const otherId = isRequesterMe ? addressee : requester
+          if (otherId) idx.set(otherId, isRequesterMe ? 'outgoing' : 'incoming')
+        }
+      }
+
+      const allIds = new Set([...outgoingAccepted, ...incomingAccepted])
+      for (const otherId of allIds) {
+        if (outgoingAccepted.has(otherId) && incomingAccepted.has(otherId)) idx.set(otherId, 'friend')
+        else if (outgoingAccepted.has(otherId)) idx.set(otherId, 'outgoing')
+        else idx.set(otherId, 'incoming')
       }
       return idx
     }
@@ -204,9 +223,9 @@ export default {
 
     const friendBtnText = computed(() => {
       if (relation.value === 'friend') return 'Удалить из друзей'
-      if (relation.value === 'incoming') return 'Принять заявку'
-      if (relation.value === 'outgoing') return 'Заявка отправлена'
-      return 'Добавить в друзья'
+      if (relation.value === 'incoming') return 'Подписаться в ответ'
+      if (relation.value === 'outgoing') return 'Вы подписаны'
+      return 'Подписаться'
     })
 
     const toggleFriend = async () => {
@@ -245,6 +264,7 @@ export default {
       isMe,
       initial,
       activeTab,
+      relation,
       displayName,
       formatDate,
       toggleFriend,
