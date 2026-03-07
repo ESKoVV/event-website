@@ -113,13 +113,13 @@
 
         <!-- ЛЕНТА / ИЗБРАННОЕ -->
         <template v-else-if="activeTab === 'feed' || activeTab === 'favorites'">
-          <div v-if="filteredEvents.length === 0" class="state">
-            <template v-if="activeTab === 'favorites'">В избранном пока пусто</template>
-            <template v-else>Мероприятия не найдены</template>
-          </div>
+          <div class="events-shell">
+            <div v-if="filteredEvents.length === 0" class="state">
+              <template v-if="activeTab === 'favorites'">В избранном пока пусто</template>
+              <template v-else>Мероприятия не найдены</template>
+            </div>
 
-          <div v-else class="events-shell">
-            <TransitionGroup name="list" tag="div" class="events-list">
+            <TransitionGroup v-else name="list" tag="div" class="events-list">
               <div
                 v-for="event in filteredEvents"
                 :key="'feed_wrap_' + event.id"
@@ -142,10 +142,10 @@
             </TransitionGroup>
 
             <!-- sentinel: догрузка страницы событий при скролле -->
-            <div ref="sentinelEl" class="sentinel" aria-hidden="true"></div>
+            <div v-if="activeTab === 'feed'" ref="sentinelEl" class="sentinel" aria-hidden="true"></div>
 
-            <div v-if="eventsPageLoading" class="more-loading">Подгружаю ещё…</div>
-            <div v-else-if="!eventsHasMore && feedEvents.length" class="end">Это всё ✅</div>
+            <div v-if="activeTab === 'feed' && eventsPageLoading" class="more-loading">Подгружаю ещё…</div>
+            <div v-else-if="activeTab === 'feed' && !eventsHasMore && feedEvents.length" class="end">Это всё ✅</div>
           </div>
         </template>
       </template>
@@ -324,12 +324,17 @@ const scoreEventByInterests = (event, interestsLower, categoryMap) => {
 }
 
 // 1) сначала по score (пересечение с интересами), 2) потом по дате создания/мероприятия (свежие выше)
-const sortEventsByInterests = (events, interestsLower, categoryMap) => {
+const sortEventsByInterests = (events, interestsLower, categoryMap, preferredCityId = null) => {
   const list = Array.isArray(events) ? [...events] : []
+  const preferredCityNum = toNumberOrNull(preferredCityId)
   list.sort((a, b) => {
     const sa = scoreEventByInterests(a, interestsLower, categoryMap)
     const sb = scoreEventByInterests(b, interestsLower, categoryMap)
     if (sb !== sa) return sb - sa
+
+    const aCityBoost = Number.isFinite(preferredCityNum) && Number(a?.city_id) === preferredCityNum ? 1 : 0
+    const bCityBoost = Number.isFinite(preferredCityNum) && Number(b?.city_id) === preferredCityNum ? 1 : 0
+    if (bCityBoost !== aCityBoost) return bCityBoost - aCityBoost
 
     const da = new Date(a?.created_at || a?.date_time_event || 0).getTime()
     const db = new Date(b?.created_at || b?.date_time_event || 0).getTime()
@@ -391,6 +396,7 @@ export default {
 
     const myProfile = ref(null)
     const myInterestsLower = computed(() => normalizeInterests(myProfile.value?.interests))
+    const preferredCityId = computed(() => toNumberOrNull(myProfile.value?.city_id))
 
     const favoriteIds = ref(new Set())
     const favKey = ref(makeFavKey(null))
@@ -485,7 +491,7 @@ export default {
     const basePublishedFeed = computed(() => {
       // feedEvents уже опубликованные, но на всякий:
       const list = (feedEvents.value || []).filter((e) => e?.is_published !== false)
-      return sortEventsByInterests(list, myInterestsLower.value, categoryMap.value)
+      return sortEventsByInterests(list, myInterestsLower.value, categoryMap.value, preferredCityId.value)
     })
 
     const myEventsForCards = computed(() => {
