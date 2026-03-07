@@ -87,14 +87,22 @@
               </div>
             </div>
 
-                <div class="actions">
-                  <button class="btn small ghost" @click="openUserProfile(u.id)">Профиль</button>
-                  <button class="btn small ghost" @click="goChat(u.id)">Написать</button>
+            <div v-else>
+              <div class="b-title">Подписки</div>
+              <div v-if="subscriptions.length === 0" class="muted">Пока нет подписок</div>
 
-                  <button class="btn small more-btn" type="button" @click.stop="toggleMenu(u.id)" aria-label="Меню">⋯</button>
-
-                  <div v-if="openMenuId === u.id" class="menu" @click.stop>
-                    <button class="menu-item" type="button" @click="openFriendsOf(u.id)">Посмотреть общих друзей</button>
+              <div v-else class="list">
+                <div v-for="u in subscriptions" :key="u.id" class="row">
+                  <div class="u">
+                    <div class="ava">
+                      <img v-if="avatar(u)" :src="avatar(u)" alt="avatar" @error="clearAvatar(u)" />
+                      <span v-else>{{ letter(u) }}</span>
+                    </div>
+                    <div class="meta">
+                      <div class="name">{{ displayName(u) }}</div>
+                      <div class="sub">@{{ u.username || '—' }}</div>
+                    </div>
+                  </div>
 
                   <div class="actions">
                     <button class="btn small ghost" @click="openUserProfile(u.id)">Профиль</button>
