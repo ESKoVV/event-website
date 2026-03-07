@@ -1,7 +1,7 @@
 // src/composables/eventsCache.js
 // In-memory кэш + сохранение в sessionStorage (живёт при F5 в этой вкладке)
 
-const STORAGE_KEY = 'biom_events_cache_v1'
+const STORAGE_KEY = 'biom_events_cache_v2'
 
 // in-memory
 let _events = null

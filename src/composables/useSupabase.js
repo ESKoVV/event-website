@@ -83,7 +83,10 @@ export const useSupabase = () => {
 
   const getEventsPage = async ({ from = 0, to = 9, publishedOnly = true } = {}) => {
     let q = supabase.from('events').select('*').order('date_time_event', { ascending: true }).range(from, to)
-    if (publishedOnly) q = q.eq('is_published', true)
+    if (publishedOnly) {
+      // legacy rows may have is_published = null, treat them as published in public feed
+      q = q.or('is_published.is.true,is_published.is.null')
+    }
     const { data, error } = await q
     return { data: data ?? [], error }
   }
