@@ -31,6 +31,14 @@
             </div>
 
             <div class="field">
+              <div class="label">Город *</div>
+              <select class="input" v-model="form.city_id">
+                <option value="">Выберите город</option>
+                <option v-for="city in cities" :key="city.id" :value="String(city.id)">{{ city.name }}</option>
+              </select>
+            </div>
+
+            <div class="field">
               <div class="label">Организатор</div>
               <input class="input" v-model="form.organizer" placeholder="Имя/проект" />
             </div>
@@ -151,6 +159,7 @@ export default {
   props: {
     open: { type: Boolean, default: false },
     categories: { type: Array, default: () => [] },
+    cities: { type: Array, default: () => [] },
     createBusinessEvent: { type: Function, required: true }
   },
   data() {
@@ -164,6 +173,7 @@ export default {
         date_time_event: '',
         address: '',
         organizer: '',
+        city_id: '',
         signup_url: '',
         price: '0',
         is_online: false
@@ -290,6 +300,7 @@ export default {
       if (!title) return (this.error = 'Укажи название.')
       if (!dt) return (this.error = 'Укажи дату и время.')
       if (!description) return (this.error = 'Укажи описание.')
+      if (!trimOrNull(this.form.city_id)) return (this.error = 'Укажи город мероприятия.')
 
       const priceNum = Number(this.form.price)
       const price = Number.isFinite(priceNum) ? priceNum : 0
@@ -301,6 +312,7 @@ export default {
         date_time_event: dt,
         address: trimOrNull(this.form.address),
         organizer: trimOrNull(this.form.organizer),
+        city_id: Number(this.form.city_id),
         signup_url: signupUrl,
         price,
         is_online: !!this.form.is_online,
@@ -327,6 +339,7 @@ export default {
           date_time_event: '',
           address: '',
           organizer: '',
+          city_id: '',
           signup_url: '',
           price: '0',
           is_online: false

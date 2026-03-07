@@ -165,7 +165,9 @@
           <div class="drawer-body">
             <FiltersPanel
               :categories="categories"
+              :cities="cities"
               v-model:titleQuery="titleQuery"
+              v-model:selectedCityId="selectedCityId"
               v-model:selectedCategoryNames="selectedCategoryNames"
               v-model:onlineOnly="onlineOnly"
               v-model:priceMode="priceMode"
@@ -235,6 +237,15 @@ const parseDateInput = (yyyy_mm_dd) => {
 
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
 const endOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+
+const withCityNames = (events, cities) => {
+  const list = Array.isArray(events) ? events : []
+  const map = new Map((Array.isArray(cities) ? cities : []).map((c) => [Number(c?.id), String(c?.name || '').trim()]))
+  return list.map((e) => {
+    const id = Number(e?.city_id)
+    return { ...e, city: map.get(id) || e?.city || '' }
+  })
+}
 
 const normalizeCategoryNames = (raw, categoryMap) => {
   const map = categoryMap || {}
@@ -337,13 +348,14 @@ export default {
   name: 'HomeViewLazy',
   components: { EventCard, EventPhotoModal, FiltersPanel },
   setup() {
-    const { getCategories, getEventPhotos, getUser, getMyPublicUser, getPublicUserById } = useSupabase()
+    const { getCategories, getCitiesRu, getEventPhotos, getUser, getMyPublicUser, getPublicUserById } = useSupabase()
 
     // ======= базовое состояние как в твоём HomeView =======
     const initialLoaded = ref(false)
     const error = ref('')
 
     const categories = ref([])
+    const cities = ref([])
     const categoryMap = ref({})
 
     // ВАЖНО: теперь лента не allEvents — а feedEvents (постранично)
@@ -375,6 +387,7 @@ export default {
 
     // filters
     const titleQuery = ref('')
+    const selectedCityId = ref('')
     const selectedCategoryNames = ref([])
     const onlineOnly = ref(false)
     const priceMode = ref('all')
@@ -427,6 +440,7 @@ export default {
 
     const resetAllFilters = () => {
       titleQuery.value = ''
+      selectedCityId.value = ''
       selectedCategoryNames.value = []
       onlineOnly.value = false
       priceMode.value = 'all'
@@ -441,13 +455,14 @@ export default {
 
     const hasActiveFilters = computed(() => {
       const hasTitle = String(titleQuery.value || '').trim().length > 0
+      const hasCity = String(selectedCityId.value || '').trim().length > 0
       const hasCats = (selectedCategoryNames.value || []).length > 0
       const hasOnline = onlineOnly.value === true
       const hasPriceMode = priceMode.value !== 'all'
       const hasPriceRange = String(customPriceMin.value || '').trim() !== '' || String(customPriceMax.value || '').trim() !== ''
       const hasDateMode = dateMode.value !== 'all'
       const hasDateValues = [dateOn.value, dateFrom.value, dateTo.value, datePivot.value].some((v) => String(v || '').trim() !== '')
-      return hasTitle || hasCats || hasOnline || hasPriceMode || hasPriceRange || hasDateMode || hasDateValues
+      return hasTitle || hasCity || hasCats || hasOnline || hasPriceMode || hasPriceRange || hasDateMode || hasDateValues
     })
 
     const goToProfile = () => {
@@ -473,6 +488,7 @@ export default {
 
     const applyFilters = (list) => {
       const catsSel = selectedCategoryNames.value
+      const cityId = toNumberOrNull(selectedCityId.value)
       const online = onlineOnly.value
 
       const pm = priceMode.value
@@ -497,6 +513,7 @@ export default {
         if (!e) return false
 
         if (activeTab.value === 'favorites' && !favoriteIds.value.has(e.id)) return false
+        if (Number.isFinite(cityId) && Number(e?.city_id) !== cityId) return false
         if (online && !e.is_online) return false
 
         if (catsSel.length) {
@@ -613,6 +630,12 @@ export default {
       categoryMap.value = map
     }
 
+    const loadCities = async () => {
+      const { data, error: e } = await withRetry(() => getCitiesRu())
+      if (e) throw e
+      cities.value = data || []
+    }
+
     // ======= НОВОЕ: загрузка СТРАНИЦЫ событий (только опубликованные) =======
     const fetchEventsPage = async ({ batchSize } = {}) => {
       if (eventsPageLoading.value) return
@@ -636,7 +659,7 @@ export default {
 
         if (e) throw e
 
-        const rows = Array.isArray(data) ? data : []
+        const rows = withCityNames(data, cities.value)
         if (!rows.length) {
           eventsHasMore.value = false
           return
@@ -678,7 +701,7 @@ export default {
           .order('created_at', { ascending: false })
       })
       if (e) throw e
-      myEventsRaw.value = Array.isArray(data) ? data : []
+      myEventsRaw.value = withCityNames(data, cities.value)
       await hydrateBusinessUsers(myEventsRaw.value)
       await nextTick()
       refreshCardObserver()
@@ -854,6 +877,7 @@ export default {
       try {
         await loadUser()
         await loadCategories()
+        await loadCities()
 
         // ВАЖНО: мои мероприятия отдельно
         if (isBusiness.value && userId.value) {
@@ -948,6 +972,7 @@ export default {
       initialLoaded,
       error,
       categories,
+      cities,
       categoryMap,
 
       photos,
@@ -976,6 +1001,7 @@ export default {
       photoModalUrl,
 
       titleQuery,
+      selectedCityId,
       selectedCategoryNames,
       onlineOnly,
       priceMode,

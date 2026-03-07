@@ -106,6 +106,14 @@
           </select>
         </label>
 
+        <label class="pm-field">
+          <span>Город</span>
+          <select v-model="form.city_id">
+            <option value="">Не выбран</option>
+            <option v-for="city in cities" :key="city.id" :value="String(city.id)">{{ city.name }}</option>
+          </select>
+        </label>
+
         <label class="pm-field pm-field-full">
           <span>О себе (до 200 символов)</span>
           <textarea
@@ -159,7 +167,8 @@ export default {
     profile: { type: Object, default: null },
     telegramLink: { type: Object, default: null },
     saving: { type: Boolean, default: false },
-    categories: { type: Array, default: () => [] }
+    categories: { type: Array, default: () => [] },
+    cities: { type: Array, default: () => [] }
   },
   setup(props, { emit }) {
     const showBizInfo = ref(false)
@@ -175,6 +184,7 @@ export default {
       phone: '',
       email: '',
       gender: '',
+      city_id: '',
       description: '',
       interests: []
     })
@@ -190,6 +200,7 @@ export default {
         form.phone = p?.phone || ''
         form.email = p?.email || ''
         form.gender = p?.gender || ''
+        form.city_id = p?.city_id ? String(p.city_id) : ''
         form.description = p?.description || ''
         form.interests = Array.isArray(p?.interests) ? [...p.interests] : []
         lastAutosavedSnapshot.value = JSON.stringify(form)

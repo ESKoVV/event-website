@@ -170,6 +170,7 @@
         :telegram-link="telegramLink"
         :saving="saving"
         :categories="categories"
+        :cities="cities"
         @close="showProfileEdit = false"
         @save="saveProfile"
         @pick-avatar="onPickedAvatar"
@@ -183,6 +184,7 @@
         v-if="showCreateEvent"
         :open="showCreateEvent"
         :categories="categories"
+        :cities="cities"
         :create-business-event="createBusinessEvent"
         @close="showCreateEvent = false"
         @created="onCreatedEvent"
@@ -247,6 +249,7 @@ export default {
       getMyUnreadMessagesCount,
       subscribeToMyMessages,
       getCategories,
+      getCitiesRu,
       createBusinessEvent,
       searchUsers,
       getFriendships,
@@ -277,6 +280,7 @@ export default {
     const telegramLink = ref(null)
 
     const categories = ref([])
+    const cities = ref([])
     const saving = ref(false)
 
     const showAuth = ref(false)
@@ -348,6 +352,11 @@ export default {
     const loadCategories = async () => {
       const { data } = await getCategories()
       categories.value = data || []
+    }
+
+    const loadCities = async () => {
+      const { data } = await getCitiesRu()
+      cities.value = data || []
     }
 
     const loadAcceptedFriendsFor = async (uid) => {
@@ -611,8 +620,10 @@ export default {
     const saveProfile = async (form) => {
       saving.value = true
       try {
+        const cityId = Number(form?.city_id)
         const payload = {
           ...form,
+          city_id: Number.isFinite(cityId) ? cityId : null,
           description: String(form?.description || '').trim().slice(0, 200) || null
         }
         const { data, error } = await updateMyPublicUser(payload)
@@ -667,6 +678,7 @@ export default {
       window.addEventListener('open-profile', onOpenProfileEvent)
       window.addEventListener('click', onGlobalClick)
       await loadCategories()
+      await loadCities()
       await loadSessionAndProfile()
 
       const { channel } = await subscribeToMyMessages({
@@ -747,6 +759,7 @@ export default {
       profile,
       telegramLink,
       categories,
+      cities,
       saving,
 
       headerAvatarUrl,
