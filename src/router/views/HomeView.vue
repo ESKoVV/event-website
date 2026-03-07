@@ -905,7 +905,13 @@ export default {
       try {
         await loadUser()
         await loadCategories()
-        await loadCities()
+        try {
+          await loadCities()
+        } catch (e) {
+          // Города не должны блокировать загрузку ленты: продолжим без city-name маппинга.
+          cities.value = []
+          console.warn('[HomeView] cities_ru is unavailable, continue without cities map', e)
+        }
 
         // ВАЖНО: мои мероприятия отдельно
         if (isBusiness.value && userId.value) {
