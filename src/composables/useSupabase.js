@@ -430,6 +430,23 @@ export const useSupabase = () => {
     return { data: data ?? [], error }
   }
 
+
+  const getUsersForConversation = async ({ limit = 500, excludeSelf = true } = {}) => {
+    const { user } = await getUser()
+    if (!user?.id) return { data: [], error: new Error('Not authorized') }
+
+    let q = supabase
+      .from('users')
+      .select('id,first_name,last_name,email,username,image_path,avatar_url')
+      .order('first_name', { ascending: true })
+      .limit(Math.max(1, Number(limit) || 500))
+
+    if (excludeSelf) q = q.neq('id', user.id)
+
+    const { data, error } = await q
+    return { data: data ?? [], error }
+  }
+
   // =======================
   // Social: Friendships
   // =======================
@@ -930,6 +947,19 @@ export const useSupabase = () => {
       (payload) => onUpdate?.(payload.new)
     )
 
+    // group conversations: incoming messages may have receiver_id = NULL
+    ch.on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: 'conversation_id=not.is.null' },
+      (payload) => onInsert?.(payload.new)
+    )
+
+    ch.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter: 'conversation_id=not.is.null' },
+      (payload) => onUpdate?.(payload.new)
+    )
+
     const { error } = await ch.subscribe()
     return { channel: ch, error }
   }
@@ -1029,6 +1059,7 @@ export const useSupabase = () => {
     // social
     searchUsers,
     getFriendships,
+    getUsersForConversation,
     getAcceptedFriendsOf,
     sendFriendRequest,
     acceptFriendRequest,

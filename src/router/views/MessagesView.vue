@@ -367,8 +367,8 @@
 
       <div v-if="!newConversationTitle.trim()" class="fwd-modal-empty">Сначала укажи название беседы.</div>
       <template v-else>
-        <div v-if="friendsLoading" class="fwd-modal-empty">Загрузка друзей...</div>
-        <div v-else-if="friendsForConversation.length === 0" class="fwd-modal-empty">Нет друзей для добавления.</div>
+        <div v-if="friendsLoading" class="fwd-modal-empty">Загрузка пользователей...</div>
+        <div v-else-if="friendsForConversation.length === 0" class="fwd-modal-empty">Нет пользователей для добавления.</div>
 
         <div v-else class="conv-friends-list">
           <label v-for="f in friendsForConversation" :key="`new-conv-${f.id}`" class="conv-friend-row">
@@ -460,7 +460,7 @@
               <div class="fwd-modal-title">Добавить участников</div>
               <button class="fwd-modal-close" type="button" @click="showAddParticipantsPanel = false">✕</button>
             </div>
-            <input v-model="addParticipantsSearch" class="chat-input" type="text" placeholder="Поиск среди друзей" />
+            <input v-model="addParticipantsSearch" class="chat-input" type="text" placeholder="Поиск среди пользователей" />
             <div class="conv-friends-list">
               <label v-for="f in friendsForAddFiltered" :key="`conv-add-${f.id}`" class="conv-friend-row conv-friend-row-pick">
                 <span class="conv-radio" :class="{ active: selectedParticipantsToAdd.includes(f.id) }"></span>
@@ -731,7 +731,7 @@ export default {
       getPublicUserById,
       getInboxThreads,
       getMyConversations,
-      getFriendships,
+      getUsersForConversation,
       createConversation,
       addParticipantsToConversation,
       getConversationParticipants,
@@ -1657,26 +1657,14 @@ export default {
 
       friendsLoading.value = true
       try {
-        const { data, error } = await getFriendships()
+        const { data, error } = await getUsersForConversation({ limit: 1000, excludeSelf: true })
         if (error) throw error
 
-        const accepted = (data || []).filter((row) => row?.status === 'accepted')
-        const ids = [...new Set(accepted.map((row) => {
-          const requester = String(row?.requester_id || '')
-          const addressee = String(row?.addressee_id || '')
-          return requester === user.id ? addressee : requester
-        }).filter(Boolean))]
-
-        const users = await Promise.all(ids.map(async (id) => {
-          const { data: u } = await getPublicUserById(id)
-          return {
-            id,
-            title: safeTitleFromUser(u),
-            avatar: normalizeStoragePublicUrl(u?.image_path || '')
-          }
-        }))
-
-        friendsForConversation.value = users
+        friendsForConversation.value = (data || []).map((u) => ({
+          id: String(u?.id || ''),
+          title: safeTitleFromUser(u),
+          avatar: normalizeStoragePublicUrl(u?.image_path || u?.avatar_url || '')
+        })).filter((u) => u.id)
       } finally {
         friendsLoading.value = false
       }
@@ -2449,7 +2437,7 @@ export default {
             unread: false,
             unreadCount: 0,
             title: String(conv?.title || '').trim() || 'Беседа',
-            avatar: String(existing.avatar || '').trim(),
+            avatar: '',
             isConversation: true,
             conversationId
           }
