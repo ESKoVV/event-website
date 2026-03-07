@@ -62,7 +62,7 @@
                   <button class="btn small more-btn" type="button" @click.stop="toggleMenu(u.id)" aria-label="Меню">⋯</button>
 
                   <div v-if="openMenuId === u.id" class="menu" @click.stop>
-                    <button class="menu-item" type="button" @click="openFriendsOf(u.id)">Посмотреть друзей</button>
+                    <button class="menu-item" type="button" @click="openFriendsOf(u.id)">Посмотреть общих друзей</button>
 
                     <button class="menu-item danger" type="button" @click="openDeleteModal(u)">
                       Удалить из друзей
@@ -79,12 +79,12 @@
 
           <div v-if="viewingFriendsOfId" class="block">
             <div class="b-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-              <span>Друзья пользователя</span>
+              <span>Общие друзья</span>
               <button class="btn small ghost" type="button" @click="closeFriendsOf">Закрыть</button>
             </div>
 
             <div v-if="friendsOfLoading" class="muted">Загрузка…</div>
-            <div v-else-if="friendsOfList.length === 0" class="muted">У пользователя пока нет друзей</div>
+            <div v-else-if="friendsOfList.length === 0" class="muted">Общих друзей пока нет</div>
 
             <div v-else class="list">
               <div v-for="fu in friendsOfList" :key="fu.id" class="row">
@@ -401,14 +401,25 @@ export default {
         if (e1) throw e1
 
         const rows = data || []
-        const ids = new Set()
+        const friendIdsOfViewedUser = new Set()
         for (const f of rows) {
-          const oid = f.requester_id === otherId ? f.addressee_id : f.requester_id
-          if (oid) ids.add(oid)
+          const requester = String(f.requester_id || '')
+          const addressee = String(f.addressee_id || '')
+          const oid = requester === String(otherId) ? addressee : requester
+          if (oid) friendIdsOfViewedUser.add(oid)
         }
 
+        const myAcceptedFriendIds = new Set(
+          [...relationIndex.value.entries()]
+            .filter(([, rel]) => rel === 'friend')
+            .map(([id]) => String(id || ''))
+            .filter(Boolean)
+        )
+
+        const mutualIds = [...friendIdsOfViewedUser].filter((id) => myAcceptedFriendIds.has(String(id || '')))
+
         const out = []
-        for (const id of ids) {
+        for (const id of mutualIds) {
           const { data: u } = await getPublicUserById(id)
           if (u?.id) out.push(u)
         }
