@@ -857,7 +857,7 @@ export default {
           (entries) => {
             const e = entries?.[0]
             if (!e?.isIntersecting) return
-            if (activeTab.value !== 'feed' && activeTab.value !== 'favorites') return
+            if (activeTab.value !== 'feed') return
             if (eventsPageLoading.value) return
             if (!eventsHasMore.value) return
             fetchEventsPage({ batchSize: 1 })
@@ -867,6 +867,17 @@ export default {
         sentinelIO.observe(el)
       } catch {
         // ignore
+      }
+    }
+
+    const isSentinelNearViewport = () => {
+      try {
+        const el = sentinelEl.value
+        if (!el) return false
+        const rect = el.getBoundingClientRect()
+        return rect.top <= (window.innerHeight || 0) + 200
+      } catch {
+        return false
       }
     }
 
@@ -955,6 +966,20 @@ export default {
         if (activeTab.value === 'mine' && isBusiness.value && userId.value && (!myEventsRaw.value || !myEventsRaw.value.length)) {
           fetchMyEvents().catch(() => {})
         }
+      }
+    )
+
+    watch(
+      () => [activeTab.value, filteredEvents.value.length, eventsHasMore.value, eventsPageLoading.value],
+      async () => {
+        if (activeTab.value !== 'feed') return
+        if (eventsPageLoading.value) return
+        if (!eventsHasMore.value) return
+        if (filteredEvents.value.length > 0) return
+
+        await nextTick()
+        if (!isSentinelNearViewport()) return
+        fetchEventsPage({ batchSize: 1 })
       }
     )
 
