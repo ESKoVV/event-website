@@ -116,7 +116,8 @@
                 v-for="(m, msgIndex) in messages"
                 :key="m._key || `${m._kind || 'message'}:${m.id}`"
                 class="msg"
-                :class="{ mine: m.sender_id === myId, their: m.sender_id !== myId, system: m._kind === 'system_event', 'menu-open': messageMenuId === String(m.id) }"
+                :data-message-id="String(m.id || '')"
+                :class="{ mine: m.sender_id === myId, their: m.sender_id !== myId, system: m._kind === 'system_event', 'menu-open': messageMenuId === String(m.id), 'msg-target-highlight': highlightedMessageId === String(m.id) }"
               >
                 <div v-if="m._kind !== 'system_event'" class="msg-side">
                   <div v-if="showAvatarForMessage(m, messages, msgIndex)" class="msg-avatar-wrap">
@@ -166,12 +167,17 @@
                   </div>
 
                   <!-- reply preview inside message -->
-                  <div v-if="parseBody(m.body).reply" class="msg-reply">
+                  <button
+                    v-if="parseBody(m.body).reply"
+                    class="msg-reply"
+                    type="button"
+                    @click.stop="jumpToReplySource(m)"
+                  >
                     <div class="msg-reply-top">
                       Ответ на <span class="msg-reply-who">{{ parseBody(m.body).reply.who }}</span>
                     </div>
                     <div class="msg-reply-text">{{ parseBody(m.body).reply.text }}</div>
-                  </div>
+                  </button>
 
                   <div v-if="parseBody(m.body).text" class="msg-text">{{ parseBody(m.body).text }}</div>
 
@@ -806,6 +812,8 @@ export default {
     const forwardModalOpen = ref(false)
     const pendingForwardMessage = ref(null)
     const chatBodyRef = ref(null)
+    const highlightedMessageId = ref('')
+    let highlightMessageTimer = null
     const chatInputRef = ref(null)
     const showScrollDown = ref(false)
     const convHasMore = ref(true)
@@ -1963,6 +1971,28 @@ export default {
       showScrollDown.value = false
     }
 
+    const jumpToReplySource = async (message) => {
+      const replyId = String(parseBody(message?.body).reply?.id || '').trim()
+      if (!replyId) return
+
+      await nextTick()
+      const container = chatBodyRef.value
+      if (!container) return
+
+      const target = container.querySelector(`[data-message-id="${replyId}"]`)
+      if (!target) {
+        showFlash('Исходное сообщение не найдено в текущей истории', 'info', 3200)
+        return
+      }
+
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      highlightedMessageId.value = replyId
+      if (highlightMessageTimer) clearTimeout(highlightMessageTimer)
+      highlightMessageTimer = setTimeout(() => {
+        if (highlightedMessageId.value === replyId) highlightedMessageId.value = ''
+      }, 1700)
+    }
+
     const loadOlderMessages = async () => {
       if (!selectedOtherId.value || convLoading.value || convLoadingMore.value || !convHasMore.value || !oldestLoadedAt.value) return
       convLoadingMore.value = true
@@ -2736,6 +2766,9 @@ export default {
       if (typingSelfTimer) clearTimeout(typingSelfTimer)
       typingSelfTimer = null
 
+      if (highlightMessageTimer) clearTimeout(highlightMessageTimer)
+      highlightMessageTimer = null
+
       if (peerStatusTickTimer) clearInterval(peerStatusTickTimer)
       peerStatusTickTimer = null
     })
@@ -2908,6 +2941,7 @@ export default {
       chatBodyRef,
       chatInputRef,
       showScrollDown,
+      highlightedMessageId,
 
       reload,
       openThread,
@@ -2921,6 +2955,7 @@ export default {
       closePeerProfile,
 
       setReply,
+      jumpToReplySource,
       clearReply,
       clearForward,
       closeForwardModal,
@@ -3426,6 +3461,10 @@ export default {
   transition: transform 0.22s ease, opacity 0.22s ease;
 }
 
+.msg-target-highlight .msg-bubble {
+  box-shadow: 0 0 0 2px rgba(42, 91, 255, 0.35);
+}
+
 .msg-side {
   width: 42px;
   flex: 0 0 42px;
@@ -3602,10 +3641,20 @@ export default {
 
 /* reply preview inside message */
 .msg-reply {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
   border-left: 3px solid #2a5bff;
   padding-left: 10px;
   margin-bottom: 8px;
   opacity: 0.95;
+}
+
+.msg-reply:hover {
+  opacity: 1;
 }
 .msg.mine .msg-reply {
   border-left-color: rgba(255,255,255,0.55);
