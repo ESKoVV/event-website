@@ -42,3 +42,13 @@ npm run build
 ```sh
 npm run lint
 ```
+
+## Supabase: chat file uploads (Storage)
+
+If chat attachments fail with `StorageApiError: new row violates row-level security policy`, apply the SQL migration:
+
+```sh
+sql/chat_files_storage_policies.sql
+```
+
+It creates/configures the `chat-files` bucket and adds `storage.objects` policies so authenticated users can upload only into their own `<uid>/...` folder path.
